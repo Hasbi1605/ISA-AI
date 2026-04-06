@@ -1,4 +1,5 @@
 import os
+import json
 import logging
 import time
 import requests
@@ -20,6 +21,14 @@ EMBEDDING_TIMEOUT = int(os.getenv("EMBEDDING_TIMEOUT", "30"))
 
 # Embedding model list untuk fallback
 EMBEDDING_MODELS = [
+    # Lightweight Embeddings - PRIMARY (FREE UNLIMITED)
+    {
+        "name": "Lightweight Embeddings",
+        "provider": "lightweight",
+        "model": os.getenv("LIGHTWEIGHT_EMBEDDINGS_MODEL", "bge-m3"),
+        "api_key_env": None,  # No API key required!
+    },
+    # Fallback providers
     {
         "name": "Gemini",
         "provider": "google",
@@ -145,6 +154,97 @@ class QwenEmbeddings(Embeddings):
         data = response.json()
         return data["data"][0]["embedding"]
 
+
+class LightweightEmbeddings(Embeddings):
+    """
+    Lightweight Embeddings - FREE UNLIMITED API service.
+    
+    Host: HuggingFace Spaces
+    URL: https://lamhieu-lightweight-embeddings.hf.space
+    Models: bge-m3, multilingual-e5-large, snowflake-arctic-embed-l-v2.0, etc.
+    
+    Features:
+    - No API key required
+    - No rate limits
+    - 100+ languages
+    - Max 8192 tokens (bge-m3)
+    """
+    
+    def __init__(self, model: str = "bge-m3"):
+        self.model = model
+        self.api_url = os.getenv(
+            "LIGHTWEIGHT_EMBEDDINGS_URL",
+            "https://lamhieu-lightweight-embeddings.hf.space/v1/embeddings"
+        )
+        
+    def embed_documents(self, texts: List[str]) -> List[List[float]]:
+        """Embed daftar dokumen menggunakan Lightweight Embeddings API."""
+        headers = {
+            "Content-Type": "application/json"
+        }
+        
+        payload = {
+            "model": self.model,
+            "input": texts
+        }
+        
+        try:
+            response = requests.post(
+                self.api_url, 
+                json=payload, 
+                headers=headers, 
+                timeout=EMBEDDING_TIMEOUT
+            )
+            response.raise_for_status()
+            
+            try:
+                data = response.json()
+            except json.JSONDecodeError as e:
+                raise ValueError(f"Invalid JSON response from Lightweight API: {e}")
+            
+            if "data" not in data or not data["data"]:
+                raise ValueError("Invalid response structure from Lightweight API")
+            
+            embeddings = [item["embedding"] for item in data["data"]]
+            return embeddings
+        except requests.exceptions.RequestException as e:
+            logger.error(f"Lightweight Embeddings API error: {e}")
+            raise
+    
+    def embed_query(self, text: str) -> List[float]:
+        """Embed single query menggunakan Lightweight Embeddings API."""
+        headers = {
+            "Content-Type": "application/json"
+        }
+        
+        payload = {
+            "model": self.model,
+            "input": [text]
+        }
+        
+        try:
+            response = requests.post(
+                self.api_url, 
+                json=payload, 
+                headers=headers, 
+                timeout=EMBEDDING_TIMEOUT
+            )
+            response.raise_for_status()
+            
+            try:
+                data = response.json()
+            except json.JSONDecodeError as e:
+                raise ValueError(f"Invalid JSON response from Lightweight API: {e}")
+            
+            if "data" not in data or not data["data"]:
+                raise ValueError("Invalid response structure from Lightweight API")
+            
+            return data["data"][0]["embedding"]
+        except requests.exceptions.RequestException as e:
+            logger.error(f"Lightweight Embeddings API error: {e}")
+            raise
+
+
 def get_embeddings():
     """Initializes and returns the Google Generative AI embeddings model."""
     # Model yang tersedia: gemini-embedding-001 (stable), gemini-embedding-2-preview (preview)
@@ -153,19 +253,31 @@ def get_embeddings():
 def get_embeddings_with_fallback() -> Tuple[Optional[Embeddings], str]:
     """
     Mendapatkan embedding model dengan fallback mechanism.
-    Urutan: Gemini → Jina AI → Qwen
+    Urutan: Lightweight Embeddings → Gemini → Jina AI → Qwen
     
     Returns:
         Tuple[Optional[Embeddings], str]: (embedding_object, provider_name)
     """
     for model_config in EMBEDDING_MODELS:
-        api_key = os.getenv(model_config["api_key_env"])
-        if not api_key:
-            logger.warning(f"⚠️ {model_config['name']}: API key tidak ditemukan, skip...")
-            continue
+        # Lightweight Embeddings tidak memerlukan API key
+        if model_config["api_key_env"] is not None:
+            api_key = os.getenv(model_config["api_key_env"])
+            if not api_key:
+                logger.warning(f"⚠️ {model_config['name']}: API key tidak ditemukan, skip...")
+                continue
+        else:
+            api_key = None  # No API key needed (e.g., Lightweight Embeddings)
         
         try:
-            if model_config["provider"] == "google":
+            # Lightweight Embeddings handler - PRIMARY (FREE UNLIMITED)
+            if model_config["provider"] == "lightweight":
+                embeddings = LightweightEmbeddings(model=model_config["model"])
+                # Test dengan embedding sederhana
+                _ = embeddings.embed_query("test")
+                logger.info(f"✅ Menggunakan {model_config['name']} untuk embeddings (FREE UNLIMITED)")
+                return embeddings, model_config["name"]
+                
+            elif model_config["provider"] == "google":
                 embeddings = GoogleGenerativeAIEmbeddings(model=model_config["model"])
                 # Test dengan embedding sederhana
                 _ = embeddings.embed_query("test")
@@ -259,8 +371,8 @@ def process_document(file_path: str, filename: str):
         
         for i, chunk in enumerate(chunks):
             try:
-                # Add delay kecuali untuk chunk pertama
-                if i > 0:
+                # Add delay только untuk non-Lightweight providers (yang butuh rate limiting)
+                if i > 0 and provider_name != "Lightweight Embeddings":
                     time.sleep(0.6)  # 600ms delay
                 
                 vectorstore.add_documents([chunk])
