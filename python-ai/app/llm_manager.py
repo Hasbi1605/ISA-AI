@@ -74,14 +74,19 @@ def get_llm_stream(messages: List[Dict[str, str]]) -> Generator[str, None, None]
     Includes LangSearch integration for real-time information.
     """
     # Extract query and system prompt from messages
+    # Get LAST user message (most recent query)
     query = None
     system_prompt_base = None
     
-    for msg in messages:
-        if msg["role"] == "system":
-            system_prompt_base = msg["content"]
-        elif msg["role"] == "user":
+    for msg in reversed(messages):
+        if msg["role"] == "user":
             query = msg["content"]
+            break
+        elif msg["role"] == "system" and system_prompt_base is None:
+            system_prompt_base = msg["content"]
+    
+    # Get default system prompt from env config
+    default_system_prompt = os.getenv("DEFAULT_SYSTEM_PROMPT", "Anda adalah ISTA AI, asisten virtual istana pintar. Jawablah dengan sopan dan membantu.")
     
     # Get search + RAG context if we have a query
     search_context = ""
@@ -96,9 +101,9 @@ def get_llm_stream(messages: List[Dict[str, str]]) -> Generator[str, None, None]
         if system_prompt_base:
             enhanced_system = search_context + system_prompt_base + "\n\nGunakan informasi dari web search results jika relevan dengan pertanyaan user."
         else:
-            enhanced_system = search_context + "Anda adalah ISTA AI, asisten virtual istana pintar. Jawablah dengan sopan dan membantu.\n\nGunakan informasi dari web search results jika relevan dengan pertanyaan user."
+            enhanced_system = search_context + default_system_prompt + "\n\nGunakan informasi dari web search results jika relevan dengan pertanyaan user."
     else:
-        enhanced_system = system_prompt_base if system_prompt_base else "Anda adalah ISTA AI, asisten virtual istana pintar. Jawablah dengan sopan dan membantu."
+        enhanced_system = system_prompt_base if system_prompt_base else default_system_prompt
     
     # Rebuild messages with enhanced system prompt
     enhanced_messages = []

@@ -1,12 +1,15 @@
 import os
 import logging
 import requests
-from typing import List, Dict
+import time
+from typing import List, Dict, Optional, Tuple
 from datetime import datetime
+from functools import lru_cache
 
 logger = logging.getLogger(__name__)
 
 LANGSEARCH_TIMEOUT = int(os.getenv("LANGSEARCH_TIMEOUT", "10"))
+LANGSEARCH_CACHE_TTL = int(os.getenv("LANGSEARCH_CACHE_TTL", "300"))  # 5 minutes default
 
 
 class LangSearchService:
@@ -15,6 +18,28 @@ class LangSearchService:
     def __init__(self):
         self.api_key = os.getenv("LANGSEARCH_API_KEY")
         self.base_url = "https://api.langsearch.com/v1/web-search"
+        self._search_cache: Dict[Tuple[str, int], Tuple[List[Dict], float]] = {}
+    
+    def _get_cached_result(self, query: str, time_bucket: int) -> Optional[List[Dict]]:
+        """Get cached search result if not expired."""
+        key = (query, time_bucket)
+        if key in self._search_cache:
+            results, timestamp = self._search_cache[key]
+            if time.time() - timestamp < LANGSEARCH_CACHE_TTL:
+                logger.info(f"📦 LangSearch: cache hit for '{query}'")
+                return results
+            else:
+                del self._search_cache[key]
+        return None
+    
+    def _cache_result(self, query: str, time_bucket: int, results: List[Dict]):
+        """Cache search result with timestamp."""
+        key = (query, time_bucket)
+        self._search_cache[key] = (results, time.time())
+    
+    def _get_time_bucket(self) -> int:
+        """Get current time bucket for caching (5 minute intervals)."""
+        return int(time.time() / LANGSEARCH_CACHE_TTL)
     
     def search(self, query: str, freshness: str = "oneWeek", count: int = 5) -> List[Dict]:
         """
@@ -32,6 +57,12 @@ class LangSearchService:
         if not self.api_key:
             logger.warning("⚠️ LangSearch: API key not configured")
             return []
+        
+        # Check cache first (cache per 5 minutes)
+        time_bucket = self._get_time_bucket()
+        cached = self._get_cached_result(query, time_bucket)
+        if cached is not None:
+            return cached
         
         headers = {
             "Authorization": f"Bearer {self.api_key}",
@@ -70,6 +101,10 @@ class LangSearchService:
                 })
             
             logger.info(f"✅ LangSearch: query='{query}', results={len(formatted_results)}")
+            
+            # Cache the result
+            self._cache_result(query, time_bucket, formatted_results)
+            
             return formatted_results
             
         except requests.exceptions.Timeout:
