@@ -4,6 +4,11 @@ import logging
 import time
 import requests
 from typing import List, Tuple, Optional, Dict
+from dotenv import load_dotenv
+
+# Ensure .env is loaded (for standalone imports)
+load_dotenv(os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), '.env'))
+
 from langchain_community.document_loaders import UnstructuredFileLoader
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_google_genai import GoogleGenerativeAIEmbeddings
@@ -455,6 +460,181 @@ def delete_document_vectors(filename: str):
         return True, f"Vectors for {filename} deleted successfully."
     except Exception as e:
         logger.error(f"❌ Error deleting vectors for {filename}: {str(e)}")
+        return False, str(e)
+
+
+
+def search_relevant_chunks(query: str, filenames: List[str] = None, top_k: int = 5) -> Tuple[List[Dict], bool]:
+    """
+    Search for relevant document chunks based on query.
+    
+    Args:
+        query: User query string
+        filenames: Optional list of filenames to filter by
+        top_k: Number of top chunks to return
+    
+    Returns:
+        Tuple of (list of chunks with metadata, bool indicating success)
+    """
+    try:
+        embeddings, provider_name = get_embeddings_with_fallback()
+        
+        if embeddings is None:
+            return [], False
+        
+        vectorstore = Chroma(
+            collection_name="documents_collection",
+            embedding_function=embeddings,
+            persist_directory=CHROMA_PATH
+        )
+        
+        # Build filter if filenames provided
+        filter_dict = None
+        if filenames and len(filenames) > 0:
+            # ChromaDB filter: match any of the filenames
+            if len(filenames) == 1:
+                filter_dict = {"filename": filenames[0]}
+            else:
+                # For multiple files, use $or operator
+                filter_dict = {"$or": [{"filename": fname} for fname in filenames]}
+            
+            logger.info(f"🔍 RAG: Filtering by filenames: {filenames}")
+        
+        # Search for similar documents with filter
+        if filter_dict:
+            docs = vectorstore.similarity_search_with_score(query, k=top_k, filter=filter_dict)
+        else:
+            docs = vectorstore.similarity_search_with_score(query, k=top_k)
+        
+        results = []
+        for doc, score in docs:
+            chunk_info = {
+                "content": doc.page_content,
+                "score": float(score),
+                "filename": doc.metadata.get("filename", "unknown"),
+                "chunk_index": doc.metadata.get("chunk_index", 0),
+                "embedding_model": doc.metadata.get("embedding_model", provider_name)
+            }
+            results.append(chunk_info)
+        
+        logger.info(f"📚 RAG: Found {len(results)} relevant chunks for query: '{query}'")
+        return results, True
+        
+    except Exception as e:
+        logger.error(f"❌ Error searching chunks: {str(e)}")
+        return [], False
+
+
+def build_rag_prompt(question: str, chunks: List[Dict], include_sources: bool = True) -> Tuple[str, List[Dict]]:
+    """
+    Build RAG prompt from question and relevant chunks.
+    
+    Args:
+        question: User question
+        chunks: List of chunk dictionaries from search_relevant_chunks
+        include_sources: Whether to include source references
+    
+    Returns:
+        Tuple of (formatted prompt, list of source metadata)
+    """
+    if not chunks:
+        return question, []
+    
+    # Format chunks as context
+    context_parts = []
+    sources = []
+    
+    for i, chunk in enumerate(chunks):
+        context_parts.append(f"--- Chunk {i+1} ---")
+        context_parts.append(chunk.get("content", ""))
+        context_parts.append("")
+        
+        if include_sources:
+            sources.append({
+                "filename": chunk.get("filename", "unknown"),
+                "chunk_index": chunk.get("chunk_index", 0),
+                "relevance_score": chunk.get("score", 0)
+            })
+    
+    context_str = "\n".join(context_parts)
+    
+    rag_prompt = f"""Berdasarkan dokumen-dokumen berikut, jawab pertanyaan user.
+
+Dokumen yang menjadi referensi:
+{context_str}
+
+---
+
+Pertanyaan: {question}
+
+Instruksi: 
+- Jawab berdasarkan informasi dari dokumen-dokumen di atas
+- Jika jawaban tidak ditemukan di dokumen, katakan bahwa tidak ada informasi terkait
+- Cantumkan nama dokumen yang menjadi sumber referensi
+
+Jawaban:"""
+    
+    return rag_prompt, sources
+
+
+def summarize_document(filename: str) -> Tuple[bool, str]:
+    """
+    Summarize a document by retrieving all chunks and sending to LLM.
+    
+    Args:
+        filename: The filename of the document to summarize
+    
+    Returns:
+        Tuple of (success: bool, result: str)
+    """
+    try:
+        logger.info(f"=== Summarizing document: {filename} ===")
+        
+        # Get all chunks from ChromaDB for this filename
+        embeddings, provider_name = get_embeddings_with_fallback()
+        
+        if embeddings is None:
+            return False, "Tidak dapat menginisialisasi embedding model."
+        
+        vectorstore = Chroma(
+            collection_name="documents_collection",
+            embedding_function=embeddings,
+            persist_directory=CHROMA_PATH
+        )
+        
+        # Get all chunks for this filename using filter
+        docs = vectorstore.get(where={"filename": filename})
+        
+        if not docs or not docs.get("documents"):
+            return False, f"Tidak ada chunks ditemukan untuk dokumen '{filename}'. Dokumen mungkin belum diproses."
+        
+        chunks_content = docs["documents"]
+        logger.info(f"Found {len(chunks_content)} chunks for summarization")
+        
+        # Build context from chunks
+        context_parts = []
+        for i, chunk in enumerate(chunks_content):
+            context_parts.append(f"--- Bagian {i+1} ---\n{chunk}")
+        
+        context_str = "\n\n".join(context_parts)
+        
+        # Build summarization prompt
+        summarize_prompt = f"""Buatkan ringkasan dari dokumen berikut. Ringkasan harus mencakup:
+- Poin-poin utama dari dokumen
+- Informasi penting yang perlu diketahui
+
+Dokumen:
+{context_str}
+
+---
+
+Ringkasan dokumen (dalam Bahasa Indonesia):"""
+        
+        # Return the prompt for LLM processing (actual summarization happens in the API endpoint)
+        return True, context_str
+        
+    except Exception as e:
+        logger.error(f"❌ Error summarizing document: {str(e)}")
         return False, str(e)
 
 

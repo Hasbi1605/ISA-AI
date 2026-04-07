@@ -2,8 +2,8 @@ from fastapi import APIRouter, UploadFile, File, Depends, HTTPException, Header
 import os
 import shutil
 import uuid
-from typing import Dict
-from app.services.rag_service import process_document, delete_document_vectors
+from typing import Dict, List
+from app.services.rag_service import process_document, delete_document_vectors, summarize_document
 
 router = APIRouter(prefix="/api/documents", tags=["Documents"])
 
@@ -57,3 +57,45 @@ async def delete_document(filename: str):
         return {"status": "success", "message": message}
     else:
         raise HTTPException(status_code=500, detail=message)
+
+
+@router.post("/summarize", dependencies=[Depends(verify_token)])
+async def summarize_document_endpoint(filename: str = ""):
+    """
+    Endpoint for summarizing a document.
+    Input: filename (query parameter)
+    Output: summary text from LLM
+    """
+    if not filename:
+        raise HTTPException(status_code=400, detail="filename parameter is required")
+    
+    success, result = summarize_document(filename)
+    
+    if not success:
+        raise HTTPException(status_code=500, detail=result)
+    
+    # Now send the context to LLM for summarization
+    from app.llm_manager import get_llm_stream
+    
+    summarize_prompt = f"""Buatkan ringkasan yang jelas dan padat dari dokumen berikut. 
+Ringkasan harus mencakup poin-poin utama dan informasi penting.
+
+Dokumen:
+{result}
+
+---
+
+Buat ringkasan dalam Bahasa Indonesia (maksimal 500 kata):"""
+    
+    messages = [{"role": "user", "content": summarize_prompt}]
+    
+    # Collect the full response
+    full_response = ""
+    for chunk in get_llm_stream(messages):
+        full_response += chunk
+    
+    # Remove any model prefix
+    if "[MODEL:" in full_response:
+        full_response = full_response.split("]", 1)[1] if "]" in full_response else full_response
+    
+    return {"status": "success", "summary": full_response, "filename": filename}
