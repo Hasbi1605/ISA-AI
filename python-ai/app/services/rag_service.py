@@ -4,6 +4,7 @@ import logging
 import time
 import requests
 from typing import List, Tuple, Optional, Dict
+import re
 from dotenv import load_dotenv
 
 # Ensure .env is loaded (for standalone imports)
@@ -11,12 +12,10 @@ load_dotenv(os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file_
 
 from langchain_community.document_loaders import UnstructuredFileLoader
 from langchain_text_splitters import RecursiveCharacterTextSplitter
-from langchain_google_genai import GoogleGenerativeAIEmbeddings
 from langchain_chroma import Chroma
 from langchain_core.embeddings import Embeddings
 from langchain_openai import OpenAIEmbeddings
 from langchain_core.documents import Document
-from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception_type
 from app.services.langsearch_service import LangSearchService
 
 # Setup logging
@@ -123,7 +122,7 @@ def process_document(file_path: str, filename: str, user_id: str = "unknown"):
         # 4. Store in ChromaDB dengan rate limiting
         logger.info(f"Step 4: Generating embeddings dan storing ke ChromaDB...")
         logger.info(f"Using provider: {provider_name}")
-        logger.info(f"Rate limiting: 600ms delay per chunk untuk mencegah rate limit...")
+        logger.info(f"Batching: 10 chunks per request, 1.5s delay antar batch")
         
         vectorstore = Chroma(
             collection_name="documents_collection",
@@ -141,7 +140,7 @@ def process_document(file_path: str, filename: str, user_id: str = "unknown"):
             batch = chunks[i:i+batch_size]
             try:
                 # Add delay untuk setiap batch untuk mencegah rate limit HF Spaces / provider lain
-                if i > 0:
+                if i > 0 and provider_name != "GitHub Models (OpenAI Large)":
                     time.sleep(1.5)
                 
                 vectorstore.add_documents(batch)
@@ -498,7 +497,6 @@ def get_context_for_query(query: str) -> Dict:
     langsearch = get_langsearch_service()
     search_results = []
     
-    import re
     query_clean = re.sub(r'[^\w\s]', '', query.lower().strip())
     greetings = ["hai", "halo", "hello", "hi", "siapa kamu", "siapa anda", "kamu siapa", "test", "tes", "terima kasih", "makasih", "ok", "oke", "pagi", "siang", "sore", "malam", "terimakasih"]
     
