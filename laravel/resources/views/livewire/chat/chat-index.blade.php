@@ -4,6 +4,8 @@
         isDraggingFile: false,
         dragDepth: 0,
         dropError: '',
+        sendError: '',
+        messageAcked: false,
         promptDraft: '',
         isSendingMessage: false,
         optimisticUserMessage: '',
@@ -23,6 +25,8 @@
             const text = this.promptDraft.trim();
             if (!text) return;
 
+            this.sendError = '';
+            this.messageAcked = false;
             this.isSendingMessage = true;
             this.optimisticUserMessage = text;
             this.promptDraft = '';
@@ -33,9 +37,21 @@
                 .then(() => {
                     this.$nextTick(() => this.scrollToBottom());
                 })
-                .catch(() => {
-                    this.promptDraft = text;
+                .catch((error) => {
                     this.optimisticUserMessage = '';
+
+                    if (!this.messageAcked) {
+                        this.promptDraft = text;
+                        this.sendError = 'Pesan gagal dikirim. Periksa koneksi lalu coba lagi.';
+                    } else {
+                        this.sendError = 'Pesan sudah terkirim, tetapi jawaban ISTA AI gagal diproses. Coba kirim ulang prompt Anda.';
+                    }
+
+                    setTimeout(() => {
+                        if (this.sendError) this.sendError = '';
+                    }, 6000);
+
+                    console.error('Send message error:', error);
                 })
                 .finally(() => {
                     this.isSendingMessage = false;
@@ -58,6 +74,7 @@
             });
 
             this.$wire.on('user-message-acked', () => {
+                this.messageAcked = true;
                 this.optimisticUserMessage = '';
                 this.$nextTick(() => this.scrollToBottom());
             });
@@ -286,6 +303,19 @@
                 </button>
             </div>
         </div>
+
+        <div x-show="sendError" x-transition class="px-6 pt-3 pb-1">
+            <div class="mx-auto max-w-3xl rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-[13px] text-rose-800 dark:border-rose-800/40 dark:bg-rose-950/30 dark:text-rose-200">
+                <div class="flex items-start justify-between gap-3">
+                    <p class="leading-relaxed" x-text="sendError"></p>
+                    <button type="button" class="shrink-0 text-rose-500 hover:text-rose-700 dark:text-rose-300 dark:hover:text-rose-100" x-on:click="sendError = ''" aria-label="Tutup notifikasi">
+                        <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+                        </svg>
+                    </button>
+                </div>
+            </div>
+        </div>
         
         <!-- Messages List -->
         <div class="flex-1 overflow-y-auto px-6 py-8 space-y-8" x-ref="chatBox" x-on:message-streamed.window="$refs.chatBox.scrollTop = $refs.chatBox.scrollHeight">
@@ -333,24 +363,38 @@
                             </div>
 
                             @if($message['role'] == 'assistant')
+                                @php
+                                    $assistantHtml = str($message['content'])->markdown([
+                                        'html_input' => 'strip',
+                                        'allow_unsafe_links' => false,
+                                    ]);
+                                @endphp
                                 @if($message['id'] == $newMessageId)
                                     <div 
                                         wire:ignore
                                         wire:key="msg-typing-{{ $message['id'] }}"
                                         class="rounded-xl bg-[#F8FAFC] dark:bg-[#0F172A] border border-[#E2E8F0] dark:border-[#1D293D] px-4 py-3 text-[14.5px] leading-relaxed text-[#334155] dark:text-[#CAD5E2] max-w-[656px] prose dark:prose-invert prose-p:my-1 prose-headings:my-2 prose-ul:my-1 prose-li:my-0 prose-li:marker:text-[#0F172A] dark:prose-li:marker:text-[#F8FAFC] pb-1"
                                         x-data="{ 
-                                            content: `{{ addslashes(str($message['content'])->markdown()) }}`, 
+                                            content: @js((string) $assistantHtml), 
                                             displayedContent: '', 
                                             typewriterEffect() {
                                                 let i = 0;
-                                                const speed = 10;
                                                 const type = () => {
                                                     if (i < this.content.length) {
-                                                        let nextChunk = this.content.substring(i, i + 3);
+                                                        const remaining = this.content.length - i;
+                                                        const chunkSize = remaining > 1400 ? 12 : (remaining > 800 ? 9 : 6);
+                                                        const speed = remaining > 1400 ? 4 : (remaining > 800 ? 6 : 10);
+
+                                                        let nextChunk = this.content.substring(i, i + chunkSize);
                                                         if (nextChunk.startsWith('<')) {
                                                             const tagEnd = this.content.indexOf('>', i);
                                                             if (tagEnd !== -1) {
                                                                 nextChunk = this.content.substring(i, tagEnd + 1);
+                                                            }
+                                                        } else {
+                                                            const nextTagStart = nextChunk.indexOf('<');
+                                                            if (nextTagStart > 0) {
+                                                                nextChunk = this.content.substring(i, i + nextTagStart);
                                                             }
                                                         }
                                                         
@@ -360,7 +404,7 @@
                                                         setTimeout(type, speed);
                                                     }
                                                 };
-                                                setTimeout(type, 100);
+                                                setTimeout(type, 80);
                                             }
                                         }" 
                                         x-init="typewriterEffect()"
@@ -371,7 +415,7 @@
                                     <div 
                                         wire:key="msg-static-{{ $message['id'] }}"
                                         class="rounded-xl bg-[#F8FAFC] dark:bg-[#0F172A] border border-[#E2E8F0] dark:border-[#1D293D] px-4 py-3 text-[14.5px] leading-relaxed text-[#334155] dark:text-[#CAD5E2] max-w-[656px] prose dark:prose-invert prose-p:my-1 prose-headings:my-2 prose-ul:my-1 prose-li:my-0 prose-li:marker:text-[#0F172A] dark:prose-li:marker:text-[#F8FAFC] pb-1"
-                                        x-html="`{{ addslashes(str($message['content'])->markdown()) }}`"
+                                        x-html="@js((string) $assistantHtml)"
                                     >
                                     </div>
                                 @endif
