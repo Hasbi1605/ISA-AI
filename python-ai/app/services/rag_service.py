@@ -359,7 +359,9 @@ def process_document(file_path: str, filename: str, user_id: str = "unknown"):
                     )
                     
                     # Update metadata untuk sisa chunk
-                    for remaining_chunk in chunks[batch_num:]:
+                    # Calculate starting index based on accumulated batches
+                    remaining_start = sum(len(b[0]) for b in smart_batches[:batch_index-1])
+                    for remaining_chunk in chunks[remaining_start:]:
                         remaining_chunk.metadata["embedding_model"] = provider_name
                     
                     # Retry batch dengan model baru (dengan exponential backoff)
