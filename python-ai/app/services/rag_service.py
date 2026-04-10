@@ -942,24 +942,34 @@ def get_context_for_query(
     # Step 2: Get RAG documents (existing logic)
     rag_documents = []
     has_rag = False
+    rag_reason_code = None
     
-    try:
-        embeddings, provider_name = get_embeddings_with_fallback()
-        if embeddings:
-            vectorstore = Chroma(
-                collection_name="documents_collection",
-                embedding_function=embeddings,
-                persist_directory=CHROMA_PATH
-            )
-            
-            # Search for relevant documents
-            docs = vectorstore.similarity_search(query, k=3)
-            if docs:
-                rag_documents = docs
-                has_rag = True
-                logger.info("📚 RAG: Found %s relevant documents (%s)", len(docs), _query_log_meta(query))
-    except Exception as e:
-        logger.warning(f"⚠️ RAG search failed: {str(e)}")
+    # Early-exit guard: Skip RAG retrieval when no documents are selected
+    if not documents_active:
+        logger.info("RAG_DISABLED_NO_DOCUMENTS: Skipping RAG retrieval - no documents selected (%s)", _query_log_meta(query))
+        rag_reason_code = "RAG_DISABLED_NO_DOCUMENTS"
+    else:
+        # Documents are active, perform RAG retrieval
+        logger.info("RAG_ENABLED_DOCUMENT_CONTEXT: Performing RAG retrieval with document selection (%s)", _query_log_meta(query))
+        rag_reason_code = "RAG_ENABLED_DOCUMENT_CONTEXT"
+        
+        try:
+            embeddings, provider_name = get_embeddings_with_fallback()
+            if embeddings:
+                vectorstore = Chroma(
+                    collection_name="documents_collection",
+                    embedding_function=embeddings,
+                    persist_directory=CHROMA_PATH
+                )
+                
+                # Search for relevant documents
+                docs = vectorstore.similarity_search(query, k=3)
+                if docs:
+                    rag_documents = docs
+                    has_rag = True
+                    logger.info("📚 RAG: Found %s relevant documents (%s)", len(docs), _query_log_meta(query))
+        except Exception as e:
+            logger.warning(f"⚠️ RAG search failed: {str(e)}")
     
     return {
         "search_results": search_results,
@@ -970,6 +980,7 @@ def get_context_for_query(
         "score_signal": score_signal,
         "reason_code": reason_code,
         "realtime_intent": realtime_intent,
+        "rag_reason_code": rag_reason_code,
     }
 
 
@@ -1005,8 +1016,8 @@ def get_rag_context_for_prompt(
     if context_data["search_context"]:
         result_parts.append(context_data["search_context"])
     
-    # Add RAG documents only if no search results
-    if context_data["has_rag"] and not context_data["has_search"] and not documents_active:
+    # Add RAG documents only if documents are active and RAG retrieval occurred
+    if context_data["has_rag"] and documents_active:
         if base_rag_prompt:
             result_parts.append(base_rag_prompt)
         else:
