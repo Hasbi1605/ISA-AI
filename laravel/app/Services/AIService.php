@@ -36,12 +36,25 @@ class AIService
      * @param string|null $user_id User ID for authorization in RAG mode
      * @return \Generator
      */
-    public function sendChat(array $messages, ?array $document_filenames = null, ?string $user_id = null, bool $force_web_search = false)
-    {
+    public function sendChat(
+        array $messages,
+        ?array $document_filenames = null,
+        ?string $user_id = null,
+        bool $force_web_search = false,
+        ?string $source_policy = null,
+        bool $allow_auto_realtime_web = true,
+        bool $explicit_web_request = false
+    ) {
         $payload = [
             'messages' => $messages,
             'force_web_search' => $force_web_search,
+            'allow_auto_realtime_web' => $allow_auto_realtime_web,
+            'explicit_web_request' => $explicit_web_request,
         ];
+
+        if ($source_policy !== null) {
+            $payload['source_policy'] = $source_policy;
+        }
 
         if ($document_filenames !== null) {
             $payload['document_filenames'] = $document_filenames;
