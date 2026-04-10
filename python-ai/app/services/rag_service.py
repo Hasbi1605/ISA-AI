@@ -892,7 +892,7 @@ def get_context_for_query(
                     documents.append(doc_text)
                 
                 # Get rerank results
-                rerank_results = langsearch_service.rerank_documents(
+                rerank_results = langsearch.rerank_documents(
                     query=query,
                     documents=documents,
                     top_n=web_top_n,
