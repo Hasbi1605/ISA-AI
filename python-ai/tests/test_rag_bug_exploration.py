@@ -3,18 +3,18 @@ Bug Condition Exploration Test for RAG Document Control Fix
 
 **Validates: Requirements 1.1, 1.2, 1.3, 2.1, 2.2, 2.3**
 
-This test demonstrates the bug exists on UNFIXED code.
-CRITICAL: This test MUST FAIL on unfixed code - failure confirms the bug exists.
+This test demonstrates that RAG retrieval is properly disabled in get_context_for_query().
 
-Bug Condition: When documents_active=false, the system should NOT call
-get_embeddings_with_fallback() or perform similarity search, but currently it does.
+IMPORTANT: get_context_for_query() no longer performs RAG retrieval for security reasons.
+RAG retrieval is handled separately by search_relevant_chunks() with proper user_id
+and document filtering.
 
-Expected behavior after fix:
-- get_embeddings_with_fallback() should NOT be called when documents_active=false
-- vectorstore.similarity_search() should NOT be called when documents_active=false
+Expected behavior:
+- get_embeddings_with_fallback() should NOT be called in get_context_for_query()
+- vectorstore.similarity_search() should NOT be called in get_context_for_query()
 - result["has_rag"] should be false
 - result["rag_documents"] should be empty
-- result["rag_reason_code"] should be "RAG_DISABLED_NO_DOCUMENTS"
+- result["rag_reason_code"] should be "RAG_DISABLED_FUNCTION_SCOPE"
 """
 
 import pytest
@@ -114,6 +114,12 @@ class TestBugConditionExploration:
                 f"BUG DETECTED: result['rag_documents'] is not empty for query '{query}' "
                 f"with documents_active=false. Expected: empty list. Actual: {len(result['rag_documents'])} documents."
             )
+            
+            # Assert that rag_reason_code indicates RAG is disabled at function scope
+            assert result["rag_reason_code"] == "RAG_DISABLED_FUNCTION_SCOPE", (
+                f"Expected rag_reason_code to be 'RAG_DISABLED_FUNCTION_SCOPE' for query '{query}' "
+                f"with documents_active=false. Actual: {result.get('rag_reason_code')}."
+            )
 
 
     @given(query=st.text(min_size=1, max_size=100))
@@ -175,6 +181,12 @@ class TestBugConditionExploration:
             assert len(result["rag_documents"]) == 0, (
                 f"Property violation: rag_documents not empty for query '{query[:50]}...' "
                 f"with documents_active=false"
+            )
+            
+            # Property: rag_reason_code should indicate function scope disable
+            assert result["rag_reason_code"] == "RAG_DISABLED_FUNCTION_SCOPE", (
+                f"Property violation: rag_reason_code is '{result.get('rag_reason_code')}' "
+                f"for query '{query[:50]}...', expected 'RAG_DISABLED_FUNCTION_SCOPE'"
             )
 
 
