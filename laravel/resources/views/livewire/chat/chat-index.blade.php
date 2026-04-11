@@ -634,7 +634,7 @@
                              </svg>
                              Delete
                          </button>
-                         <button type="button" wire:click="addSelectedDocumentsToChat" class="inline-flex shrink-0 items-center gap-1 text-ista-gold text-[11px] font-bold px-3 py-1.5 rounded-xl bg-ista-primary hover:bg-stone-800 transition-all whitespace-nowrap shadow-sm">
+                         <button type="button" wire:click="addSelectedDocumentsToChat" class="inline-flex shrink-0 items-center gap-1 text-ista-gold text-[10.5px] font-semibold px-1.5 py-1 rounded-md bg-ista-primary hover:bg-stone-800 transition-all whitespace-nowrap">
                              <svg xmlns="http://www.w3.org/2000/svg" class="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z" />
                              </svg>
