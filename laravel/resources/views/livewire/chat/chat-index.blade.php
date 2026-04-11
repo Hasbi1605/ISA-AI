@@ -173,9 +173,6 @@
         ];
     @endphp
 
-    <!-- Floating Background Elements -->
-    <div class="pointer-events-none absolute -left-20 -top-20 h-[28rem] w-[28rem] rounded-full bg-amber-100/50 blur-3xl z-0"></div>
-    <div class="pointer-events-none absolute -right-24 top-32 h-[24rem] w-[24rem] rounded-full bg-rose-100/60 blur-3xl z-0"></div>
 
     <!-- LEFT SIDEBAR: Chat History -->
     <aside 
