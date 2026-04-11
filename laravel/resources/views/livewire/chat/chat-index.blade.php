@@ -179,8 +179,18 @@
         :class="showLeftSidebar ? 'w-[288px] opacity-100 translate-x-0 border-r border-stone-200/60 dark:border-[#1E293B]' : 'w-0 opacity-0 -translate-x-3 border-r border-transparent pointer-events-none'"
         class="h-full flex-shrink-0 overflow-hidden bg-white/60 backdrop-blur-[10px] flex flex-col z-10 transform-gpu will-change-[width,transform,opacity] transition-[width,transform,opacity,border-color] duration-500 ease-[cubic-bezier(0.22,1,0.36,1)]">
         
+        <!-- Kembali ke Beranda Button -->
+        <div class="p-4 pb-0 pt-4">
+            <a href="{{ route('dashboard') }}" class="w-full flex items-center justify-start px-4 py-2.5 rounded-lg border border-transparent hover:border-stone-200/60 dark:hover:border-[#334155] bg-transparent hover:bg-gray-50 dark:hover:bg-white/5 font-medium text-[13px] text-gray-700 dark:text-gray-200 transition-all duration-200">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 mr-2 text-[#64748B] dark:text-[#CBD5E1]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" />
+                </svg>
+                Kembali ke Beranda
+            </a>
+        </div>
+
         <!-- New Chat Button -->
-        <div class="p-4 pt-5 pb-5">
+        <div class="p-4 pt-2 pb-5">
             <button wire:click="startNewChat" class="w-full flex items-center justify-start px-4 py-2.5 rounded-lg border border-stone-200/60 dark:border-[#334155] dark:bg-transparent bg-white hover:bg-gray-50 dark:hover:bg-white/5 font-medium text-[13px] text-gray-700 dark:text-gray-200 transition-all duration-200 shadow-sm">
                 <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 mr-2 text-[#64748B] dark:text-[#CBD5E1]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M12 5v14m-7-7h14" />
@@ -260,13 +270,14 @@
              <a href="/profile" class="flex items-center gap-3 text-gray-700 dark:text-[#F8FAFC] hover:opacity-80 transition-opacity">
                 <!-- Upgrade Icon -->
                 <div class="h-8 w-8 rounded bg-ista-primary flex items-center justify-center text-white shrink-0">
-                    <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" viewBox="0 0 20 20" fill="currentColor">
-                        <path fill-rule="evenodd" d="M10 2a8 8 0 100 16 8 8 0 000-16zM9.555 7.168A1 1 0 008 8v4a1 1 0 001.555.832l3-2a1 1 0 000-1.664l-3-2z" clip-rule="evenodd" />
+                    <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
                     </svg>
                 </div>
                 <div>
-                    <h4 class="text-[13.1px] font-medium leading-tight">Settings</h4>
-                    <p class="text-[11.3px] text-gray-500 dark:text-gray-400">More models & features</p>
+                    <h4 class="text-[13.1px] font-medium leading-tight">Pengaturan Akun</h4>
+                    <p class="text-[11.3px] text-gray-500 dark:text-gray-400">Kelola profil dan preferensi</p>
                 </div>
              </a>
         </div>
@@ -542,7 +553,7 @@
                         
                         <div class="flex items-center gap-2 pl-2">
                             <!-- Toggle Search -->
-                            <button type="button" wire:click="toggleWebSearch" class="h-[30px] px-[13px] border border-transparent rounded-full text-[11.4px] font-normal flex items-center gap-[6px] transition-colors {{ $webSearchMode ? 'bg-[#E2E8F0] text-stone-700 dark:bg-[#314158] dark:text-[#E2E8F0]' : 'bg-[#F1F5F9] text-[#62748E] dark:bg-[#1D293D] dark:text-[#62748E]' }}">
+                            <button type="button" wire:click="toggleWebSearch" class="h-[30px] px-[13px] border border-transparent rounded-full text-[11.4px] font-normal flex items-center gap-[6px] transition-all duration-300 hover:scale-105 hover:shadow-md hover:bg-ista-primary hover:text-white {{ $webSearchMode ? 'bg-[#E2E8F0] text-stone-700 dark:bg-[#314158] dark:text-[#E2E8F0]' : 'bg-[#F1F5F9] text-[#62748E] dark:bg-[#1D293D] dark:text-[#62748E]' }}">
                                 <img src="{{ $uiIcons['searchLight'] }}" alt="" class="w-[14px] h-[14px] dark:hidden" />
                                 <img src="{{ $uiIcons['searchDark'] }}" alt="" class="w-[14px] h-[14px] hidden dark:block" />
                                 <span>Search</span>
@@ -556,7 +567,7 @@
                             <!-- Send -->
                             <button type="submit" 
                                     :disabled="isSendingMessage"
-                                    class="bg-[#F1F5F9] dark:bg-[#1D293D] hover:bg-[#E2E8F0] dark:hover:bg-[#314158] disabled:opacity-50 rounded-full transition-colors h-[32px] w-[32px] flex items-center justify-center">
+                                    class="bg-[#F1F5F9] dark:bg-[#1D293D] hover:bg-ista-primary disabled:opacity-50 rounded-full transition-all duration-300 hover:scale-105 hover:shadow-md h-[32px] w-[32px] flex items-center justify-center group">
                                 <img src="{{ $uiIcons['sendLight'] }}" alt="" class="h-[17px] w-[17px] dark:hidden" />
                                 <img src="{{ $uiIcons['sendDark'] }}" alt="" class="h-[17px] w-[17px] hidden dark:block" />
                             </button>
@@ -623,7 +634,7 @@
                              </svg>
                              Delete
                          </button>
-                         <button type="button" wire:click="addSelectedDocumentsToChat" class="inline-flex shrink-0 items-center gap-1 text-ista-primary dark:text-[#8E81FF] text-[10.5px] font-semibold px-1.5 py-1 rounded-md bg-ista-primary/10 dark:bg-[#4A4AF4]/20 hover:bg-ista-primary/20 dark:hover:bg-[#4A4AF4]/30 transition-colors whitespace-nowrap">
+                         <button type="button" wire:click="addSelectedDocumentsToChat" class="inline-flex shrink-0 items-center gap-1 text-stone-900 text-[10.5px] font-semibold px-1.5 py-1 rounded-md bg-[#d4af37] hover:bg-[#c5a028] dark:bg-[#d4af37] dark:hover:bg-[#c5a028] transition-colors whitespace-nowrap">
                              <svg xmlns="http://www.w3.org/2000/svg" class="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z" />
                              </svg>
