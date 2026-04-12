@@ -12,7 +12,7 @@ class CustomResetPassword extends Notification
 {
     use Queueable;
 
-    public $token;
+    public string $token;
 
     /**
      * Create a new notification instance.
@@ -55,7 +55,7 @@ class CustomResetPassword extends Notification
     public function toArray(object $notifiable): array
     {
         return [
-            //
+            'token' => $this->token,
         ];
     }
 }

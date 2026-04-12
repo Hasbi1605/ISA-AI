@@ -12,7 +12,8 @@ return new class extends Migration
     public function up(): void
     {
         Schema::table('users', function (Blueprint $table) {
-            $table->string('verification_code')->nullable();
+            $table->string('verification_code')->nullable()->index();
+            $table->timestamp('verification_code_expires_at')->nullable();
         });
     }
 
@@ -22,7 +23,7 @@ return new class extends Migration
     public function down(): void
     {
         Schema::table('users', function (Blueprint $table) {
-            $table->dropColumn('verification_code');
+            $table->dropColumn(['verification_code', 'verification_code_expires_at']);
         });
     }
 };

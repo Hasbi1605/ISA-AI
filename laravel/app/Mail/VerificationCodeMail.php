@@ -13,7 +13,7 @@ class VerificationCodeMail extends Mailable
 {
     use Queueable, SerializesModels;
 
-    public string $code;
+    public readonly string $code;
 
     /**
      * Create a new message instance.
