@@ -256,3 +256,208 @@ Berikut daftar lengkap model yang tersedia untuk digunakan. Gunakan Ctrl+F untuk
 4. **Mengganti SMTP**: Edit `integrations.smtp_gmail` + update `.env`
 
 Semua perubahan tidak perlu ubah logika kode!
+
+---
+
+## Cara Mengganti Prompt AI
+
+### Lokasi File Prompt
+
+Semua prompt AI disimpan di file `python-ai/config/ai_config.yaml` di bagian `prompts:`.
+
+### Struktur Prompt
+
+```yaml
+prompts:
+  system:
+    default: "Anda adalah ISTA AI..."
+
+  rag:
+    document: |
+      Template prompt RAG...
+
+  web_search:
+    context: |
+      Template context web...
+
+    assertive_instruction: |
+      Template instruction...
+
+  summarization:
+    single: |
+      Template single...
+    partial: |
+      Template partial...
+    final: |
+      Template final...
+```
+
+### Cara Mengganti Prompt
+
+#### 1. Ganti System Prompt (Identitas AI)
+
+```yaml
+prompts:
+  system:
+    default: "Anda adalah asisten virtual istana yang siap membantu..."
+```
+
+#### 2. Ganti RAG Prompt (Chat dengan Dokumen)
+
+Ganti atau tambahkan instruksi khusus untuk respons saat chatting dengan dokumen:
+
+```yaml
+prompts:
+  rag:
+    document: |
+      Anda adalah asisten AI yang membantu menjawab dari dokumen.
+      
+      DOKUMEN:
+      {context_str}
+      {web_section}
+      
+      PERTANYAAN: {question}
+      
+     Tulis jawaban dengan format markdown jika perlu.
+      Jawaban:
+```
+
+Template variables yang tersedia:
+- `{context_str}` - Isi dokumen dari RAG
+- `{web_section}` - Konteks hasil pencarian web (jika ada)
+- `{question}` - Pertanyaan user
+
+#### 3. Ganti Web Search Context
+
+```yaml
+prompts:
+  web_search:
+    context: |
+      INFO TERBARU DARI WEB:
+      Tanggal: {current_date}
+      Tahun: {current_year}
+      
+      {results}
+      
+      Gunakan info di atas untuk menjawab pertanyaan terkini.
+```
+
+Template variables:
+- `{current_date}` - Tanggal hari ini
+- `{current_year}` - Tahun saat ini
+- `{results}` - Hasil pencarian web yang sudah diformat
+
+#### 4. Ganti Assertive Instruction
+
+```yaml
+prompts:
+  web_search:
+    assertive_instruction: |
+      Tambahan instruksi:
+      - Prioritaskan fakta dari web
+      - Sertakan sumber jika memungkinkan
+      - Jawaban singkat dan padat
+```
+
+#### 5. Ganti Summarization Prompts
+
+```yaml
+prompts:
+  summarization:
+    single: |
+      Ringkaskan dokumen berikut dalam Bahasa Indonesia maksimal 500 kata:
+      {document}
+      
+      Ringkasan:
+    
+    partial: |
+      Ringkasan bagian {part_number} dari {total_parts}:
+      {batch}
+      
+      Ringkasan singkat (maksimal 100 kata):
+    
+    final: |
+      Gabungkan ringkasan berikut menjadi satu:
+      {combined_summaries}
+      
+      Ringkasan final:
+```
+
+Template variables:
+- `{document}` - Isi dokumen lengkap (single)
+- `{batch}` - Bagian dokumen (partial)
+- `{part_number}` - Nomor bagian (1, 2, 3, ...)
+- `{total_parts}` - Total jumlah bagian
+- `{combined_summaries}` - Semua ringkasan bagian digabungkan (final)
+
+### Contoh Lengkap Mengganti Prompt
+
+#### Contoh 1: Ubah Personality AI
+
+**Sebelum:**
+```yaml
+prompts:
+  system:
+    default: "Anda adalah ISTA AI, asisten virtual istana pintar. Jawablah dengan sopan dan membantu."
+```
+
+**Sesudah:**
+```yaml
+prompts:
+  system:
+    default: "Anda adalah asisten AI yang bersifat formal, profesional, dan membantu. Gunakan bahasa Indonesia yang baik dan benar."
+```
+
+#### Contoh 2: Ubah Cara RAG Merespons
+
+**Sebelum:**
+```yaml
+prompts:
+  rag:
+    document: |
+      Anda adalah asisten AI cerdas. Jawab pertanyaan user berdasarkan referensi berikut.
+      ...
+      WAJIB cetak TEBAL (BOLD) setiap kali Anda menyebutkan nama file rujukan.
+```
+
+**Sesudah:**
+```yaml
+prompts:
+  rag:
+    document: |
+      Anda adalah asisten AI yang membantu menjawab dari dokumen.
+      Selalu sebutkan sumber dokumen di akhir jawaban.
+      Jika informasi tidak ditemukan, katakan dengan jujur bahwa tidak ada di dokumen.
+      
+      DOKUMEN: {context_str}
+      PERTANYAAN: {question}
+      
+      Jawaban:
+```
+
+### Fallback Mechanism
+
+Jika prompt di config kosong atau key tidak ditemukan, sistem akan menggunakan default dari `config_loader.py`:
+
+1. Cek config file (`ai_config.yaml`)
+2. Jika kosong, gunakan `DEFAULT_PROMPTS` di `config_loader.py`
+3. Ada logging warning saat fallback aktif (bisa dilihat di terminal)
+
+### Testing Perubahan Prompt
+
+1. Edit prompt di `ai_config.yaml`
+2. Restart server Python:
+   ```bash
+   cd python-ai
+   # restart aplikasi
+   ```
+3. Test dengan chatting atau upload dokumen
+4. Cek terminal untuk melihat log warning (jika ada)
+
+### Catatan Penting
+
+1. **Restart Required** - Perubahan prompt butuh restart aplikasi
+2. **YAML Format** - Perhatikan indentasi dan format YAML
+3. **Template Variables** - Gunakan variabel seperti `{context_str}`, `{question}`, dll
+4. **Multi-line** - Gunakan `|` untuk prompt multi-baris
+5. **Fallback** - Jika ada ошибка, sistem akan otomatis gunakan default

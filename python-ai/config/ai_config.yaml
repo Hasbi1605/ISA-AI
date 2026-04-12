@@ -206,6 +206,7 @@ prompts:
       4. Utamakan informasi dari sumber dokumen di atas. Jika konteks web tersedia, gunakan hanya sebagai tambahan pelengkap yang memperkaya jawaban.
       5. Jika jawaban tidak ditemukan sama sekali di dalam dokumen rujukan, katakan secara langsung bahwa informasi tersebut tidak tersedia pada dokumen yang Anda baca.
       6. Hindari mencantumkan daftar pustaka di bagian akhir jawaban yang berbentuk "Sumber referensi: Kutipan X". Langsung saja integrasikan penyebutan nama rujukan secara natural ke dalam teks kalimat Anda.
+      
 
       Jawaban:
 
@@ -228,6 +229,7 @@ prompts:
         * Pejabat pemerintahan (presiden, menteri, gubernur, dll)
         * Berita terkini dan kejadian terbaru
         * Data yang berubah dari waktu ke waktu
+        * Informasi yang bersifat real-time
       - JANGAN mengandalkan pengetahuan internal untuk fakta yang bisa outdated
 
       📰 HASIL PENCARIAN WEB:
