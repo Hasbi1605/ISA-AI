@@ -30,6 +30,8 @@ from app.config_loader import (
     get_chunking_defaults,
     get_adaptive_chunking_params,
     load_chunking_config,
+    get_chunking_rerank_config,
+    get_summarization_max_tokens,
 )
 
 EXPLICIT_WEB_PATTERNS = [
@@ -616,8 +618,9 @@ def search_relevant_chunks(query: str, filenames: List[str] = None, top_k: int =
         rerank_enabled = os.getenv("LANGSEARCH_RERANK_ENABLED", "true").lower() == "true"
         
         if rerank_enabled:
-            # Get more candidates for reranking
-            doc_candidates = int(os.getenv("LANGSEARCH_RERANK_DOC_CANDIDATES", "20"))
+            # Get rerank config from YAML first, then ENV override
+            rerank_doc_config = get_chunking_rerank_config(document=True)
+            doc_candidates = int(os.getenv("LANGSEARCH_RERANK_DOC_CANDIDATES", str(rerank_doc_config.get('candidates', 20))))
             # Search for more candidates than needed
             docs = vectorstore.similarity_search_with_score(query, k=doc_candidates, filter=filter_dict)
             
@@ -626,7 +629,7 @@ def search_relevant_chunks(query: str, filenames: List[str] = None, top_k: int =
                 documents = [doc.page_content for doc, _ in docs]
                 
                 # Get rerank results
-                doc_top_n = int(os.getenv("LANGSEARCH_RERANK_DOC_TOP_N", str(top_k)))
+                doc_top_n = int(os.getenv("LANGSEARCH_RERANK_DOC_TOP_N", str(rerank_doc_config.get('top_n', top_k))))
                 rerank_results = langsearch_service.rerank_documents(
                     query=query,
                     documents=documents,
@@ -788,7 +791,7 @@ def summarize_document(filename: str, user_id: str = None) -> Tuple[bool, str]:
         return False, str(e)
 
 
-def get_document_chunks_for_summarization(filename: str, user_id: str = None, max_tokens: int = 8000) -> Tuple[bool, List[str], int]:
+def get_document_chunks_for_summarization(filename: str, user_id: str = None, max_tokens: int = None) -> Tuple[bool, List[str], int]:
     """
     Get document chunks for summarization, with chunking for large documents.
     
@@ -809,6 +812,10 @@ def get_document_chunks_for_summarization(filename: str, user_id: str = None, ma
         # Security: require user_id
         if user_id is None:
             return False, [], 0
+        
+        # Get max_tokens from config if not provided
+        if max_tokens is None:
+            max_tokens = get_summarization_max_tokens()
         
         embeddings, provider_name, _ = get_embeddings_with_fallback()
         
@@ -1144,9 +1151,10 @@ def get_context_for_query(
         rerank_enabled = os.getenv("LANGSEARCH_RERANK_ENABLED", "true").lower() == "true"
         
         if rerank_enabled and len(search_results) >= 2:
-            # Check if we should apply rerank based on intent or force
-            web_candidates = int(os.getenv("LANGSEARCH_RERANK_WEB_CANDIDATES", "10"))
-            web_top_n = int(os.getenv("LANGSEARCH_RERANK_WEB_TOP_N", "5"))
+            # Get rerank config from YAML first, then ENV override
+            rerank_web_config = get_chunking_rerank_config(document=False)
+            web_candidates = int(os.getenv("LANGSEARCH_RERANK_WEB_CANDIDATES", str(rerank_web_config.get('candidates', 10))))
+            web_top_n = int(os.getenv("LANGSEARCH_RERANK_WEB_TOP_N", str(rerank_web_config.get('top_n', 5))))
             
             # Limit candidates for reranking
             candidates = search_results[:web_candidates] if len(search_results) > web_candidates else search_results

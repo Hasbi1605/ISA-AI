@@ -309,6 +309,13 @@ def get_summarization_thresholds() -> Dict[str, Any]:
     return config.get('summarization_thresholds', {})
 
 
+def get_summarization_max_tokens() -> int:
+    """Get max tokens for single-pass summarization from config."""
+    config = load_chunking_config()
+    defaults = config.get('summarization_defaults', {})
+    return defaults.get('single_pass_max_tokens', 8000)
+
+
 def get_semantic_rerank_config() -> Dict[str, Any]:
     """Get semantic rerank configuration."""
     config = load_chunking_config()
