@@ -20,7 +20,7 @@ new #[Layout('layouts.auth-canvas')] class extends Component
         $user = User::where('email', $this->email)->first();
 
         if ($user && is_null($user->email_verified_at)) {
-            $this->addError('email', 'Email belum terverifikasi. Silakan daftar ulang lalu verifikasi OTP.');
+            $this->addError('email', 'Email belum terverifikasi. Silakan daftar ulang lalu verifikasi kode OTP.');
 
             return;
         }

@@ -127,4 +127,43 @@ class RegistrationTest extends TestCase
 
         Mail::assertSent(VerificationCodeMail::class, 2);
     }
+
+    public function test_otp_attempts_are_rate_limited_after_multiple_failures(): void
+    {
+        Mail::fake();
+
+        $component = Volt::test('pages.auth.login')
+            ->set('view', 'register')
+            ->set('name', 'Rate Limit User')
+            ->set('register_email', 'rate-limit@example.com')
+            ->set('register_password', 'password')
+            ->set('register_password_confirmation', 'password');
+
+        $component->call('register')
+            ->assertSet('showVerificationModal', true)
+            ->assertNoRedirect();
+
+        $otpCode = null;
+        Mail::assertSent(VerificationCodeMail::class, function (VerificationCodeMail $mail) use (&$otpCode) {
+            $otpCode = $mail->code;
+
+            return $mail->hasTo('rate-limit@example.com');
+        });
+
+        $wrongCode = $otpCode === '000000' ? '999999' : '000000';
+
+        for ($attempt = 0; $attempt < 3; $attempt++) {
+            $component->set('verification_code_input', $wrongCode)
+                ->call('verifyOtp')
+                ->assertHasErrors(['verification_code_input']);
+        }
+
+        $component->set('verification_code_input', (string) $otpCode)
+            ->call('verifyOtp')
+            ->assertHasErrors(['verification_code_input'])
+            ->assertNoRedirect();
+
+        $this->assertGuest();
+        $this->assertDatabaseMissing('users', ['email' => 'rate-limit@example.com']);
+    }
 }

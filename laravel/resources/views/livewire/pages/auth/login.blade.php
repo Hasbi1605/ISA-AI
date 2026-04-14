@@ -4,9 +4,11 @@ use App\Livewire\Forms\LoginForm;
 use App\Models\User;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Facades\Password;
+use Illuminate\Support\Facades\RateLimiter;
 use Illuminate\Support\Facades\Session;
 use Illuminate\Support\Str;
 use Illuminate\Validation\Rules;
@@ -34,8 +36,6 @@ new #[Layout('layouts.auth-canvas')] class extends Component
     public string $verification_code_input = '';
     public ?string $pendingRegistrationToken = null;
 
-    protected int $pendingRegistrationTtlMinutes = 60;
-
     protected function pendingRegistrationKey(string $token): string
     {
         return 'pending_registration:'.$token;
@@ -46,10 +46,41 @@ new #[Layout('layouts.auth-canvas')] class extends Component
         return 'pending_registration_email:'.Str::lower($email);
     }
 
+    protected function otpRateLimitKey(?string $token = null): ?string
+    {
+        $token ??= $this->pendingRegistrationToken;
+
+        if (! $token) {
+            return null;
+        }
+
+        return 'otp_registration:'.$token.'|'.request()->ip();
+    }
+
+    protected function pendingRegistrationTtlMinutes(): int
+    {
+        return max(1, (int) config('auth.otp_registration.ttl_minutes', 60));
+    }
+
+    protected function otpMaxAttempts(): int
+    {
+        return max(1, (int) config('auth.otp_registration.max_attempts', 3));
+    }
+
+    protected function otpDecaySeconds(): int
+    {
+        return max(1, (int) config('auth.otp_registration.decay_seconds', 600));
+    }
+
     protected function clearPendingRegistration(?string $token = null, ?string $email = null): void
     {
         if ($token) {
             Cache::forget($this->pendingRegistrationKey($token));
+
+            $otpRateLimitKey = $this->otpRateLimitKey($token);
+            if ($otpRateLimitKey) {
+                RateLimiter::clear($otpRateLimitKey);
+            }
         }
 
         if ($email) {
@@ -146,18 +177,20 @@ new #[Layout('layouts.auth-canvas')] class extends Component
         $plainCode = sprintf('%06d', random_int(0, 999999));
         $pendingToken = (string) Str::uuid();
 
+        $ttlMinutes = $this->pendingRegistrationTtlMinutes();
+
         Cache::put($this->pendingRegistrationKey($pendingToken), [
             'name' => $validated['name'],
             'email' => $registrationEmail,
             'password' => Hash::make($validated['register_password']),
             'code_hash' => hash('sha256', $plainCode),
-            'expires_at' => now()->addMinutes($this->pendingRegistrationTtlMinutes)->getTimestamp(),
-        ], now()->addMinutes($this->pendingRegistrationTtlMinutes));
+            'expires_at' => now()->addMinutes($ttlMinutes)->getTimestamp(),
+        ], now()->addMinutes($ttlMinutes));
 
         Cache::put(
             $this->pendingRegistrationEmailKey($registrationEmail),
             $pendingToken,
-            now()->addMinutes($this->pendingRegistrationTtlMinutes)
+            now()->addMinutes($ttlMinutes)
         );
 
         Mail::to($registrationEmail)->send(new \App\Mail\VerificationCodeMail($plainCode));
@@ -200,6 +233,14 @@ new #[Layout('layouts.auth-canvas')] class extends Component
             return;
         }
 
+        $otpRateLimitKey = $this->otpRateLimitKey();
+        if ($otpRateLimitKey && RateLimiter::tooManyAttempts($otpRateLimitKey, $this->otpMaxAttempts())) {
+            $seconds = RateLimiter::availableIn($otpRateLimitKey);
+            $this->addError('verification_code_input', 'Terlalu banyak percobaan OTP. Coba lagi dalam '.ceil($seconds / 60).' menit.');
+
+            return;
+        }
+
         $pending = Cache::get($this->pendingRegistrationKey($this->pendingRegistrationToken));
 
         if (! is_array($pending)) {
@@ -219,6 +260,10 @@ new #[Layout('layouts.auth-canvas')] class extends Component
         $providedCodeHash = hash('sha256', $this->verification_code_input);
 
         if (! hash_equals((string) ($pending['code_hash'] ?? ''), $providedCodeHash)) {
+            if ($otpRateLimitKey) {
+                RateLimiter::hit($otpRateLimitKey, $this->otpDecaySeconds());
+            }
+
             $this->addError('verification_code_input', 'Kode verifikasi tidak valid.');
 
             return;
@@ -226,25 +271,39 @@ new #[Layout('layouts.auth-canvas')] class extends Component
 
         $email = (string) ($pending['email'] ?? '');
 
-        $legacyUnverifiedUser = User::where('email', $email)
-            ->whereNull('email_verified_at')
-            ->first();
+        try {
+            $user = DB::transaction(function () use ($email, $pending) {
+                $legacyUnverifiedUser = User::where('email', $email)
+                    ->whereNull('email_verified_at')
+                    ->first();
 
-        if ($legacyUnverifiedUser) {
-            $legacyUnverifiedUser->delete();
+                if ($legacyUnverifiedUser) {
+                    $legacyUnverifiedUser->delete();
+                }
+
+                $user = User::create([
+                    'name' => (string) ($pending['name'] ?? ''),
+                    'email' => $email,
+                    'password' => (string) ($pending['password'] ?? ''),
+                    'verification_code' => null,
+                    'verification_code_expires_at' => null,
+                ]);
+
+                $user->forceFill([
+                    'email_verified_at' => now(),
+                ])->save();
+
+                return $user;
+            });
+        } catch (\Throwable $e) {
+            $this->addError('verification_code_input', 'Terjadi kendala saat menyelesaikan pendaftaran. Silakan coba lagi.');
+
+            return;
         }
 
-        $user = User::create([
-            'name' => (string) ($pending['name'] ?? ''),
-            'email' => $email,
-            'password' => (string) ($pending['password'] ?? ''),
-            'verification_code' => null,
-            'verification_code_expires_at' => null,
-        ]);
-
-        $user->forceFill([
-            'email_verified_at' => now(),
-        ])->save();
+        if ($otpRateLimitKey) {
+            RateLimiter::clear($otpRateLimitKey);
+        }
 
         Auth::login($user);
 

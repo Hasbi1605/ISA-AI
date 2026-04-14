@@ -112,4 +112,10 @@ return [
 
     'password_timeout' => env('AUTH_PASSWORD_TIMEOUT', 10800),
 
+    'otp_registration' => [
+        'ttl_minutes' => env('AUTH_OTP_REGISTRATION_TTL_MINUTES', 60),
+        'max_attempts' => env('AUTH_OTP_REGISTRATION_MAX_ATTEMPTS', 3),
+        'decay_seconds' => env('AUTH_OTP_REGISTRATION_DECAY_SECONDS', 600),
+    ],
+
 ];
