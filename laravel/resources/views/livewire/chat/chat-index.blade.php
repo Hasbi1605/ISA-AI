@@ -1,4 +1,5 @@
 <div x-data="{ 
+        darkMode: localStorage.getItem('theme') === 'dark' || (!('theme' in localStorage) && window.matchMedia('(prefers-color-scheme: dark)').matches),
         showLeftSidebar: true,
         showRightSidebar: true,
         isDraggingFile: false,
@@ -161,8 +162,8 @@
      x-on:dragover.window.prevent="onDragOver($event)"
      x-on:dragleave.window.prevent="onDragLeave($event)"
      x-on:drop.window.prevent="onDropFile($event)"
-     x-init="initChatBehavior(); if(promptDraft) { setTimeout(() => submitPrompt(), 100); }"
-     class="flex h-screen w-full overflow-hidden text-stone-800 font-sans transition-colors duration-300 relative ista-display-sans bg-stone-50/50" style="background-image: url('{{ asset('images/ista/dashboard-grid.png') }}'); background-size: 8px 8px;"
+     x-init="initChatBehavior(); $watch('darkMode', val => { localStorage.setItem('theme', val ? 'dark' : 'light'); document.documentElement.classList.toggle('dark', val); }); document.documentElement.classList.toggle('dark', darkMode); if(promptDraft) { setTimeout(() => submitPrompt(), 100); }"
+     class="flex h-screen w-full overflow-hidden text-stone-800 dark:text-gray-100 font-sans transition-colors duration-300 relative ista-display-sans bg-stone-50/50 dark:bg-gray-900" style="background-image: url('{{ asset('images/ista/dashboard-grid.png') }}'); background-size: 8px 8px;"
     @php
         $uiIcons = [
             'historyLight' => asset('images/icons/history-light.svg'),
@@ -184,7 +185,7 @@
     <!-- LEFT SIDEBAR: Chat History -->
     <aside 
         :class="showLeftSidebar ? 'w-[288px] opacity-100 translate-x-0 border-r border-stone-200/60 dark:border-[#1E293B]' : 'w-0 opacity-0 -translate-x-3 border-r border-transparent pointer-events-none'"
-        class="h-full flex-shrink-0 overflow-hidden bg-white/60 backdrop-blur-[10px] flex flex-col z-10 transform-gpu will-change-[width,transform,opacity] transition-[width,transform,opacity,border-color] duration-500 ease-[cubic-bezier(0.22,1,0.36,1)]">
+        class="h-full flex-shrink-0 overflow-hidden bg-white/60 dark:bg-gray-900/90 backdrop-blur-[10px] flex flex-col z-10 transform-gpu will-change-[width,transform,opacity] transition-[width,transform,opacity,border-color] duration-500 ease-[cubic-bezier(0.22,1,0.36,1)]">
         
         <!-- Kembali ke Beranda Button -->
         <div class="px-4 pb-2 pt-3">
@@ -199,7 +200,7 @@
         <!-- New Chat Button -->
         <div class="p-4 pt-2 pb-5">
             <button wire:click="startNewChat" class="w-full flex items-center justify-start px-4 py-2.5 rounded-lg border border-stone-200/60 dark:border-[#334155] dark:bg-transparent bg-white hover:bg-gray-50 dark:hover:bg-white/5 font-medium text-[13px] text-gray-700 dark:text-gray-200 transition-all duration-200 shadow-sm">
-                <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 mr-2 text-[#64748B] dark:text-[#CBD5E1]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 mr-2 text-[#64748B] dark:text-gray-300" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M12 5v14m-7-7h14" />
                 </svg>
                 New Chat
@@ -219,7 +220,7 @@
                     @foreach($visibleChats as $conversation)
                         <li class="group relative">
                             <button wire:click="loadConversation({{ $conversation->id }})" 
-                               class="w-full text-left px-3 py-2 rounded-md flex items-center transition-colors duration-200 {{ $currentConversationId == $conversation->id ? 'bg-white/80 shadow-sm border border-stone-200 text-stone-800 dark:text-[#F8FAFC] font-medium' : 'hover:bg-black/5 dark:hover:bg-white/5 text-stone-700 dark:text-[#CBD5E1]' }}">
+                               class="w-full text-left px-3 py-2 rounded-md flex items-center transition-colors duration-200 {{ $currentConversationId == $conversation->id ? 'bg-white/80 shadow-sm border border-stone-200 text-stone-800 dark:text-gray-100 font-medium' : 'hover:bg-black/5 dark:hover:bg-white/5 text-stone-700 dark:text-gray-300' }}">
                                <!-- Chat icon -->
                                          <img src="{{ $uiIcons['historyLight'] }}" alt="" class="h-4 w-4 mr-2.5 flex-shrink-0 dark:hidden" />
                                          <img src="{{ $uiIcons['historyDark'] }}" alt="" class="h-4 w-4 mr-2.5 flex-shrink-0 hidden dark:block" />
@@ -251,7 +252,7 @@
                         @foreach($olderChats as $conversation)
                             <li class="group relative">
                                 <button wire:click="loadConversation({{ $conversation->id }})" 
-                                   class="w-full text-left px-3 py-2 rounded-md flex items-center transition-colors duration-200 {{ $currentConversationId == $conversation->id ? 'bg-white/80 shadow-sm border border-stone-200 text-stone-800 dark:text-[#F8FAFC] font-medium' : 'hover:bg-black/5 dark:hover:bg-white/5 text-stone-700 dark:text-[#CBD5E1]' }}">
+                                   class="w-full text-left px-3 py-2 rounded-md flex items-center transition-colors duration-200 {{ $currentConversationId == $conversation->id ? 'bg-white/80 shadow-sm border border-stone-200 text-stone-800 dark:text-gray-100 font-medium' : 'hover:bg-black/5 dark:hover:bg-white/5 text-stone-700 dark:text-gray-300' }}">
                                     <!-- Chat icon -->
                                     <img src="{{ $uiIcons['historyLight'] }}" alt="" class="h-4 w-4 mr-2.5 flex-shrink-0 dark:hidden" />
                                     <img src="{{ $uiIcons['historyDark'] }}" alt="" class="h-4 w-4 mr-2.5 flex-shrink-0 hidden dark:block" />
@@ -297,7 +298,7 @@
         <div class="h-[61px] flex-shrink-0 flex items-center justify-between px-6 z-20 border-b border-stone-200/60/70 dark:border-[#1E293B]/70 backdrop-blur-sm">
             <!-- Left toggler and title -->
             <div class="flex items-center gap-4">
-                <button @click="showLeftSidebar = !showLeftSidebar" class="p-2 rounded-[10px] hover:bg-[#F1F5F9] dark:hover:bg-[#1D293D] transition-colors">
+                <button @click="showLeftSidebar = !showLeftSidebar" class="p-2 rounded-[10px] hover:bg-[#F1F5F9] dark:hover:bg-gray-800 transition-colors">
                     <img src="{{ $uiIcons['collapseLeftLight'] }}" alt="" class="h-5 w-5 dark:hidden transition-transform duration-300 ease-in-out" :class="showLeftSidebar ? 'rotate-0' : 'rotate-180'" />
                     <img src="{{ $uiIcons['collapseLeftDark'] }}" alt="" class="h-5 w-5 hidden dark:block transition-transform duration-300 ease-in-out" :class="showLeftSidebar ? 'rotate-0' : 'rotate-180'" />
                 </button>
@@ -307,16 +308,16 @@
             <!-- Right toggles -->
             <div class="flex items-center gap-3">
                 <!-- Theme Toggle Button -->
-                <button @click="darkMode = !darkMode" class="p-2 rounded-[10px] hover:bg-[#F1F5F9] dark:hover:bg-[#1D293D] transition-colors">
-                    <svg x-show="!darkMode" xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 text-[#64748B]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <button @click="darkMode = !darkMode" class="p-2 rounded-[10px] hover:bg-[#F1F5F9] dark:hover:bg-gray-800 transition-colors">
+                    <svg x-show="darkMode === false" xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 text-[#64748B]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M12 3v2.5M12 18.5V21M4.9 4.9l1.8 1.8M17.3 17.3l1.8 1.8M3 12h2.5M18.5 12H21M4.9 19.1l1.8-1.8M17.3 6.7l1.8-1.8M12 16a4 4 0 100-8 4 4 0 000 8z" />
                     </svg>
-                    <svg x-show="darkMode" xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 text-[#CBD5E1]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <svg x-show="darkMode === true" xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 text-gray-300" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M21 12.8A9 9 0 1111.2 3a7 7 0 009.8 9.8z" />
                     </svg>
                 </button>
 
-                <button @click="showRightSidebar = !showRightSidebar" class="p-2 rounded-[10px] hover:bg-[#F1F5F9] dark:hover:bg-[#1D293D] transition-colors">
+                <button @click="showRightSidebar = !showRightSidebar" class="p-2 rounded-[10px] hover:bg-[#F1F5F9] dark:hover:bg-gray-800 transition-colors">
                     <img src="{{ $uiIcons['collapseRightLight'] }}" alt="" class="h-5 w-5 dark:hidden transition-transform duration-300 ease-in-out" :class="showRightSidebar ? 'rotate-0' : 'rotate-180'" />
                     <img src="{{ $uiIcons['collapseRightDark'] }}" alt="" class="h-5 w-5 hidden dark:block transition-transform duration-300 ease-in-out" :class="showRightSidebar ? 'rotate-0' : 'rotate-180'" />
                 </button>
@@ -356,7 +357,7 @@
                 @endphp
                 <div class="flex {{ $isUserMessage ? 'justify-end' : 'justify-start' }}">
                     <div class="w-full sm:max-w-3xl flex items-start gap-4 px-2 sm:px-8 {{ $isUserMessage ? 'flex-row-reverse' : '' }}">
-                        <div class="shrink-0 h-8 w-8 rounded-full flex items-center justify-center {{ $message['role'] == 'user' ? 'bg-[#E2E8F0] dark:bg-[#1D293D] text-[#62748E] dark:text-[#90A1B9]' : 'bg-white border border-stone-200 shadow-sm p-1' }}">
+                        <div class="shrink-0 h-8 w-8 rounded-full flex items-center justify-center {{ $message['role'] == 'user' ? 'bg-[#E2E8F0] dark:bg-gray-200 text-[#62748E] dark:text-gray-100' : 'bg-white border border-stone-200 shadow-sm p-1' }}">
                             @if($message['role'] == 'user')
                                 <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M16 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2m12-10a4 4 0 11-8 0 4 4 0 018 0z" />
@@ -390,7 +391,7 @@
                                     <div 
                                         wire:ignore
                                         wire:key="msg-typing-{{ $message['id'] }}"
-                                        class="rounded-xl bg-white/80 backdrop-blur-sm dark:bg-white/80 border border-stone-200/60 dark:border-[#1D293D] px-4 py-3 text-[14.5px] leading-relaxed text-stone-700 dark:text-[#CAD5E2] max-w-[656px] prose dark:prose-invert prose-p:my-1 prose-headings:my-2 prose-ul:my-1 prose-li:my-0 prose-li:marker:text-stone-800 dark:prose-li:marker:text-[#F8FAFC] pb-1"
+                                        class="rounded-xl bg-white/80 backdrop-blur-sm dark:bg-gray-800 border border-stone-200/60 dark:border-gray-800 px-4 py-3 text-[14.5px] leading-relaxed text-stone-700 dark:text-gray-100 max-w-[656px] prose prose-p:my-1 prose-headings:my-2 prose-ul:my-1 prose-li:my-0 prose-li:marker:text-stone-800 dark:prose-li:marker:text-gray-100 pb-1"
                                         x-data="{ 
                                             content: @js((string) $assistantHtml), 
                                             displayedContent: '', 
@@ -431,13 +432,13 @@
                                 @else
                                     <div 
                                         wire:key="msg-static-{{ $message['id'] }}"
-                                        class="rounded-xl bg-white/80 backdrop-blur-sm dark:bg-white/80 border border-stone-200/60 dark:border-[#1D293D] px-4 py-3 text-[14.5px] leading-relaxed text-stone-700 dark:text-[#CAD5E2] max-w-[656px] prose dark:prose-invert prose-p:my-1 prose-headings:my-2 prose-ul:my-1 prose-li:my-0 prose-li:marker:text-stone-800 dark:prose-li:marker:text-[#F8FAFC] pb-1"
+                                        class="rounded-xl bg-white/80 backdrop-blur-sm dark:bg-gray-800 border border-stone-200/60 dark:border-gray-800 px-4 py-3 text-[14.5px] leading-relaxed text-stone-700 dark:text-gray-100 max-w-[656px] prose prose-p:my-1 prose-headings:my-2 prose-ul:my-1 prose-li:my-0 prose-li:marker:text-stone-800 dark:prose-li:marker:text-gray-100 pb-1"
                                         x-html="@js((string) $assistantHtml)"
                                     >
                                     </div>
                                 @endif
                             @else
-                                <div class="text-[14.5px] leading-relaxed text-stone-700 dark:text-[#CAD5E2] max-w-[656px]">
+                                <div class="text-[14.5px] leading-relaxed text-stone-700 dark:text-gray-100 max-w-[656px]">
                                     <p class="whitespace-pre-wrap">{{ $message['content'] }}</p>
                                 </div>
                             @endif
@@ -449,7 +450,7 @@
             <template x-if="optimisticUserMessage">
                 <div class="flex justify-end">
                     <div class="w-full sm:max-w-3xl flex items-start gap-4 px-2 sm:px-8 flex-row-reverse">
-                        <div class="shrink-0 h-8 w-8 rounded-full flex items-center justify-center bg-[#E2E8F0] dark:bg-[#1D293D] text-[#62748E] dark:text-[#90A1B9]">
+                        <div class="shrink-0 h-8 w-8 rounded-full flex items-center justify-center bg-[#E2E8F0] dark:bg-gray-200 text-[#62748E] dark:text-gray-100">
                             <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M16 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2m12-10a4 4 0 11-8 0 4 4 0 018 0z" />
                             </svg>
@@ -458,7 +459,7 @@
                             <div class="flex items-center gap-2 mb-1 justify-end">
                                 <span class="text-[13px] font-bold text-stone-800 dark:text-[#F8FAFC]">You</span>
                             </div>
-                            <div class="text-[14.5px] leading-relaxed text-stone-700 dark:text-[#CAD5E2] max-w-[656px]">
+                            <div class="text-[14.5px] leading-relaxed text-stone-700 dark:text-gray-100 max-w-[656px]">
                                 <p class="whitespace-pre-wrap" x-text="optimisticUserMessage"></p>
                             </div>
                         </div>
@@ -487,7 +488,7 @@
                              <span class="text-[13px] font-bold text-stone-800 dark:text-[#F8FAFC]">ISTA AI</span>
                              <span x-show="modelName" class="text-[10px] bg-white/80 shadow-sm border border-stone-200 px-1.5 py-0.5 rounded text-gray-600 dark:text-gray-300" x-text="modelName"></span>
                          </div>
-                         <div class="rounded-xl bg-white/80 backdrop-blur-sm dark:bg-white/80 border border-stone-200/60 dark:border-[#1D293D] text-[14.5px] leading-relaxed text-stone-700 dark:text-[#CAD5E2]"
+                         <div class="rounded-xl bg-white/80 backdrop-blur-sm dark:bg-gray-800 border border-stone-200/60 dark:border-gray-800 text-[14.5px] leading-relaxed text-stone-700 dark:text-gray-100"
                               :class="text === '' ? 'inline-flex items-center px-4 py-3 w-auto' : 'px-4 py-3 w-full max-w-[656px]'">
                              <div x-show="text === ''" class="flex space-x-1.5 py-1">
                                 <div class="h-2 w-2 bg-gray-400 dark:bg-[#64748B] rounded-full animate-bounce"></div>
@@ -513,7 +514,7 @@
                 accept=".pdf,.docx,.xlsx"
                 class="hidden"
             >
-            <form x-on:submit.prevent="submitPrompt($event)" class="chat-form max-w-3xl mx-auto relative rounded-xl shadow-sm bg-white dark:bg-white/80 border border-stone-200/60 dark:border-[#1E293B] transition-colors">
+            <form x-on:submit.prevent="submitPrompt($event)" class="chat-form max-w-3xl mx-auto relative rounded-xl shadow-sm bg-white dark:bg-gray-800 border border-stone-200/60 dark:border-gray-700 transition-colors">
                 <div class="flex flex-col w-full">
                     <div wire:loading.flex wire:target="chatAttachment" class="px-5 pt-4 items-center gap-2 text-[12px] text-ista-primary dark:text-[#8E81FF]">
                         <span class="h-2 w-2 rounded-full bg-current animate-ping"></span>
@@ -530,7 +531,7 @@
                                 @php
                                     $fileExt = $doc->extension ?? strtolower(pathinfo($doc->original_name, PATHINFO_EXTENSION));
                                 @endphp
-                                <span class="inline-flex items-center gap-2 bg-[#E2E8F0] dark:bg-[#1D293D] text-[#314158] dark:text-[#CAD5E2] rounded-2xl px-4 py-2 text-[14px]">
+                                <span class="inline-flex items-center gap-2 bg-[#E2E8F0] dark:bg-gray-800 text-[#314158] dark:text-gray-100 rounded-2xl px-4 py-2 text-[14px]">
                                     @if($fileExt === 'pdf')
                                         <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 text-[#FF2056]" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M4 4a2 2 0 012-2h4.586A2 2 0 0112 2.586L15.414 6A2 2 0 0116 7.414V16a2 2 0 01-2 2H6a2 2 0 01-2-2V4zm2 6a1 1 0 011-1h6a1 1 0 110 2H7a1 1 0 01-1-1zm1 3a1 1 0 100 2h6a1 1 0 100-2H7z" clip-rule="evenodd"></path></svg>
                                     @elseif($fileExt === 'xlsx')
@@ -543,7 +544,7 @@
                                         </svg>
                                     @endif
                                     <span class="max-w-[180px] truncate">{{ $doc->original_name }}</span>
-                                    <button type="button" wire:click="removeConversationDocument({{ $doc->id }})" class="text-[#7C8DA8] hover:text-[#314158] dark:hover:text-white" title="Remove">
+                                    <button type="button" wire:click="removeConversationDocument({{ $doc->id }})" class="text-[#7C8DA8] hover:text-[#314158] dark:text-gray-300 dark:hover:text-white" title="Remove">
                                         <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
                                         </svg>
@@ -585,7 +586,7 @@
 
                             <!-- Action buttons (kanan) -->
                             <div class="flex items-center gap-2">
-                                <button type="button" @click="openAttachmentPicker()" wire:loading.attr="disabled" wire:target="chatAttachment" class="h-[34px] w-[34px] rounded-full transition-colors flex items-center justify-center bg-transparent hover:bg-[#F1F5F9] dark:hover:bg-[#1D293D] disabled:opacity-60" title="Attach file">
+                                <button type="button" @click="openAttachmentPicker()" wire:loading.attr="disabled" wire:target="chatAttachment" class="h-[34px] w-[34px] rounded-full transition-colors flex items-center justify-center bg-transparent hover:bg-[#F1F5F9] dark:hover:bg-gray-800 disabled:opacity-60" title="Attach file">
                                     <img src="{{ $uiIcons['uploadLight'] }}" alt="" class="h-[18px] w-[18px] dark:hidden" />
                                     <img src="{{ $uiIcons['uploadDark'] }}" alt="" class="h-[18px] w-[18px] hidden dark:block" />
                                 </button>
@@ -621,7 +622,7 @@
     <!-- RIGHT SIDEBAR: Documents -->
     <aside 
         :class="showRightSidebar ? 'w-[288px] opacity-100 translate-x-0 border-l border-stone-200/60 dark:border-[#1E293B]' : 'w-0 opacity-0 translate-x-3 border-l border-transparent pointer-events-none'"
-        class="h-full flex-shrink-0 overflow-hidden bg-white/60 backdrop-blur-[10px] flex flex-col z-10 transform-gpu will-change-[width,transform,opacity] transition-[width,transform,opacity,border-color] duration-500 ease-[cubic-bezier(0.22,1,0.36,1)]">
+        class="h-full flex-shrink-0 overflow-hidden bg-white/60 dark:bg-gray-900/90 backdrop-blur-[10px] flex flex-col z-10 transform-gpu will-change-[width,transform,opacity] transition-[width,transform,opacity,border-color] duration-500 ease-[cubic-bezier(0.22,1,0.36,1)]">
         
         <div class="px-4 pt-5 pb-0">
             <span class="inline-flex items-center font-medium text-[13px] text-gray-700 dark:text-gray-200">
@@ -638,8 +639,8 @@
                      $selectedInAvailableCount = count(array_intersect($selectedIds, $readyDocumentIds));
                      $allDocumentsSelected = count($readyDocumentIds) > 0 && $selectedInAvailableCount === count($readyDocumentIds);
                  @endphp
-                 <div class="flex items-center flex-nowrap gap-0.5 mb-4 px-1 pb-3 border-b border-stone-200/60/70 dark:border-[#1D293D]/70">
-                     <button type="button" wire:click="toggleSelectAllDocuments" aria-pressed="{{ $allDocumentsSelected ? 'true' : 'false' }}" class="inline-flex items-center gap-1.5 text-[#62748E] dark:text-[#90A1B9] hover:text-[#314158] dark:hover:text-white text-[11px] leading-[1.1] font-semibold px-1.5 py-1 rounded-md hover:bg-[#F1F5F9] dark:hover:bg-[#1D293D] transition-colors whitespace-nowrap">
+                 <div class="flex items-center flex-nowrap gap-0.5 mb-4 px-1 pb-3 border-b border-stone-200/60/70 dark:border-gray-800/70">
+                     <button type="button" wire:click="toggleSelectAllDocuments" aria-pressed="{{ $allDocumentsSelected ? 'true' : 'false' }}" class="inline-flex items-center gap-1.5 text-[#62748E] dark:text-[#90A1B9] hover:text-[#314158] dark:hover:text-white text-[11px] leading-[1.1] font-semibold px-1.5 py-1 rounded-md hover:bg-[#F1F5F9] dark:hover:bg-gray-800 transition-colors whitespace-nowrap">
                          @if($allDocumentsSelected)
                              <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 text-ista-primary" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                                  <rect x="3" y="3" width="18" height="18" rx="4" stroke-width="2"></rect>
@@ -680,7 +681,7 @@
                                  $size = $doc->formatted_size ?? 'Ukuran tidak tersedia';
                              @endphp
                              <label class="flex items-center gap-3 h-[62px] px-3 rounded-lg border cursor-pointer transition-all duration-200
-                                 {{ $isSelected ? 'bg-white/95 dark:bg-[#1D293D] border-ista-primary/40 dark:border-ista-primary/40 shadow-[0_1px_4px_rgba(97,95,255,0.25)]' : 'bg-white dark:bg-transparent border-stone-200/60 dark:border-[#1E293B] hover:border-[#CBD5E1] dark:hover:border-[#334155]' }} {{ $isLoading ? 'animate-pulse' : '' }}">
+                                 {{ $isSelected ? 'bg-white/95 dark:bg-gray-800 border-ista-primary/40 dark:border-ista-primary/40 shadow-[0_1px_4px_rgba(97,95,255,0.25)]' : 'bg-white dark:bg-gray-800 border-stone-200/60 dark:border-gray-700 hover:border-[#CBD5E1] dark:hover:border-gray-600' }} {{ $isLoading ? 'animate-pulse' : '' }}">
                                  @if($isLoading)
                                      <div class="w-3.5 h-3.5 rounded-full border-2 border-[#CBD5E1] dark:border-[#334155] border-t-[#615FFF] dark:border-t-[#8E81FF] animate-spin"></div>
                                  @else
@@ -688,7 +689,7 @@
                                          class="rounded text-ista-primary focus:ring-ista-primary bg-white dark:bg-transparent border-[#CBD5E1] dark:border-[#64748B] w-3.5 h-3.5 cursor-pointer aspect-square"
                                          {{ $isReady ? '' : 'disabled' }}>
                                  @endif
-                                 <div class="h-[34px] w-[34px] rounded-lg bg-white/80 backdrop-blur-sm dark:bg-white/80 border border-stone-200/60 dark:border-[#334155] flex items-center justify-center">
+                                 <div class="h-[34px] w-[34px] rounded-lg bg-white/80 backdrop-blur-sm dark:bg-gray-800 border border-stone-200/60 dark:border-[#334155] flex items-center justify-center">
                                      @if($ext === 'pdf')
                                          <svg class="w-[18px] h-[18px] text-[#FF2056] shrink-0" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M4 4a2 2 0 012-2h4.586A2 2 0 0112 2.586L15.414 6A2 2 0 0116 7.414V16a2 2 0 01-2 2H6a2 2 0 01-2-2V4zm2 6a1 1 0 011-1h6a1 1 0 110 2H7a1 1 0 01-1-1zm1 3a1 1 0 100 2h6a1 1 0 100-2H7z" clip-rule="evenodd"></path></svg>
                                      @elseif($ext === 'txt')
