@@ -2,10 +2,13 @@
 
 namespace Tests\Feature\Auth;
 
+use App\Mail\VerificationCodeMail;
 use App\Models\User;
+use Carbon\Carbon;
 use Illuminate\Auth\Events\Verified;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Event;
+use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Facades\URL;
 use Tests\TestCase;
 
@@ -91,5 +94,29 @@ class EmailVerificationTest extends TestCase
 
         $this->assertFalse($user->fresh()->hasVerifiedEmail());
         $response->assertForbidden();
+    }
+
+    public function test_send_email_verification_notification_uses_configured_otp_ttl(): void
+    {
+        Mail::fake();
+
+        config()->set('auth.otp_registration.ttl_minutes', 15);
+
+        Carbon::setTestNow(now()->startOfSecond());
+
+        try {
+            $user = User::factory()->unverified()->create();
+
+            $user->sendEmailVerificationNotification();
+            $user->refresh();
+
+            $this->assertNotNull($user->verification_code);
+            $this->assertNotNull($user->verification_code_expires_at);
+            $this->assertTrue(Carbon::parse($user->verification_code_expires_at)->equalTo(now()->addMinutes(15)));
+
+            Mail::assertSent(VerificationCodeMail::class, fn (VerificationCodeMail $mail) => $mail->hasTo($user->email));
+        } finally {
+            Carbon::setTestNow();
+        }
     }
 }

@@ -1,6 +1,7 @@
 <?php
 
 use App\Livewire\Forms\LoginForm;
+use App\Mail\VerificationCodeMail;
 use App\Models\User;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Cache;
@@ -23,18 +24,33 @@ new #[Layout('layouts.auth-canvas')] class extends Component
 
     // Register fields
     public string $name = '';
+
     public string $register_email = '';
+
     public string $register_password = '';
+
     public string $register_password_confirmation = '';
 
     // Forgot Password fields
     public string $forgot_email = '';
+
     public ?string $forgot_status = null;
 
     // OTP Verification Modal
     public bool $showVerificationModal = false;
+
     public string $verification_code_input = '';
+
     public ?string $pendingRegistrationToken = null;
+
+    public ?string $otp_status = null;
+
+    public function mount(): void
+    {
+        if (request()->query('view') === 'register') {
+            $this->view = 'register';
+        }
+    }
 
     protected function pendingRegistrationKey(string $token): string
     {
@@ -57,6 +73,17 @@ new #[Layout('layouts.auth-canvas')] class extends Component
         return 'otp_registration:'.$token.'|'.request()->ip();
     }
 
+    protected function otpResendRateLimitKey(?string $token = null): ?string
+    {
+        $token ??= $this->pendingRegistrationToken;
+
+        if (! $token) {
+            return null;
+        }
+
+        return 'otp_registration_resend:'.$token.'|'.request()->ip();
+    }
+
     protected function pendingRegistrationTtlMinutes(): int
     {
         return max(1, (int) config('auth.otp_registration.ttl_minutes', 60));
@@ -72,6 +99,11 @@ new #[Layout('layouts.auth-canvas')] class extends Component
         return max(1, (int) config('auth.otp_registration.decay_seconds', 600));
     }
 
+    protected function otpResendCooldownSeconds(): int
+    {
+        return max(1, (int) config('auth.otp_registration.resend_cooldown_seconds', 60));
+    }
+
     protected function clearPendingRegistration(?string $token = null, ?string $email = null): void
     {
         if ($token) {
@@ -80,6 +112,11 @@ new #[Layout('layouts.auth-canvas')] class extends Component
             $otpRateLimitKey = $this->otpRateLimitKey($token);
             if ($otpRateLimitKey) {
                 RateLimiter::clear($otpRateLimitKey);
+            }
+
+            $otpResendRateLimitKey = $this->otpResendRateLimitKey($token);
+            if ($otpResendRateLimitKey) {
+                RateLimiter::clear($otpResendRateLimitKey);
             }
         }
 
@@ -93,6 +130,7 @@ new #[Layout('layouts.auth-canvas')] class extends Component
         $this->view = $view;
         $this->resetErrorBag();
         $this->forgot_status = null;
+        $this->otp_status = null;
     }
 
     public function toggleRegister(): void
@@ -193,11 +231,65 @@ new #[Layout('layouts.auth-canvas')] class extends Component
             now()->addMinutes($ttlMinutes)
         );
 
-        Mail::to($registrationEmail)->send(new \App\Mail\VerificationCodeMail($plainCode));
+        Mail::to($registrationEmail)->send(new VerificationCodeMail($plainCode));
 
         $this->pendingRegistrationToken = $pendingToken;
         $this->showVerificationModal = true;
         $this->verification_code_input = '';
+        $this->otp_status = null;
+    }
+
+    public function resendOtp(): void
+    {
+        if (! $this->pendingRegistrationToken) {
+            $this->addError('verification_code_input', 'Sesi pendaftaran tidak ditemukan. Silakan daftar ulang.');
+
+            return;
+        }
+
+        $pending = Cache::get($this->pendingRegistrationKey($this->pendingRegistrationToken));
+
+        if (! is_array($pending)) {
+            $this->addError('verification_code_input', 'Sesi pendaftaran sudah berakhir. Silakan daftar ulang.');
+
+            return;
+        }
+
+        $otpResendRateLimitKey = $this->otpResendRateLimitKey();
+
+        if ($otpResendRateLimitKey && RateLimiter::tooManyAttempts($otpResendRateLimitKey, 1)) {
+            $seconds = RateLimiter::availableIn($otpResendRateLimitKey);
+            $this->addError('verification_code_input', 'Kode OTP sudah dikirim ulang. Coba lagi dalam '.$seconds.' detik.');
+
+            return;
+        }
+
+        $plainCode = sprintf('%06d', random_int(0, 999999));
+        $ttlMinutes = $this->pendingRegistrationTtlMinutes();
+        $email = (string) ($pending['email'] ?? '');
+
+        Cache::put($this->pendingRegistrationKey($this->pendingRegistrationToken), [
+            'name' => (string) ($pending['name'] ?? ''),
+            'email' => $email,
+            'password' => (string) ($pending['password'] ?? ''),
+            'code_hash' => hash('sha256', $plainCode),
+            'expires_at' => now()->addMinutes($ttlMinutes)->getTimestamp(),
+        ], now()->addMinutes($ttlMinutes));
+
+        Cache::put(
+            $this->pendingRegistrationEmailKey($email),
+            $this->pendingRegistrationToken,
+            now()->addMinutes($ttlMinutes)
+        );
+
+        Mail::to($email)->send(new VerificationCodeMail($plainCode));
+
+        if ($otpResendRateLimitKey) {
+            RateLimiter::hit($otpResendRateLimitKey, $this->otpResendCooldownSeconds());
+        }
+
+        $this->verification_code_input = '';
+        $this->otp_status = 'Kode OTP baru telah dikirim ke email Anda.';
     }
 
     public function cancelVerification(): void
@@ -216,6 +308,7 @@ new #[Layout('layouts.auth-canvas')] class extends Component
         $this->pendingRegistrationToken = null;
         $this->verification_code_input = '';
         $this->showVerificationModal = false;
+        $this->otp_status = null;
     }
 
     public function verifyOtp(): void
@@ -295,7 +388,7 @@ new #[Layout('layouts.auth-canvas')] class extends Component
 
                 return $user;
             });
-        } catch (\Throwable $e) {
+        } catch (Throwable $e) {
             $this->addError('verification_code_input', 'Terjadi kendala saat menyelesaikan pendaftaran. Silakan coba lagi.');
 
             return;
@@ -313,6 +406,7 @@ new #[Layout('layouts.auth-canvas')] class extends Component
         $this->pendingRegistrationToken = null;
         $this->verification_code_input = '';
         $this->showVerificationModal = false;
+        $this->otp_status = null;
 
         $this->redirectIntended(default: route('dashboard', absolute: false), navigate: true);
     }
@@ -396,6 +490,10 @@ new #[Layout('layouts.auth-canvas')] class extends Component
                 <h2 class="mb-2 text-center text-2xl font-bold text-stone-900">Verifikasi Email</h2>
                 <p class="mb-6 text-center text-sm text-stone-600">Kami mengirimkan kode 6 digit ke email Anda. Masukkan kode untuk menyelesaikan pendaftaran.</p>
 
+                @if($otp_status)
+                    <p class="mb-4 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-center text-xs font-medium text-emerald-700">{{ $otp_status }}</p>
+                @endif
+
                 <form wire:submit="verifyOtp">
                     <div
                         x-data="{
@@ -465,6 +563,17 @@ new #[Layout('layouts.auth-canvas')] class extends Component
                                 </svg>
                             </span>
                             <div class="absolute inset-0 z-0 -translate-x-[150%] skew-x-12 bg-gradient-to-r from-transparent via-white/40 to-transparent transition-transform duration-1000 ease-in-out group-hover:translate-x-[150%]"></div>
+                        </button>
+
+                        <button
+                            type="button"
+                            wire:click="resendOtp"
+                            wire:loading.attr="disabled"
+                            wire:target="resendOtp"
+                            class="mt-3 w-full rounded-xl border border-stone-300 bg-white px-4 py-3 text-sm font-semibold text-stone-700 transition-colors hover:border-stone-400 hover:text-stone-900 disabled:cursor-not-allowed disabled:opacity-60"
+                        >
+                            <span wire:loading.remove wire:target="resendOtp">Kirim Ulang OTP</span>
+                            <span wire:loading wire:target="resendOtp">Mengirim ulang...</span>
                         </button>
                     </div>
                 </form>

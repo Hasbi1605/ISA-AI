@@ -2,15 +2,18 @@
 
 namespace App\Models;
 
+use App\Mail\VerificationCodeMail;
 use App\Notifications\CustomResetPassword;
+use Database\Factories\UserFactory;
 use Illuminate\Contracts\Auth\MustVerifyEmail;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
+use Illuminate\Support\Facades\Mail;
 
 class User extends Authenticatable implements MustVerifyEmail
 {
-    /** @use HasFactory<\Database\Factories\UserFactory> */
+    /** @use HasFactory<UserFactory> */
     use HasFactory, Notifiable;
 
     /**
@@ -60,13 +63,14 @@ class User extends Authenticatable implements MustVerifyEmail
     public function sendEmailVerificationNotification()
     {
         $plainCode = (string) random_int(100000, 999999);
+        $ttlMinutes = max(1, (int) config('auth.otp_registration.ttl_minutes', 60));
 
         $this->update([
             'verification_code' => hash('sha256', $plainCode),
-            'verification_code_expires_at' => now()->addMinutes(60),
+            'verification_code_expires_at' => now()->addMinutes($ttlMinutes),
         ]);
 
-        \Illuminate\Support\Facades\Mail::to($this->email)->send(new \App\Mail\VerificationCodeMail($plainCode));
+        Mail::to($this->email)->send(new VerificationCodeMail($plainCode));
     }
 
     public function sendPasswordResetNotification($token): void

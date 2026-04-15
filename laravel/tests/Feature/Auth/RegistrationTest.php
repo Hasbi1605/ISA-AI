@@ -21,8 +21,11 @@ class RegistrationTest extends TestCase
         $response = $this->get('/register');
 
         $response
+            ->assertRedirect('/login?view=register');
+
+        $this->get('/login?view=register')
             ->assertOk()
-            ->assertSeeVolt('pages.auth.register');
+            ->assertSeeVolt('pages.auth.login');
     }
 
     public function test_register_from_login_shows_verification_phase_without_creating_active_account(): void
@@ -165,5 +168,70 @@ class RegistrationTest extends TestCase
 
         $this->assertGuest();
         $this->assertDatabaseMissing('users', ['email' => 'rate-limit@example.com']);
+    }
+
+    public function test_resend_otp_replaces_code_and_latest_code_can_be_used_for_verification(): void
+    {
+        Mail::fake();
+
+        $component = Volt::test('pages.auth.login')
+            ->set('view', 'register')
+            ->set('name', 'Resend OTP User')
+            ->set('register_email', 'resend@example.com')
+            ->set('register_password', 'password')
+            ->set('register_password_confirmation', 'password');
+
+        $component->call('register')
+            ->assertSet('showVerificationModal', true)
+            ->assertNoRedirect();
+
+        $initialOtpCode = Mail::sent(VerificationCodeMail::class)->first()->code;
+
+        $component->call('resendOtp')
+            ->assertSet('otp_status', 'Kode OTP baru telah dikirim ke email Anda.');
+
+        Mail::assertSent(VerificationCodeMail::class, 2);
+
+        $resentOtpCode = Mail::sent(VerificationCodeMail::class)->last()->code;
+
+        $this->assertNotSame($initialOtpCode, $resentOtpCode);
+
+        $component->set('verification_code_input', (string) $initialOtpCode)
+            ->call('verifyOtp')
+            ->assertHasErrors(['verification_code_input'])
+            ->assertNoRedirect();
+
+        $component->set('verification_code_input', (string) $resentOtpCode)
+            ->call('verifyOtp')
+            ->assertRedirect(route('dashboard', absolute: false));
+
+        $this->assertAuthenticated();
+        $this->assertDatabaseHas('users', ['email' => 'resend@example.com']);
+    }
+
+    public function test_resend_otp_is_rate_limited_by_cooldown(): void
+    {
+        Mail::fake();
+
+        $component = Volt::test('pages.auth.login')
+            ->set('view', 'register')
+            ->set('name', 'Resend Cooldown User')
+            ->set('register_email', 'resend-cooldown@example.com')
+            ->set('register_password', 'password')
+            ->set('register_password_confirmation', 'password');
+
+        $component->call('register')
+            ->assertSet('showVerificationModal', true)
+            ->assertNoRedirect();
+
+        $component->call('resendOtp')
+            ->assertSet('otp_status', 'Kode OTP baru telah dikirim ke email Anda.');
+
+        $component->call('resendOtp')
+            ->assertHasErrors(['verification_code_input'])
+            ->assertNoRedirect();
+
+        Mail::assertSent(VerificationCodeMail::class, 2);
+        $this->assertGuest();
     }
 }
