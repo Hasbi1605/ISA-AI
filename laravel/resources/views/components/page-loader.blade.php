@@ -46,7 +46,7 @@
         border-top-color: #4f46e5; /* ISTA Primary Base */
         border-right-color: #4f46e5;
         opacity: 0.8;
-        animation: spin 1s cubic-bezier(0.68, -0.55, 0.265, 1.55) infinite;
+        animation: spin 1s linear infinite;
     }
     html.dark .loader-spinner, .dark .loader-spinner {
         border-top-color: #818cf8;
