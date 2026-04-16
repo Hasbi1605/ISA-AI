@@ -370,7 +370,7 @@
             @if(empty($messages))
                 <div class="h-full flex flex-col items-center justify-center text-center">
                     <div class="h-16 w-16 mb-6">
-                        <img src="{{ asset('images/ista/logo.png') }}" alt="ISTA AI" class="h-full w-full object-contain animate-float" />
+                        <img src="{{ asset('images/ista/logo.png') }}" alt="ISTA AI" class="h-full w-full object-contain" />
                     </div>
                     <h2 class="text-xl font-bold text-gray-900 dark:text-white mb-2">ISTA AI Assistant</h2>
                     <p class="text-gray-500 dark:text-[#94A3B8] text-[14px]">
