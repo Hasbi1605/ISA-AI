@@ -42,7 +42,7 @@ new class extends Component
         Hapus Akun
     </button>
 
-    <x-modal name="confirm-user-deletion" :show="$errors->isNotEmpty()" focusable>
+    <x-modal name="confirm-user-deletion" :show="$errors->isNotEmpty()" maxWidth="md" focusable>
         <form wire:submit="deleteUser" class="p-6 bg-[#fafaf9] rounded-2xl border border-white/40">
 
             <h2 class="text-lg font-bold text-stone-900">
