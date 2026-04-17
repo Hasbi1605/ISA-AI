@@ -562,13 +562,17 @@ def delete_document_vectors(filename: str):
 def search_relevant_chunks(query: str, filenames: List[str] = None, top_k: int = 5, user_id: str = None) -> Tuple[List[Dict], bool]:
     """
     Search for relevant document chunks based on query with optional reranking.
-    
+
+    Untuk multi-dokumen: setiap file dicari secara TERPISAH dengan kuota chunk
+    yang seimbang, sehingga semua dokumen terwakili sebelum reranking.
+    Ini mencegah 1 dokumen mendominasi hasil pencarian global.
+
     Args:
         query: User query string
         filenames: Optional list of filenames to filter by
-        top_k: Number of top chunks to return
+        top_k: Number of top chunks to return after reranking
         user_id: User ID for authorization filtering (required for security)
-    
+
     Returns:
         Tuple of (list of chunks with metadata, bool indicating success)
     """
@@ -584,84 +588,96 @@ def search_relevant_chunks(query: str, filenames: List[str] = None, top_k: int =
             persist_directory=CHROMA_PATH
         )
         
-        # Build filter - ALWAYS require user_id for security
-        if user_id is None:
-            logger.error("❌ Security: user_id is required for RAG search")
-            return [], False
-        
-        # Start with user_id filter
-        filter_dict = {"user_id": str(user_id)}
-        
-        # Add filename filter if provided
-        if filenames and len(filenames) > 0:
-            # Combine with user_id using $and
-            filename_filter = {"$or": [{"filename": fname} for fname in filenames]} if len(filenames) > 1 else {"filename": filenames[0]}
-            filter_dict = {"$and": [filter_dict, filename_filter]}
-            logger.info(f"🔍 RAG: Filtering by filenames: {filenames} for user_id: {user_id}")
+        user_filter = {"user_id": str(user_id)}
+        doc_candidates = int(os.getenv("LANGSEARCH_RERANK_DOC_CANDIDATES", "20"))
+
+        # ── Per-document balanced search untuk multi-dokumen ─────────────────
+        # Jika ada N dokumen → ambil setidaknya max(2, 20//N) chunk per dokumen
+        # agar setiap dokumen terwakili sebelum reranker memilih.
+        if filenames and len(filenames) > 1:
+            n_docs = len(filenames)
+            per_doc_k = max(2, doc_candidates // n_docs)
+            logger.info(
+                "🔍 RAG: Multi-dokumen (%d file) — mengambil %d chunk/dokumen untuk user_id: %s",
+                n_docs, per_doc_k, user_id,
+            )
+            all_docs: List = []
+            for fname in filenames:
+                f_filter = {"$and": [user_filter, {"filename": fname}]}
+                try:
+                    f_docs = vectorstore.similarity_search_with_score(query, k=per_doc_k, filter=f_filter)
+                    logger.info("   📄 %s → %d chunk ditemukan", fname, len(f_docs))
+                    all_docs.extend(f_docs)
+                except Exception as ferr:
+                    logger.warning("   ⚠️  Gagal cari chunk dari %s: %s", fname, ferr)
+            docs = all_docs
+
+        elif filenames and len(filenames) == 1:
+            # Single dokumen — pencarian standar
+            f_filter = {"$and": [user_filter, {"filename": filenames[0]}]}
+            logger.info("🔍 RAG: Filtering by filename: %s untuk user_id: %s", filenames[0], user_id)
+            docs = vectorstore.similarity_search_with_score(query, k=doc_candidates, filter=f_filter)
+
         else:
-            logger.info(f"🔍 RAG: Filtering by user_id: {user_id} (all user documents)")
-        
-        # Check if rerank is enabled
+            # Semua dokumen user
+            logger.info("🔍 RAG: Searching all documents untuk user_id: %s", user_id)
+            docs = vectorstore.similarity_search_with_score(query, k=doc_candidates, filter=user_filter)
+
+        if not docs:
+            logger.info("📚 RAG: Tidak ada chunk ditemukan")
+            return [], True
+
+        # ── Reranking ─────────────────────────────────────────────────────────
         langsearch_service = get_langsearch_service()
         rerank_enabled = os.getenv("LANGSEARCH_RERANK_ENABLED", "true").lower() == "true"
-        
-        if rerank_enabled:
-            # Get more candidates for reranking
-            doc_candidates = int(os.getenv("LANGSEARCH_RERANK_DOC_CANDIDATES", "20"))
-            # Search for more candidates than needed
-            docs = vectorstore.similarity_search_with_score(query, k=doc_candidates, filter=filter_dict)
-            
-            if len(docs) >= 2:
-                # Extract document contents for reranking
-                documents = [doc.page_content for doc, _ in docs]
-                
-                # Get rerank results
-                doc_top_n = int(os.getenv("LANGSEARCH_RERANK_DOC_TOP_N", str(top_k)))
-                rerank_results = langsearch_service.rerank_documents(
-                    query=query,
-                    documents=documents,
-                    top_n=doc_top_n,
-                    return_documents=False
+
+        if rerank_enabled and len(docs) >= 2:
+            documents = [doc.page_content for doc, _ in docs]
+            doc_top_n = int(os.getenv("LANGSEARCH_RERANK_DOC_TOP_N", str(top_k)))
+            rerank_results = langsearch_service.rerank_documents(
+                query=query,
+                documents=documents,
+                top_n=doc_top_n,
+                return_documents=False
+            )
+
+            if rerank_results:
+                reranked_chunks = []
+                for result in rerank_results:
+                    idx = result.get("index")
+                    if idx is not None and idx < len(docs):
+                        doc, vector_score = docs[idx]
+                        reranked_chunks.append({
+                            "content": doc.page_content,
+                            "score": float(vector_score),
+                            "rerank_score": float(result.get("relevance_score", 0)),
+                            "filename": doc.metadata.get("filename", "unknown"),
+                            "chunk_index": doc.metadata.get("chunk_index", 0),
+                            "embedding_model": doc.metadata.get("embedding_model", provider_name),
+                        })
+
+                from collections import Counter
+                dist = Counter(c["filename"] for c in reranked_chunks)
+                logger.info(
+                    "📚 RAG: Reranked %d chunks — distribusi: %s",
+                    len(reranked_chunks),
+                    ", ".join(f"{k}: {v} chunk" for k, v in dist.items()),
                 )
-                
-                if rerank_results:
-                    # Map rerank results back to original documents
-                    reranked_chunks = []
-                    for result in rerank_results:
-                        idx = result.get("index")
-                        if idx is not None and idx < len(docs):
-                            doc, vector_score = docs[idx]
-                            chunk_info = {
-                                "content": doc.page_content,
-                                "score": float(vector_score),  # Original vector score
-                                "rerank_score": float(result.get("relevance_score", 0)),  # Rerank score
-                                "filename": doc.metadata.get("filename", "unknown"),
-                                "chunk_index": doc.metadata.get("chunk_index", 0),
-                                "embedding_model": doc.metadata.get("embedding_model", provider_name)
-                            }
-                            reranked_chunks.append(chunk_info)
-                    
-                    logger.info(f"📚 RAG: Reranked {len(reranked_chunks)} chunks using LangSearch (%s)", _query_log_meta(query))
-                    return reranked_chunks[:top_k], True
-                else:
-                    logger.warning(f"⚠️ RAG: Rerank failed, falling back to vector search (%s)", _query_log_meta(query))
-        
-        # Fallback to standard vector search (or if rerank disabled)
-        # Use top_k from already fetched docs to avoid redundant query
-        fallback_docs = docs[:top_k] if len(docs) >= top_k else docs
-        
+                return reranked_chunks[:top_k], True
+            else:
+                logger.warning("⚠️ RAG: Rerank gagal, fallback ke vector search")
+
+        # Fallback: vector search saja (tanpa rerank)
         results = []
-        for doc, score in fallback_docs:
-            chunk_info = {
+        for doc, score in docs[:top_k]:
+            results.append({
                 "content": doc.page_content,
                 "score": float(score),
                 "filename": doc.metadata.get("filename", "unknown"),
                 "chunk_index": doc.metadata.get("chunk_index", 0),
-                "embedding_model": doc.metadata.get("embedding_model", provider_name)
-            }
-            results.append(chunk_info)
-        
-        logger.info("📚 RAG: Found %s relevant chunks (%s)", len(results), _query_log_meta(query))
+                "embedding_model": doc.metadata.get("embedding_model", provider_name),
+            })
+        logger.info("📚 RAG: Found %d chunks (vector search)", len(results))
         return results, True
         
     except Exception as e:
