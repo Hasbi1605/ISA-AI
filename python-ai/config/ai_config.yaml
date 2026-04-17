@@ -159,16 +159,20 @@ retrieval:
   # Sebelum vector search, LLM membuat jawaban hipotetis singkat dari query.
   # Jawaban hipotetis + query asli diembed bersama untuk retrieval yang lebih kaya.
   #
-  # mode: smart  → DIREKOMENDASIKAN — aktif otomatis hanya untuk query konseptual
-  #               (mengapa, bagaimana, apa hubungan, analisis, evaluasi, dst)
-  #               Skip otomatis untuk: rangkumkan, baca isi, apa isi, dst
-  # mode: always → Selalu aktif untuk semua query (+1-2 detik setiap query)
-  # mode: off    → Matikan sepenuhnya
+  # Untuk dokumen kantor/akademik: gunakan mode 'always' karena:
+  #   - Keakuratan > kecepatan untuk analisis dokumen
+  #   - User punya pola query beragam, tidak bisa diprediksi dengan keyword
+  #   - Timeout 3s: jika LLM lambat → fallback ke query asli (tanpa error)
+  #   - Actual overhead: ~300-600ms (bukan 2 detik, karena max_tokens=100)
+  #
+  # mode: always → DIREKOMENDASIKAN untuk dokumen kantor (+300-600ms, lebih akurat)
+  # mode: smart  → aktif hanya untuk pola konseptual tertentu (fragile)
+  # mode: off    → matikan sepenuhnya (tercepat, akurasi standar)
   hyde:
-    enabled: true    # aktif — mode smart akan filter sendiri kapan dijalankan
-    mode: smart      # 'smart' | 'always' | 'off'
-    max_tokens: 100  # panjang jawaban hipotetis (singkat = cepat)
-    timeout: 5       # detik — jika LLM timeout, skip HyDE tanpa error
+    enabled: true
+    mode: always     # 'always' | 'smart' | 'off'
+    max_tokens: 100  # jawaban hipotetis singkat (100 token = ~2-3 kalimat)
+    timeout: 3       # detik — timeout ketat: jika lambat, skip gracefully
 
 
 # ============================================
