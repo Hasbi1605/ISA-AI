@@ -559,6 +559,173 @@ def delete_document_vectors(filename: str):
 
 
 
+# ─── Hybrid Search Helpers ────────────────────────────────────────────────────
+
+def _generate_hyde_query(original_query: str, timeout: int = 5, max_tokens: int = 100) -> str:
+    """
+    HyDE (Hypothetical Document Embeddings):
+    Panggil LLM untuk membuat jawaban hipotetis singkat dari query,
+    lalu gabungkan dengan query asli untuk embedding yang lebih kaya.
+
+    Returns original_query jika LLM gagal atau timeout.
+    """
+    if len(original_query.strip()) < 10:
+        return original_query  # skip untuk query terlalu pendek
+
+    try:
+        import litellm
+        from app.config_loader import get_chat_models
+        models = get_chat_models()
+
+        for model in models:
+            if model.get('provider') == 'gemini_native':
+                continue  # skip Gemini untuk kecepatan
+            api_key = os.getenv(model.get('api_key_env', ''))
+            if not api_key:
+                continue
+
+            kwargs = {
+                'model': model['model_name'],
+                'messages': [
+                    {
+                        'role': 'system',
+                        'content': (
+                            'Kamu adalah asisten yang membuat dokumen hipotetis singkat. '
+                            'Jawab pertanyaan dalam 2-3 kalimat faktual dan padat. '
+                            'Gunakan kosakata dan gaya penulisan akademik.'
+                        )
+                    },
+                    {'role': 'user', 'content': original_query}
+                ],
+                'api_key': api_key,
+                'max_tokens': max_tokens,
+                'timeout': timeout,
+                'num_retries': 0,
+                'stream': False,
+            }
+            if 'base_url' in model:
+                kwargs['api_base'] = model['base_url']
+
+            try:
+                resp = litellm.completion(**kwargs)
+                hypo = resp.choices[0].message.content.strip()
+                if hypo:
+                    enhanced = f"{original_query}\n{hypo}"
+                    logger.info(
+                        "🔮 HyDE: query enhanced +%d token (model: %s)",
+                        len(hypo.split()), model['label'],
+                    )
+                    return enhanced
+            except Exception:
+                continue  # coba model berikutnya
+
+    except Exception as e:
+        logger.debug("HyDE skipped: %s", e)
+
+    return original_query
+
+
+def _bm25_rank_docs(
+    query: str,
+    texts: List[str],
+    top_k: int,
+) -> List[Tuple[int, float]]:
+    """
+    Jalankan BM25 pada daftar teks, kembalikan (original_index, normalized_score)
+    terurut dari yang paling relevan.
+    """
+    try:
+        import re
+        from rank_bm25 import BM25Okapi
+
+        def _tokenize(t: str) -> List[str]:
+            return [w for w in re.split(r'\W+', t.lower()) if w]
+
+        corpus = [_tokenize(t) for t in texts]
+        bm25 = BM25Okapi(corpus)
+        scores = bm25.get_scores(_tokenize(query))
+
+        max_score = max(scores) if any(s > 0 for s in scores) else 1.0
+        if max_score == 0:
+            max_score = 1.0
+
+        indexed = [(i, float(scores[i]) / max_score) for i in range(len(scores))]
+        indexed.sort(key=lambda x: -x[1])
+        return indexed[:top_k]
+
+    except ImportError:
+        logger.warning("⚠️  rank-bm25 tidak terinstall — BM25 dinonaktifkan")
+        return [(i, 0.0) for i in range(min(top_k, len(texts)))]
+    except Exception as e:
+        logger.warning("⚠️  BM25 error: %s", e)
+        return [(i, 0.0) for i in range(min(top_k, len(texts)))]
+
+
+def _rrf_merge_docs(
+    vector_docs: List[Tuple],       # list of (Document, score)
+    bm25_indexed: List[Tuple[int, float]],  # (index_in_stored, bm25_score)
+    stored_texts: List[str],         # all stored texts (BM25 corpus)
+    stored_metas: List[dict],        # metadata untuk stored_texts
+    top_k: int,
+    bm25_weight: float = 0.3,
+    k: int = 60,
+) -> List[Tuple]:
+    """
+    Reciprocal Rank Fusion: gabungkan vector dan BM25 rankings.
+
+    score(doc) = (1-bm25_weight)/(k+vector_rank) + bm25_weight/(k+bm25_rank)
+
+    Mengembalikan list (Document, combined_score) terurut descending.
+    """
+    # Gunakan 50 karakter pertama konten sebagai key untuk dedup
+    def _key(text: str) -> str:
+        return text[:60].strip()
+
+    rrf_scores: Dict[str, float] = {}
+
+    # Kontribusi vector search
+    for rank, (doc, _vscore) in enumerate(vector_docs):
+        k_str = _key(doc.page_content)
+        rrf_scores[k_str] = rrf_scores.get(k_str, 0.0) + (1 - bm25_weight) / (k + rank + 1)
+
+    # Kontribusi BM25
+    for bm25_rank, (stored_idx, _bscore) in enumerate(bm25_indexed):
+        if stored_idx < len(stored_texts):
+            k_str = _key(stored_texts[stored_idx])
+            rrf_scores[k_str] = rrf_scores.get(k_str, 0.0) + bm25_weight / (k + bm25_rank + 1)
+
+    # Build unified doc pool: deduplicate, add BM25-only docs
+    pool: Dict[str, Tuple] = {}
+    for doc, vscore in vector_docs:
+        k_str = _key(doc.page_content)
+        pool[k_str] = (doc, vscore)
+
+    # Tambahkan BM25-only docs (tidak ada di vector results)
+    for stored_idx, _ in bm25_indexed:
+        if stored_idx < len(stored_texts):
+            k_str = _key(stored_texts[stored_idx])
+            if k_str not in pool:
+                # Buat mock-like object yang kompatibel dengan format (doc, score)
+                class _MockDoc:
+                    def __init__(self, content: str, meta: dict):
+                        self.page_content = content
+                        self.metadata = meta
+                pool[k_str] = (_MockDoc(stored_texts[stored_idx],
+                                        stored_metas[stored_idx] if stored_idx < len(stored_metas) else {}),
+                               1.0)
+
+    # Sort by RRF score dan ambil top_k
+    sorted_keys = sorted(rrf_scores, key=lambda x: -rrf_scores[x])
+    merged = []
+    for key in sorted_keys:
+        if key in pool:
+            merged.append(pool[key])
+        if len(merged) >= top_k:
+            break
+
+    return merged
+
+
 def search_relevant_chunks(query: str, filenames: List[str] = None, top_k: int = 5, user_id: str = None) -> Tuple[List[Dict], bool]:
     """
     Search for relevant document chunks based on query with optional reranking.
@@ -590,45 +757,129 @@ def search_relevant_chunks(query: str, filenames: List[str] = None, top_k: int =
         
         user_filter = {"user_id": str(user_id)}
 
-        # Baca konfigurasi RAG dari ai_config.yaml (single source of truth)
+        # ── Baca seluruh konfigurasi RAG dari YAML ────────────────────────────
         try:
-            from app.config_loader import get_rag_doc_candidates, get_rag_top_n
-            doc_candidates = get_rag_doc_candidates()
-            doc_top_n     = get_rag_top_n()
+            from app.config_loader import (
+                get_rag_doc_candidates, get_rag_top_n,
+                get_hybrid_search_config, get_hyde_config,
+            )
+            doc_candidates  = get_rag_doc_candidates()
+            doc_top_n       = get_rag_top_n()
+            hybrid_cfg      = get_hybrid_search_config()
+            hyde_cfg        = get_hyde_config()
         except Exception:
-            doc_candidates = int(os.getenv("LANGSEARCH_RERANK_DOC_CANDIDATES", "20"))
-            doc_top_n      = top_k
-        # ── Per-document balanced search untuk multi-dokumen ─────────────────
-        # Jika ada N dokumen → ambil setidaknya max(2, 20//N) chunk per dokumen
-        # agar setiap dokumen terwakili sebelum reranker memilih.
+            doc_candidates  = int(os.getenv("LANGSEARCH_RERANK_DOC_CANDIDATES", "25"))
+            doc_top_n       = top_k
+            hybrid_cfg      = {}
+            hyde_cfg        = {}
+
+        hybrid_enabled  = hybrid_cfg.get('enabled', False)
+        bm25_weight     = float(hybrid_cfg.get('bm25_weight', 0.3))
+        bm25_cands      = int(hybrid_cfg.get('bm25_candidates', doc_candidates))
+        hyde_enabled    = hyde_cfg.get('enabled', False)
+        hyde_timeout    = int(hyde_cfg.get('timeout', 5))
+        hyde_max_tokens = int(hyde_cfg.get('max_tokens', 100))
+
+        # ── Step 0: HyDE — enhance query sebelum embedding ───────────────────
+        if hyde_enabled:
+            search_query = _generate_hyde_query(query, timeout=hyde_timeout, max_tokens=hyde_max_tokens)
+        else:
+            search_query = query
+
+        # ── Step 1: Per-document hybrid search ───────────────────────────────
+        # Untuk setiap dokumen:
+        #   a. Vector search (semantic, model embedding)
+        #   b. BM25 search (keyword, rank-bm25) jika hybrid_enabled
+        #   c. RRF merge hasil keduanya per-dokumen
+        # Semua hasil digabung → reranker → guaranteed minimum coverage
         if filenames and len(filenames) > 1:
             n_docs = len(filenames)
             per_doc_k = max(2, doc_candidates // n_docs)
             logger.info(
-                "🔍 RAG: Multi-dokumen (%d file) — mengambil %d chunk/dokumen untuk user_id: %s",
-                n_docs, per_doc_k, user_id,
+                "🔍 RAG: Multi-dokumen (%d file) — %s, %d chunk/dokumen untuk user_id: %s",
+                n_docs,
+                "vector+BM25" if hybrid_enabled else "vector only",
+                per_doc_k, user_id,
             )
             all_docs: List = []
             for fname in filenames:
                 f_filter = {"$and": [user_filter, {"filename": fname}]}
                 try:
-                    f_docs = vectorstore.similarity_search_with_score(query, k=per_doc_k, filter=f_filter)
-                    logger.info("   📄 %s → %d chunk ditemukan", fname, len(f_docs))
-                    all_docs.extend(f_docs)
+                    # (a) Vector search
+                    f_vec = vectorstore.similarity_search_with_score(
+                        search_query, k=per_doc_k, filter=f_filter
+                    )
+
+                    if hybrid_enabled and f_vec:
+                        # (b) BM25: fetch ALL chunks untuk dokumen ini
+                        try:
+                            raw = vectorstore.get(
+                                where={"$and": [user_filter, {"filename": fname}]},
+                                include=['documents', 'metadatas'],
+                                limit=bm25_cands,
+                            )
+                            stored_texts = raw.get('documents', []) or []
+                            stored_metas = raw.get('metadatas', []) or []
+
+                            if stored_texts:
+                                bm25_ranked = _bm25_rank_docs(query, stored_texts, top_k=per_doc_k)
+                                # (c) RRF merge
+                                merged = _rrf_merge_docs(
+                                    f_vec, bm25_ranked, stored_texts, stored_metas,
+                                    top_k=per_doc_k, bm25_weight=bm25_weight,
+                                )
+                                logger.info(
+                                    "   📄 %s → %d vector + %d BM25 → %d merged",
+                                    fname, len(f_vec), len(bm25_ranked), len(merged),
+                                )
+                                all_docs.extend(merged)
+                                continue
+                        except Exception as berr:
+                            logger.debug("BM25 fallback ke vector untuk %s: %s", fname, berr)
+
+                    logger.info("   📄 %s → %d chunk (vector only)", fname, len(f_vec))
+                    all_docs.extend(f_vec)
+
                 except Exception as ferr:
                     logger.warning("   ⚠️  Gagal cari chunk dari %s: %s", fname, ferr)
             docs = all_docs
 
         elif filenames and len(filenames) == 1:
-            # Single dokumen — pencarian standar
             f_filter = {"$and": [user_filter, {"filename": filenames[0]}]}
-            logger.info("🔍 RAG: Filtering by filename: %s untuk user_id: %s", filenames[0], user_id)
-            docs = vectorstore.similarity_search_with_score(query, k=doc_candidates, filter=f_filter)
+            f_vec = vectorstore.similarity_search_with_score(
+                search_query, k=doc_candidates, filter=f_filter
+            )
+            if hybrid_enabled and f_vec:
+                try:
+                    raw = vectorstore.get(
+                        where={"$and": [user_filter, {"filename": filenames[0]}]},
+                        include=['documents', 'metadatas'],
+                        limit=bm25_cands,
+                    )
+                    stored_texts = raw.get('documents', []) or []
+                    stored_metas = raw.get('metadatas', []) or []
+                    if stored_texts:
+                        bm25_ranked = _bm25_rank_docs(query, stored_texts, top_k=doc_candidates)
+                        docs = _rrf_merge_docs(
+                            f_vec, bm25_ranked, stored_texts, stored_metas,
+                            top_k=doc_candidates, bm25_weight=bm25_weight,
+                        )
+                        logger.info("🔍 RAG: %s — %d merged chunks (vector+BM25)", filenames[0], len(docs))
+                    else:
+                        docs = f_vec
+                        logger.info("🔍 RAG: %s — %d chunk (vector only)", filenames[0], len(docs))
+                except Exception:
+                    docs = f_vec
+                    logger.info("🔍 RAG: %s — %d chunk (vector only, BM25 error)", filenames[0], len(f_vec))
+            else:
+                docs = f_vec
+                logger.info("🔍 RAG: Filtering by filename: %s untuk user_id: %s", filenames[0], user_id)
 
         else:
-            # Semua dokumen user
             logger.info("🔍 RAG: Searching all documents untuk user_id: %s", user_id)
-            docs = vectorstore.similarity_search_with_score(query, k=doc_candidates, filter=user_filter)
+            docs = vectorstore.similarity_search_with_score(
+                search_query, k=doc_candidates, filter=user_filter
+            )
 
         if not docs:
             logger.info("📚 RAG: Tidak ada chunk ditemukan")

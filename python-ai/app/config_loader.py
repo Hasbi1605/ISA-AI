@@ -170,7 +170,19 @@ def get_rag_top_n() -> int:
 
 def get_rag_doc_candidates() -> int:
     """Jumlah chunk kandidat yang diambil dari ChromaDB sebelum reranking."""
-    return int(get_rerank_config().get('doc_candidates', 20))
+    return int(get_rerank_config().get('doc_candidates', 25))
+
+
+def get_hybrid_search_config() -> Dict[str, Any]:
+    """Konfigurasi hybrid search (BM25 + vector + RRF)."""
+    config = load_config()
+    return config.get('retrieval', {}).get('hybrid_search', {})
+
+
+def get_hyde_config() -> Dict[str, Any]:
+    """Konfigurasi HyDE (Hypothetical Document Embeddings)."""
+    config = load_config()
+    return config.get('retrieval', {}).get('hyde', {})
 
 
 def _get_prompt_with_fallback(config_path: List[str], fallback_path: List[str], warning_message: str) -> str:

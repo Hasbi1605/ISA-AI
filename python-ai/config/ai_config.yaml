@@ -133,15 +133,38 @@ retrieval:
     api_url: "https://api.langsearch.com/v1/rerank"
     model: "langsearch-reranker-v1"
     timeout: 8
-    # Berapa chunk yang dikembalikan ke LLM sebagai konteks akhir.
-    # Naikkan jika ingin AI punya lebih banyak konteks (tapi bikin prompt lebih panjang).
     top_k: 8
-    # Berapa chunk yang dipilih reranker dari kandidat (biasanya sama dengan top_k).
     top_n: 8
-    # Berapa chunk kandidat yang diambil dari ChromaDB sebelum direrank.
-    # Makin besar makin akurat reranking-nya, tapi makin lambat.
-    # ⚠️ WAJIB: doc_candidates >= top_n (jika tidak, reranker kekurangan kandidat)
+    # ⚠️ WAJIB: doc_candidates >= top_n
     doc_candidates: 25
+
+  # ============================================
+  # HYBRID SEARCH (Vector + BM25 keyword)
+  # ============================================
+  # Menggabungkan dense vector search dengan sparse keyword search (BM25)
+  # menggunakan Reciprocal Rank Fusion (RRF). Membantu untuk:
+  # - Istilah teknis dan nama spesifik (contoh: 'Habermas', 'inokulasi')
+  # - Query yang berbeda wording dengan dokumen
+  hybrid_search:
+    enabled: true
+    # Bobot BM25 vs vector (total = 1.0).
+    # 0.3 = 30% BM25 + 70% vector — cocok untuk dokumen akademik
+    bm25_weight: 0.3
+    # Jumlah kandidat BM25 per dokumen (harus >= doc_candidates)
+    bm25_candidates: 25
+
+  # ============================================
+  # HyDE (Hypothetical Document Embeddings)
+  # ============================================
+  # Sebelum vector search, LLM membuat jawaban hipotetis singkat dari query.
+  # Jawaban hipotetis + query asli diembed bersama untuk retrieval yang lebih kaya.
+  # Pro: +10-20% akurasi semantik untuk pertanyaan konseptual
+  # Kontra: +0.5-2 detik latency per query (butuh 1 LLM call)
+  hyde:
+    enabled: false   # set true untuk aktifkan (perlu GROQ_API_KEY atau GITHUB_TOKEN)
+    max_tokens: 100  # panjang jawaban hipotetis (singkat = cepat)
+    timeout: 5       # detik — jika LLM timeout, skip HyDE dan pakai query asli
+
 
 # ============================================
 # SYSTEM
