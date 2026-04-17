@@ -67,24 +67,63 @@ def _get_default_system_prompt_fallback():
 # ─── Gemini Native Streaming ───────────────────────────────────────────────────
 
 def _stream_gemini_native(model_name: str, api_key: str, messages: List[Dict[str, str]]) -> Generator[str, None, None]:
-    """Stream response from Google AI Studio REST API directly."""
+    """
+    Stream response from Google AI Studio REST API directly.
+
+    Catatan: Gemini systemInstruction punya batas efektif ~8K token.
+    Jika konteks RAG (system message) melebihi 7000 token, konten dipindahkan
+    ke dalam user message pertama agar tidak di-drop diam-diam oleh API.
+    """
     url = (
         f"https://generativelanguage.googleapis.com/v1beta/models/"
         f"{model_name}:streamGenerateContent?alt=sse&key={api_key}"
     )
 
-    contents = []
-    system_instruction = None
+    # Pisahkan system message dan user/assistant messages
+    system_text = ""
+    user_messages = []
     for msg in messages:
         if msg["role"] == "system":
-            system_instruction = msg["content"]
+            system_text = msg["content"]
         else:
             role = "user" if msg["role"] == "user" else "model"
-            contents.append({"role": role, "parts": [{"text": msg["content"]}]})
+            user_messages.append({"role": role, "parts": [{"text": msg["content"]}]})
+
+    # Cek apakah system message aman untuk systemInstruction (<= 7000 token)
+    GEMINI_SYSTEM_TOKEN_LIMIT = 7000
+    try:
+        import tiktoken as _tiktoken
+        _enc = _tiktoken.get_encoding("cl100k_base")
+        system_tokens = len(_enc.encode(system_text)) if system_text else 0
+    except Exception:
+        system_tokens = len(system_text.split()) if system_text else 0
+
+    contents = []
+    body_system_instruction = None
+
+    if system_text and system_tokens > GEMINI_SYSTEM_TOKEN_LIMIT:
+        # Konteks RAG terlalu besar untuk systemInstruction → injeksi ke user message pertama
+        logger.warning(
+            "⚠️  Gemini: systemInstruction terlalu besar (%d token > %d limit) "
+            "→ konteks RAG dipindahkan ke user message pertama",
+            system_tokens, GEMINI_SYSTEM_TOKEN_LIMIT,
+        )
+        # Semua konten (termasuk teks sistem) masuk ke contents[]
+        if user_messages:
+            # Sisipkan instruksi sistem sebagai prefix pesan user pertama
+            first_user = user_messages[0]
+            first_user["parts"] = [{"text": system_text + "\n\n---\n\n" + first_user["parts"][0]["text"]}]
+            contents = user_messages
+        else:
+            contents = [{"role": "user", "parts": [{"text": system_text}]}]
+    else:
+        contents = user_messages
+        if system_text:
+            body_system_instruction = {"parts": [{"text": system_text}]}
 
     body = {"contents": contents}
-    if system_instruction:
-        body["systemInstruction"] = {"parts": [{"text": system_instruction}]}
+    if body_system_instruction:
+        body["systemInstruction"] = body_system_instruction
 
     response = requests.post(url, json=body, stream=True, timeout=30)
     response.raise_for_status()
