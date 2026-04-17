@@ -662,14 +662,62 @@ def search_relevant_chunks(query: str, filenames: List[str] = None, top_k: int =
                             "embedding_model": doc.metadata.get("embedding_model", provider_name),
                         })
 
+                # ── Guaranteed minimum: setiap dokumen yang dipilih user ────────
+                # harus punya minimal 1 chunk dalam hasil akhir.
+                # Jika ada dokumen yang 0 slot setelah rerank, ambil paksa
+                # chunk terbaiknya dari kandidat per-doc search.
+                final_chunks = list(reranked_chunks[:top_k])
+
+                if filenames and len(filenames) > 1:
+                    represented = {c["filename"] for c in final_chunks}
+                    missing = [f for f in filenames if f not in represented]
+
+                    if missing:
+                        # Build map: filename -> best available chunk dari all_docs
+                        # (urutan pertama per-doc search = paling relevan untuk doc itu)
+                        best_per_doc = {}
+                        for _doc, _vscore in docs:
+                            _fname = _doc.metadata.get("filename", "unknown")
+                            if _fname not in best_per_doc:
+                                best_per_doc[_fname] = (_doc, _vscore)
+
+                        forced = []
+                        for fname in missing:
+                            if fname in best_per_doc:
+                                _doc, _vscore = best_per_doc[fname]
+                                forced.append({
+                                    "content": _doc.page_content,
+                                    "score": float(_vscore),
+                                    "rerank_score": -1.0,
+                                    "filename": _doc.metadata.get("filename", "unknown"),
+                                    "chunk_index": _doc.metadata.get("chunk_index", 0),
+                                    "embedding_model": _doc.metadata.get("embedding_model", provider_name),
+                                    "forced": True,
+                                })
+
+                        if forced:
+                            n = len(forced)
+                            # Ganti n chunk paling akhir (rerank score terendah) dengan forced
+                            if len(final_chunks) >= n:
+                                final_chunks[-n:] = forced
+                            else:
+                                final_chunks.extend(forced)
+                            logger.info(
+                                "🔧 RAG: Forced inclusion %d dokumen (tidak dapat slot rerank): %s",
+                                n,
+                                ", ".join(missing),
+                            )
+
                 from collections import Counter
-                dist = Counter(c["filename"] for c in reranked_chunks)
+                dist = Counter(c["filename"] for c in final_chunks)
+                n_forced = sum(1 for c in final_chunks if c.get("forced"))
                 logger.info(
-                    "📚 RAG: Reranked %d chunks — distribusi: %s",
-                    len(reranked_chunks),
-                    ", ".join(f"{k}: {v} chunk" for k, v in dist.items()),
+                    "📚 RAG: Final %d chunks — distribusi: %s%s",
+                    len(final_chunks),
+                    ", ".join(f"{k}: {v}" for k, v in dist.items()),
+                    f" ({n_forced} forced)" if n_forced else "",
                 )
-                return reranked_chunks[:top_k], True
+                return final_chunks, True
             else:
                 logger.warning("⚠️ RAG: Rerank gagal, fallback ke vector search")
 
