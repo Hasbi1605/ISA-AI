@@ -623,22 +623,49 @@ def _generate_hyde_query(original_query: str, timeout: int = 5, max_tokens: int 
     Panggil LLM untuk membuat jawaban hipotetis singkat dari query,
     lalu gabungkan dengan query asli untuk embedding yang lebih kaya.
 
+    Model priority untuk HyDE:
+    1. Groq (Llama 3.3 70B) — tercepat, tidak kena GitHub rate limit
+    2. GPT-4.1 / GPT-4o — fallback jika Groq tidak tersedia
+    Gemini dilewati (provider berbeda, lebih lambat untuk task pendek)
+
     Returns original_query jika LLM gagal atau timeout.
     """
     if len(original_query.strip()) < 10:
         return original_query  # skip untuk query terlalu pendek
+
+    # Potong query yang terlalu panjang agar HyDE tidak lambat
+    # (HyDE hanya butuh gist dari query, bukan seluruh teks)
+    query_for_hyde = original_query[:500] if len(original_query) > 500 else original_query
 
     try:
         import litellm
         from app.config_loader import get_chat_models
         models = get_chat_models()
 
-        for model in models:
+        # Prioritaskan Groq (cepat, tidak pakai GitHub quota)
+        # lalu model lain, skip Gemini
+        def _hyde_priority(m: dict) -> int:
+            name = m.get('model_name', '').lower()
+            if 'groq' in name or 'llama' in name:
+                return 0   # prioritas tertinggi
+            if m.get('provider') == 'gemini_native':
+                return 99  # skip
+            return 1       # model lain (GPT-4.1, GPT-4o)
+
+        sorted_models = sorted(models, key=_hyde_priority)
+
+        max_attempts = 2  # batasi percobaan agar tidak block lama
+        attempts = 0
+
+        for model in sorted_models:
             if model.get('provider') == 'gemini_native':
-                continue  # skip Gemini untuk kecepatan
+                continue
             api_key = os.getenv(model.get('api_key_env', ''))
             if not api_key:
                 continue
+            if attempts >= max_attempts:
+                logger.debug("HyDE: max_attempts=%d tercapai, skip", max_attempts)
+                break
 
             kwargs = {
                 'model': model['model_name'],
@@ -646,12 +673,11 @@ def _generate_hyde_query(original_query: str, timeout: int = 5, max_tokens: int 
                     {
                         'role': 'system',
                         'content': (
-                            'Kamu adalah asisten yang membuat dokumen hipotetis singkat. '
-                            'Jawab pertanyaan dalam 2-3 kalimat faktual dan padat. '
-                            'Gunakan kosakata dan gaya penulisan akademik.'
+                            'Buat jawaban hipotetis singkat 2-3 kalimat untuk pertanyaan berikut. '
+                            'Padat, faktual, gunakan kosakata yang relevan dengan topik.'
                         )
                     },
-                    {'role': 'user', 'content': original_query}
+                    {'role': 'user', 'content': query_for_hyde}
                 ],
                 'api_key': api_key,
                 'max_tokens': max_tokens,
@@ -662,22 +688,25 @@ def _generate_hyde_query(original_query: str, timeout: int = 5, max_tokens: int 
             if 'base_url' in model:
                 kwargs['api_base'] = model['base_url']
 
+            attempts += 1
             try:
                 resp = litellm.completion(**kwargs)
                 hypo = resp.choices[0].message.content.strip()
                 if hypo:
                     enhanced = f"{original_query}\n{hypo}"
                     logger.info(
-                        "🔮 HyDE: query enhanced +%d token (model: %s)",
-                        len(hypo.split()), model['label'],
+                        "🔮 HyDE: query enhanced +%d token (model: %s, attempt: %d/%d)",
+                        len(hypo.split()), model['label'], attempts, max_attempts,
                     )
                     return enhanced
-            except Exception:
-                continue  # coba model berikutnya
+            except Exception as e:
+                logger.debug("HyDE attempt %d gagal (%s): %s", attempts, model['label'], e)
+                continue
 
     except Exception as e:
         logger.debug("HyDE skipped: %s", e)
 
+    logger.debug("🔮 HyDE: skip — fallback ke query asli")
     return original_query
 
 
