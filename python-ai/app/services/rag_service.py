@@ -306,7 +306,9 @@ def process_document(file_path: str, filename: str, user_id: str = "unknown"):
             
         # 4. Smart Batching dengan Token Limit Validation
         # OpenAI embedding API limit: 64,000 tokens per request (not per minute)
-        MAX_TOKENS_PER_BATCH = 60000  # Safe limit below 64K
+        # CATATAN: tiktoken cl100k_base bisa underhitung vs tokenizer API sebenarnya.
+        # Safety margin 37.5%: 64K * 0.625 = 40K → aman untuk dokumen apapun.
+        MAX_TOKENS_PER_BATCH = 40000  # Conservative limit (API=64K, tiktoken undercount ~10-20%)
         logger.info(f"Step 4: Smart Batching & Embedding Generation...")
         logger.info(f"Max batch size: {AGGRESSIVE_BATCH_SIZE} chunks OR {MAX_TOKENS_PER_BATCH:,} tokens (whichever is smaller)")
         logger.info(f"Total capacity: 2M TPM across 4 models (4 x 500K TPM)")
@@ -362,13 +364,35 @@ def process_document(file_path: str, filename: str, user_id: str = "unknown"):
             except Exception as batch_error:
                 error_msg = str(batch_error)
                 logger.error(f"❌ Batch {batch_index} error: {error_msg}")
-                
-                # Circuit Breaker: Detect rate limit and cascade to next model
+
+                # ── Deteksi jenis error ──────────────────────────────────────
                 is_rate_limit = any(indicator in error_msg.lower() for indicator in [
                     "429", "rate limit", "resource_exhausted", "quota", "503", "too many requests"
                 ])
-                
-                if is_rate_limit and current_model_index < len(EMBEDDING_MODELS) - 1:
+                is_token_limit = any(indicator in error_msg.lower() for indicator in [
+                    "413", "tokens_limit_reached", "too large", "request body too large"
+                ])
+
+                # ── Auto-split: batch terlalu besar → pecah jadi 2 sub-batch ─
+                if is_token_limit and len(batch) > 1:
+                    mid = len(batch) // 2
+                    sub_batches = [batch[:mid], batch[mid:]]
+                    logger.warning(
+                        f"⚠️  Batch {batch_index} terlalu besar ({batch_tokens:,} tokens tiktoken). "
+                        f"Auto-split → {len(sub_batches[0])} + {len(sub_batches[1])} chunks."
+                    )
+                    for si, sub in enumerate(sub_batches, 1):
+                        try:
+                            time.sleep(BATCH_DELAY_SECONDS)
+                            vectorstore.add_documents(sub)
+                            successful_chunks += len(sub)
+                            logger.info(f"   ✅ Sub-batch {si}/2 berhasil: {len(sub)} chunks")
+                        except Exception as sub_err:
+                            logger.error(f"   ❌ Sub-batch {si}/2 gagal: {sub_err}")
+                            failed_chunks += len(sub)
+
+                # ── Rate limit → cascade ke model berikutnya ────────────────
+                elif is_rate_limit and current_model_index < len(EMBEDDING_MODELS) - 1:
                     logger.warning(f"🚫 Rate limit detected! Cascading to next model tier...")
                     
                     # Cascade to next model in the fallback chain
@@ -388,7 +412,6 @@ def process_document(file_path: str, filename: str, user_id: str = "unknown"):
                     )
                     
                     # Update metadata untuk sisa chunk
-                    # Calculate starting index based on accumulated batches
                     remaining_start = sum(len(b[0]) for b in smart_batches[:batch_index-1])
                     for remaining_chunk in chunks[remaining_start:]:
                         remaining_chunk.metadata["embedding_model"] = provider_name
@@ -409,13 +432,11 @@ def process_document(file_path: str, filename: str, user_id: str = "unknown"):
                             retry_error_msg = str(retry_error)
                             logger.warning(f"⚠️ Retry {retry + 1} failed: {retry_error_msg}")
                             
-                            # Check if still rate limit or token limit
-                            is_rate_limit_retry = any(indicator in retry_error_msg.lower() for indicator in ["429", "rate limit", "quota"])
-                            is_token_limit = any(indicator in retry_error_msg.lower() for indicator in ["413", "tokens_limit_reached", "too large"])
+                            is_token_limit_retry = any(indicator in retry_error_msg.lower() for indicator in ["413", "tokens_limit_reached", "too large"])
                             
-                            if is_token_limit:
-                                # Token limit error - batch is too large, need to split
-                                logger.error(f"❌ Batch {batch_index} exceeds token limit even after smart batching")
+                            if is_token_limit_retry:
+                                # Token limit bahkan setelah cascade — skip batch ini
+                                logger.error(f"❌ Batch {batch_index} exceeds token limit even after cascade")
                                 failed_chunks += len(batch)
                                 break
                             

@@ -152,6 +152,9 @@ chunking:
   aggressive_batch_size: 100  # Max chunks per batch — naik ke 200 jika RAM server >= 8 GB
   batch_delay_seconds: 0.8    # Delay antar batch (detik) — turunkan ke 0.5 jika ingin lebih cepat
   embedding_timeout: 30       # Timeout embedding request (detik)
+  # Batas token per batch (bukan per chunk). API limit = 64K, tapi tiktoken cl100k_base
+  # bisa underhitung 10-20% vs tokenizer API sebenarnya. Safety margin 37.5% → 40K.
+  max_tokens_per_batch: 40000
 
 # ============================================
 # INTEGRATIONS
