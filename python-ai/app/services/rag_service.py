@@ -11,13 +11,16 @@ import tiktoken
 # Ensure .env is loaded (for standalone imports)
 load_dotenv(os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), '.env'))
 
-from langchain_community.document_loaders import UnstructuredFileLoader
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_chroma import Chroma
 from langchain_core.embeddings import Embeddings
 from langchain_openai import OpenAIEmbeddings
 from app.services.langsearch_service import LangSearchService
 from app.config_loader import get_rag_prompt
+
+# NOTE: UnstructuredFileLoader (PyTorch, ONNX, spaCy, OpenCV, Transformers) di-import
+# secara lazy di dalam process_document() agar library berat ini TIDAK dimuat ke RAM
+# saat server startup. Library ini hanya dibutuhkan saat ada dokumen yang diproses.
 
 EXPLICIT_WEB_PATTERNS = [
     r"\bweb\s*search\b",
@@ -84,13 +87,40 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 CHROMA_PATH = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "chroma_data")
-EMBEDDING_TIMEOUT = int(os.getenv("EMBEDDING_TIMEOUT", "30"))
 
-# Token-aware chunking configuration
-TOKEN_CHUNK_SIZE = int(os.getenv("TOKEN_CHUNK_SIZE", "1500"))  # Max tokens per chunk
-TOKEN_CHUNK_OVERLAP = int(os.getenv("TOKEN_CHUNK_OVERLAP", "150"))  # Token overlap
-AGGRESSIVE_BATCH_SIZE = int(os.getenv("AGGRESSIVE_BATCH_SIZE", "200"))  # Chunks per batch (aggressive)
-BATCH_DELAY_SECONDS = float(os.getenv("BATCH_DELAY_SECONDS", "0.5"))  # Delay between batches
+# ─── Chunking Configuration (Single Source of Truth: ai_config.yaml) ─────────
+# Dibaca dari ai_config.yaml section `chunking`, dengan .env sebagai override.
+# Untuk mengubah nilai: edit python-ai/config/ai_config.yaml → section chunking
+# Untuk override per-environment: set env variable (lebih prioritas dari YAML)
+try:
+    from app.config_loader import get_config as _get_config
+    _chunking_cfg = _get_config().get("chunking", {})
+except Exception:
+    _chunking_cfg = {}
+
+def _chunking_int(env_key: str, yaml_key: str, default: int) -> int:
+    """Baca dari env variable (override) → YAML → hardcoded default."""
+    env_val = os.getenv(env_key)
+    if env_val is not None:
+        return int(env_val)
+    return int(_chunking_cfg.get(yaml_key, default))
+
+def _chunking_float(env_key: str, yaml_key: str, default: float) -> float:
+    env_val = os.getenv(env_key)
+    if env_val is not None:
+        return float(env_val)
+    return float(_chunking_cfg.get(yaml_key, default))
+
+EMBEDDING_TIMEOUT    = _chunking_int("EMBEDDING_TIMEOUT",    "embedding_timeout",    30)
+TOKEN_CHUNK_SIZE     = _chunking_int("TOKEN_CHUNK_SIZE",     "token_chunk_size",     1500)
+TOKEN_CHUNK_OVERLAP  = _chunking_int("TOKEN_CHUNK_OVERLAP",  "token_chunk_overlap",  150)
+AGGRESSIVE_BATCH_SIZE = _chunking_int("AGGRESSIVE_BATCH_SIZE", "aggressive_batch_size", 200)
+BATCH_DELAY_SECONDS  = _chunking_float("BATCH_DELAY_SECONDS", "batch_delay_seconds",  0.5)
+
+logger.info(
+    "⚙️  Chunking config (YAML+env): chunk_size=%d overlap=%d batch=%d delay=%.1fs",
+    TOKEN_CHUNK_SIZE, TOKEN_CHUNK_OVERLAP, AGGRESSIVE_BATCH_SIZE, BATCH_DELAY_SECONDS
+)
 
 # Embedding model list untuk cascading fallback (4-tier system)
 EMBEDDING_MODELS = [
@@ -224,7 +254,10 @@ def process_document(file_path: str, filename: str, user_id: str = "unknown"):
             logger.info(f"File size: {file_size:,} bytes ({file_size / 1024 / 1024:.2f} MB)")
         
         # 1. Load document
-        logger.info("Step 1: Loading document...")
+        # Lazy import: library berat (PyTorch, ONNX, spaCy, OpenCV) dimuat hanya di sini,
+        # bukan saat server startup — menghemat ~1.5–2 GB RAM saat server idle.
+        logger.info("Step 1: Loading document (lazy-loading heavy ML libraries)...")
+        from langchain_community.document_loaders import UnstructuredFileLoader
         loader = UnstructuredFileLoader(file_path)
         docs = loader.load()
         logger.info(f"Loaded {len(docs)} document(s)")
