@@ -152,6 +152,27 @@ def get_search_config() -> Dict[str, Any]:
     return config.get('retrieval', {}).get('search', {})
 
 
+def get_rerank_config() -> Dict[str, Any]:
+    """Get semantic rerank configuration (top_k, top_n, doc_candidates, dll)."""
+    config = load_config()
+    return config.get('retrieval', {}).get('semantic_rerank', {})
+
+
+def get_rag_top_k() -> int:
+    """Jumlah chunk final yang dikirim ke LLM sebagai konteks."""
+    return int(get_rerank_config().get('top_k', 5))
+
+
+def get_rag_top_n() -> int:
+    """Jumlah chunk yang dipilih reranker dari kandidat."""
+    return int(get_rerank_config().get('top_n', 5))
+
+
+def get_rag_doc_candidates() -> int:
+    """Jumlah chunk kandidat yang diambil dari ChromaDB sebelum reranking."""
+    return int(get_rerank_config().get('doc_candidates', 20))
+
+
 def _get_prompt_with_fallback(config_path: List[str], fallback_path: List[str], warning_message: str) -> str:
     """Resolve prompt from config with DEFAULT_PROMPTS fallback."""
     value: Any = load_config()

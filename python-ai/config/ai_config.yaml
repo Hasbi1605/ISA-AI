@@ -130,6 +130,14 @@ retrieval:
     api_url: "https://api.langsearch.com/v1/rerank"
     model: "langsearch-reranker-v1"
     timeout: 8
+    # Berapa chunk yang dikembalikan ke LLM sebagai konteks akhir.
+    # Naikkan jika ingin AI punya lebih banyak konteks (tapi bikin prompt lebih panjang).
+    top_k: 5
+    # Berapa chunk yang dipilih reranker dari kandidat (biasanya sama dengan top_k).
+    top_n: 5
+    # Berapa chunk kandidat yang diambil dari ChromaDB sebelum direrank.
+    # Makin besar makin akurat reranking-nya, tapi makin lambat.
+    doc_candidates: 20
 
 # ============================================
 # SYSTEM

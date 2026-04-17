@@ -589,8 +589,15 @@ def search_relevant_chunks(query: str, filenames: List[str] = None, top_k: int =
         )
         
         user_filter = {"user_id": str(user_id)}
-        doc_candidates = int(os.getenv("LANGSEARCH_RERANK_DOC_CANDIDATES", "20"))
 
+        # Baca konfigurasi RAG dari ai_config.yaml (single source of truth)
+        try:
+            from app.config_loader import get_rag_doc_candidates, get_rag_top_n
+            doc_candidates = get_rag_doc_candidates()
+            doc_top_n     = get_rag_top_n()
+        except Exception:
+            doc_candidates = int(os.getenv("LANGSEARCH_RERANK_DOC_CANDIDATES", "20"))
+            doc_top_n      = top_k
         # ── Per-document balanced search untuk multi-dokumen ─────────────────
         # Jika ada N dokumen → ambil setidaknya max(2, 20//N) chunk per dokumen
         # agar setiap dokumen terwakili sebelum reranker memilih.
@@ -633,7 +640,6 @@ def search_relevant_chunks(query: str, filenames: List[str] = None, top_k: int =
 
         if rerank_enabled and len(docs) >= 2:
             documents = [doc.page_content for doc, _ in docs]
-            doc_top_n = int(os.getenv("LANGSEARCH_RERANK_DOC_TOP_N", str(top_k)))
             rerank_results = langsearch_service.rerank_documents(
                 query=query,
                 documents=documents,
