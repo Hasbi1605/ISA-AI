@@ -39,29 +39,59 @@ EXPLICIT_WEB_PATTERNS = [
 ]
 
 REALTIME_HIGH_PATTERNS = [
+    # ── Waktu & Jam ────────────────────────────────────────────────────────────
     r"\bjam\s+berapa\b",
     r"\bwaktu\s+sekarang\b",
-    r"\bskor\b.*\b(semalam|tadi\s+malam|hari\s+ini|live)\b",
+
+    # ── Olahraga & Skor ────────────────────────────────────────────────────────
+    r"\bskor\b.*\b(semalam|tadi\s+malam|hari\s+ini|live|sekarang)\b",
     r"\b(semalam|tadi\s+malam|hari\s+ini)\b.*\bskor\b",
-    r"\bberita\s+(terkini|terbaru)\b",
-    r"\bbreaking\s+news\b",
     r"\blive\s+score\b",
     r"\b(hasil|skor)\b.*\b(vs|versus)\b.*\b(semalam|hari\s+ini|live)\b",
+
+    # ── Berita ─────────────────────────────────────────────────────────────────
+    r"\bberita\s+(terkini|terbaru)\b",
+    r"\bberita\b.*\bhari\s+ini\b",
+    r"\bberita\b.*\bsekarang\b",
+    r"\bbreaking\s+news\b",
+
+    # ── Keuangan & Ekonomi (selalu realtime) ───────────────────────────────────
+    r"\b(kurs|nilai\s+tukar|exchange\s+rate)\b",
+    r"\bharga\s+(saham|bitcoin|crypto|kripto|emas|bbm|bensin|solar|minyak|dolar)\b",
+    r"\bsaham\b.*\b(hari\s+ini|sekarang|terkini|naik|turun)\b",
+    r"\bindeks\s+(saham|harga|ihsg)\b",
+    r"\bihsg\b",
+    r"\b(bitcoin|crypto|kripto)\b.*\b(hari\s+ini|sekarang|harga)\b",
+
+    # ── Cuaca ──────────────────────────────────────────────────────────────────
+    r"\bcuaca\b.*\b(hari\s+ini|sekarang|besok|minggu\s+ini)\b",
+    r"\b(prakiraan|perkiraan)\s+cuaca\b",
+    r"\bcuaca\s+(terkini|terbaru)\b",
+
+    # ── Bencana & Darurat (selalu realtime) ────────────────────────────────────
+    r"\bgempa\s*(bumi)?\b.*\b(hari\s+ini|terkini|terbaru|baru|sekarang)\b",
+    r"\b(banjir|kebakaran|tsunami|longsor)\b.*\b(hari\s+ini|terkini|sekarang)\b",
+
+    # ── Politik & Pemerintahan Realtime ────────────────────────────────────────
+    r"\b(hasil\s+pemilu|quick\s+count|real\s+count|hasil\s+pilkada)\b",
+
+    # ── Jadwal & Event Terkini ──────────────────────────────────────────────────
+    r"\bjadwal\b.*\b(hari\s+ini|besok|minggu\s+ini|live)\b",
+    r"\b(pertandingan|match)\b.*\b(malam\s+ini|hari\s+ini|besok|live)\b",
 ]
 
 REALTIME_MEDIUM_KEYWORDS = [
-    "terkini",
-    "terbaru",
-    "update",
-    "hari ini",
-    "semalam",
-    "sekarang",
-    "live",
-    "breaking",
-    "berita",
-    "skor",
-    "hasil pertandingan",
-    "jam",
+    # Temporal
+    "terkini", "terbaru", "update", "hari ini", "semalam",
+    "sekarang", "minggu ini", "bulan ini",
+    # Sports
+    "live", "skor", "breaking", "hasil pertandingan", "jadwal",
+    # Finance
+    "kurs", "harga saham", "harga emas", "inflasi", "ekonomi",
+    # News & events
+    "berita", "pengumuman", "kebijakan baru",
+    # Misc
+    "cuaca", "gempa", "jam",
 ]
 
 SCORE_QUERY_KEYWORDS = [
@@ -1638,27 +1668,44 @@ def should_use_web_search(
     """
     Decide whether web search should be used.
 
+    Prioritas:
+      1. force_web_search (toggle manual user) → selalu aktif
+      2. explicit_web_request ("cari di web", dll) → selalu aktif
+      3. Jika dokumen aktif → web SELALU mati (kebijakan document_context)
+      4. Jika tidak ada dokumen:
+           - realtime HIGH → aktif
+           - realtime MEDIUM → aktif (jika kebijakan mengizinkan)
+           - otherwise → mati
+
     Returns:
         tuple(bool should_use_web, str reason_code, str realtime_intent)
     """
     realtime_intent = detect_realtime_intent_level(query)
     explicit_detected = explicit_web_request or detect_explicit_web_request(query)
 
+    # Prioritas 1: Toggle manual user
     if force_web_search:
         reason = "DOC_WEB_TOGGLE" if documents_active else "WEB_TOGGLE"
         return True, reason, realtime_intent
 
+    # Prioritas 2: Permintaan eksplisit dalam query
     if explicit_detected:
         reason = "DOC_WEB_EXPLICIT" if documents_active else "EXPLICIT_WEB"
         return True, reason, realtime_intent
 
+    # Prioritas 3: Dokumen aktif → web selalu mati
     if documents_active:
         return False, "DOC_NO_WEB", realtime_intent
 
-    if allow_auto_realtime_web and realtime_intent == "high":
-        return True, "REALTIME_AUTO", realtime_intent
+    # Prioritas 4: Tidak ada dokumen — cek intent realtime
+    if allow_auto_realtime_web:
+        if realtime_intent == "high":
+            return True, "REALTIME_AUTO_HIGH", realtime_intent
+        if realtime_intent == "medium":
+            return True, "REALTIME_AUTO_MEDIUM", realtime_intent
 
     return False, "NO_WEB", realtime_intent
+
 
 def get_langsearch_service() -> LangSearchService:
     """Get or create LangSearch service instance."""
