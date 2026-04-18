@@ -1762,54 +1762,56 @@ def get_context_for_query(
             search_results = _merge_search_results(search_results, focused_results)
             
         # Apply rerank to web search results if enabled
+        # Baca config dari YAML, fallback ke env jika gagal
         try:
             from app.config_loader import get_rerank_config as _get_rc
             _rc = _get_rc()
             rerank_enabled = _rc.get('enabled', True)
-            web_candidates  = int(_rc.get('web_candidates', 10))
-            web_top_n       = int(_rc.get('web_top_n', 5))
+            web_candidates = int(_rc.get('web_candidates', 10))
+            web_top_n      = int(_rc.get('web_top_n', 5))
         except Exception:
             rerank_enabled = os.getenv("LANGSEARCH_RERANK_ENABLED", "true").lower() == "true"
-            web_candidates  = int(os.getenv("LANGSEARCH_RERANK_WEB_CANDIDATES", "10"))
-            web_top_n       = int(os.getenv("LANGSEARCH_RERANK_WEB_TOP_N", "5"))
+            web_candidates = int(os.getenv("LANGSEARCH_RERANK_WEB_CANDIDATES", "10"))
+            web_top_n      = int(os.getenv("LANGSEARCH_RERANK_WEB_TOP_N", "5"))
 
-        # Limit candidates for reranking
-        candidates = search_results[:web_candidates] if len(search_results) > web_candidates else search_results
-        
-        if rerank_enabled and len(candidates) >= 2:
-            # Prepare documents for reranking (title + snippet)
-            documents = []
-            for result in candidates:
-                title = result.get("title", "")
-                snippet = result.get("snippet", "")
-                # Combine title and snippet for better reranking
-                doc_text = f"{title}. {snippet}" if snippet else title
-                documents.append(doc_text)
-            
-            # Get rerank results
-            rerank_results = langsearch.rerank_documents(
-                query=query,
-                documents=documents,
-                top_n=web_top_n,
-                return_documents=False
-            )
-            
-            if rerank_results:
-                # Map rerank results back to original search results
-                reranked_search_results = []
-                for result in rerank_results:
-                    idx = result.get("index")
-                    if idx is not None and idx < len(candidates):
-                        original_result = candidates[idx].copy()
-                        # Add rerank score to the result
-                        original_result["rerank_score"] = float(result.get("relevance_score", 0))
-                        reranked_search_results.append(original_result)
-                
-                # Replace search results with reranked results
-                search_results = reranked_search_results
-                logger.info(f"🌐 Web search: Reranked {len(reranked_search_results)} results using LangSearch (%s)", _query_log_meta(query))
-            else:
-                logger.warning(f"⚠️ Web search: Rerank failed, using original results (%s)", _query_log_meta(query))
+        if rerank_enabled and len(search_results) >= 2:
+            # Limit candidates yang dikirim ke reranker
+            candidates = search_results[:web_candidates] if len(search_results) > web_candidates else search_results
+
+            if len(candidates) >= 2:
+                # Gabungkan title + snippet untuk reranking yang lebih akurat
+                documents = []
+                for result in candidates:
+                    title   = result.get("title", "")
+                    snippet = result.get("snippet", "")
+                    doc_text = f"{title}. {snippet}" if snippet else title
+                    documents.append(doc_text)
+
+                # Kirim ke LangSearch reranker
+                rerank_results = langsearch.rerank_documents(
+                    query=query,
+                    documents=documents,
+                    top_n=web_top_n,
+                    return_documents=False
+                )
+
+                if rerank_results:
+                    reranked_search_results = []
+                    for result in rerank_results:
+                        idx = result.get("index")
+                        if idx is not None and idx < len(candidates):
+                            original_result = candidates[idx].copy()
+                            original_result["rerank_score"] = float(result.get("relevance_score", 0))
+                            reranked_search_results.append(original_result)
+
+                    search_results = reranked_search_results
+                    logger.info(
+                        "🌐 Web search: Reranked %d results (top_%d dari %d kandidat) (%s)",
+                        len(reranked_search_results), web_top_n, len(candidates),
+                        _query_log_meta(query),
+                    )
+                else:
+                    logger.warning("⚠️ Web search: Rerank failed, using original results (%s)", _query_log_meta(query))
     else:
         logger.info("🚫 Web search skipped (%s, %s)", reason_code, _query_log_meta(query))
         
