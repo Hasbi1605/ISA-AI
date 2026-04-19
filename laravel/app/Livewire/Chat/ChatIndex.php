@@ -503,7 +503,7 @@ class ChatIndex extends Component
             foreach ($this->sources as $source) {
                 if (!empty($source['url'])) {
                     $title = !empty($source['title']) ? $source['title'] : parse_url($source['url'], PHP_URL_HOST);
-                    $markdownSources .= "- [🌐 {$title}]({$source['url']})\n";
+                    $markdownSources .= "- [🌐 {$title}]({$source['url']})\n  `{$source['url']}`\n";
                     $hasValidSource = true;
                 } elseif (!empty($source['filename'])) {
                     $markdownSources .= "- 📄 {$source['filename']}\n";
