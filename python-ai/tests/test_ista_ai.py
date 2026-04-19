@@ -273,6 +273,88 @@ class TestPDRResolveParents:
         assert isinstance(result, list)
         assert len(result) > 0
 
+    def test_resolve_called_in_fallback_path(self, rag):
+        """Verifikasi _resolve_pdr_parents() dipanggil saat rerank disabled/failed."""
+        class FakeCollection:
+            def get(self, where=None, include=None):
+                return {
+                    "documents": ["parent fallback content"],
+                    "metadatas": [{
+                        "parent_id": "parent-fb-1",
+                        "filename": "doc.pdf",
+                        "parent_index": 5,
+                    }],
+                }
+
+        class FakeVectorStore:
+            _collection = FakeCollection()
+
+        child_chunks_fb = [{
+            "content": "child fallback",
+            "score": 0.85,
+            "filename": "doc.pdf",
+            "metadata": {
+                "chunk_type": "child",
+                "parent_id": "parent-fb-1",
+            },
+        }]
+
+        result = rag._resolve_pdr_parents(child_chunks_fb, FakeVectorStore(), "user_1")
+
+        assert len(result) == 1
+        assert result[0]["content"] == "parent fallback content"
+        assert result[0]["pdr"] is True
+
+    def test_child_metadata_can_resolve_parent_after_rerank(self, rag):
+        class FakeCollection:
+            def get(self, where=None, include=None):
+                return {
+                    "documents": ["konten parent lengkap"],
+                    "metadatas": [{
+                        "parent_id": "parent-1",
+                        "filename": "doc.pdf",
+                        "parent_index": 3,
+                    }],
+                }
+
+        class FakeVectorStore:
+            _collection = FakeCollection()
+
+        child_chunks = [{
+            "content": "child",
+            "score": 0.8,
+            "rerank_score": 0.9,
+            "filename": "doc.pdf",
+            "metadata": {
+                "chunk_type": "child",
+                "parent_id": "parent-1",
+            },
+        }]
+
+        result = rag._resolve_pdr_parents(child_chunks, FakeVectorStore(), "user_1")
+
+        assert len(result) == 1
+        assert result[0]["content"] == "konten parent lengkap"
+        assert result[0]["pdr"] is True
+
+
+class TestPDRFiltering:
+    def test_exclude_parent_corpus_keeps_child_and_legacy(self, rag):
+        documents = ["parent", "child", "legacy"]
+        metadatas = [
+            {"chunk_type": "parent"},
+            {"chunk_type": "child", "parent_id": "p1"},
+            {},
+        ]
+
+        filtered_docs, filtered_metas = rag._exclude_parent_corpus(documents, metadatas)
+
+        assert filtered_docs == ["child", "legacy"]
+        assert filtered_metas == [
+            {"chunk_type": "child", "parent_id": "p1"},
+            {},
+        ]
+
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # 4. UTILITY TESTS

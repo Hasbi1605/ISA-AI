@@ -946,6 +946,30 @@ def _rrf_merge_docs(
     return merged
 
 
+def _exclude_parent_search_results(results: List[Tuple]) -> List[Tuple]:
+    """Hilangkan parent chunks PDR dari hasil retrieval downstream."""
+    return [
+        (doc, score)
+        for doc, score in results
+        if doc.metadata.get("chunk_type") != "parent"
+    ]
+
+
+def _exclude_parent_corpus(documents: List[str], metadatas: List[dict]) -> Tuple[List[str], List[dict]]:
+    """Hilangkan parent chunks dari corpus readback sambil mempertahankan dokumen legacy."""
+    filtered_documents: List[str] = []
+    filtered_metadatas: List[dict] = []
+
+    for document, metadata in zip(documents, metadatas):
+        meta = metadata or {}
+        if meta.get("chunk_type") == "parent":
+            continue
+        filtered_documents.append(document)
+        filtered_metadatas.append(meta)
+
+    return filtered_documents, filtered_metadatas
+
+
 def _resolve_pdr_parents(
     child_chunks: List[Dict],
     vectorstore,
@@ -1142,6 +1166,7 @@ def search_relevant_chunks(query: str, filenames: List[str] = None, top_k: int =
                     f_vec = vectorstore.similarity_search_with_score(
                         search_query, k=per_doc_k, filter=f_filter
                     )
+                    f_vec = _exclude_parent_search_results(f_vec)
 
                     if hybrid_enabled and f_vec:
                         # (b) BM25: fetch ALL chunks untuk dokumen ini
@@ -1153,6 +1178,7 @@ def search_relevant_chunks(query: str, filenames: List[str] = None, top_k: int =
                             )
                             stored_texts = raw.get('documents', []) or []
                             stored_metas = raw.get('metadatas', []) or []
+                            stored_texts, stored_metas = _exclude_parent_corpus(stored_texts, stored_metas)
 
                             if stored_texts:
                                 bm25_ranked = _bm25_rank_docs(query, stored_texts, top_k=per_doc_k)
@@ -1182,6 +1208,7 @@ def search_relevant_chunks(query: str, filenames: List[str] = None, top_k: int =
             f_vec = vectorstore.similarity_search_with_score(
                 search_query, k=doc_candidates, filter=f_filter
             )
+            f_vec = _exclude_parent_search_results(f_vec)
             if hybrid_enabled and f_vec:
                 try:
                     raw = vectorstore.get(
@@ -1191,6 +1218,7 @@ def search_relevant_chunks(query: str, filenames: List[str] = None, top_k: int =
                     )
                     stored_texts = raw.get('documents', []) or []
                     stored_metas = raw.get('metadatas', []) or []
+                    stored_texts, stored_metas = _exclude_parent_corpus(stored_texts, stored_metas)
                     if stored_texts:
                         bm25_ranked = _bm25_rank_docs(query, stored_texts, top_k=doc_candidates)
                         docs = _rrf_merge_docs(
@@ -1213,6 +1241,7 @@ def search_relevant_chunks(query: str, filenames: List[str] = None, top_k: int =
             docs = vectorstore.similarity_search_with_score(
                 search_query, k=doc_candidates, filter=user_filter
             )
+            docs = _exclude_parent_search_results(docs)
 
         if not docs:
             logger.info("📚 RAG: Tidak ada chunk ditemukan")
@@ -1244,6 +1273,7 @@ def search_relevant_chunks(query: str, filenames: List[str] = None, top_k: int =
                             "filename": doc.metadata.get("filename", "unknown"),
                             "chunk_index": doc.metadata.get("chunk_index", 0),
                             "embedding_model": doc.metadata.get("embedding_model", provider_name),
+                            "metadata": dict(doc.metadata or {}),
                         })
 
                 # ── Guaranteed minimum: setiap dokumen yang dipilih user ────────
@@ -1276,6 +1306,7 @@ def search_relevant_chunks(query: str, filenames: List[str] = None, top_k: int =
                                     "filename": _doc.metadata.get("filename", "unknown"),
                                     "chunk_index": _doc.metadata.get("chunk_index", 0),
                                     "embedding_model": _doc.metadata.get("embedding_model", provider_name),
+                                    "metadata": dict(_doc.metadata or {}),
                                     "forced": True,
                                 })
 
@@ -1328,8 +1359,20 @@ def search_relevant_chunks(query: str, filenames: List[str] = None, top_k: int =
                 "filename": doc.metadata.get("filename", "unknown"),
                 "chunk_index": doc.metadata.get("chunk_index", 0),
                 "embedding_model": doc.metadata.get("embedding_model", provider_name),
+                "metadata": dict(doc.metadata or {}),
             })
         logger.info("📚 RAG: Found %d chunks (vector search)", len(results))
+
+        try:
+            from app.config_loader import get_pdr_config as _get_pdr
+            _pdr = _get_pdr()
+            _pdr_enabled = _pdr.get('enabled', False)
+        except Exception:
+            _pdr_enabled = False
+
+        if _pdr_enabled:
+            results = _resolve_pdr_parents(results, vectorstore, str(user_id))
+
         return results, True
         
     except Exception as e:
@@ -1427,11 +1470,18 @@ def get_document_chunks_for_summarization(filename: str, user_id: str = None, ma
         
         # Get all chunks with user_id filter
         docs = vectorstore.get(where={"$and": [{"filename": filename}, {"user_id": str(user_id)}]})
-        
+
         if not docs or not docs.get("documents"):
             return False, [], 0
-        
-        chunks = docs["documents"]
+
+        chunks, _ = _exclude_parent_corpus(
+            docs.get("documents", []) or [],
+            docs.get("metadatas", []) or [],
+        )
+
+        if not chunks:
+            return False, [], 0
+
         total_chunks = len(chunks)
         logger.info(f"Found {total_chunks} chunks for summarization")
         

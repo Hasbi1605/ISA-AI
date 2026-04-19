@@ -55,15 +55,12 @@ COPY . .
 EXPOSE 8001
 
 # =====================================================================
-# Jalankan dengan 2 uvicorn workers + preload untuk efisiensi RAM:
+# Jalankan dengan 2 uvicorn workers untuk concurrency ringan:
 # - --workers 2: 2 proses paralel = lebih responsif saat ada request bersamaan
-# - --preload: kode dimuat sekali di parent process, lalu di-fork ke workers
-#              (lebih hemat RAM daripada setiap worker load dari nol)
 # - --timeout-keep-alive 75: koneksi streaming SSE tidak di-close terlalu cepat
 # =====================================================================
 CMD ["uvicorn", "app.main:app", \
      "--host", "0.0.0.0", \
      "--port", "8001", \
      "--workers", "2", \
-     "--preload", \
      "--timeout-keep-alive", "75"]
