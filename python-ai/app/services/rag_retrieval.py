@@ -4,8 +4,9 @@ from typing import List, Tuple, Dict
 from collections import Counter
 
 from langchain_chroma import Chroma
+from langchain_core.documents import Document
 
-from app.services.rag_config import CHROMA_PATH
+from app.services.rag_config import CHROMA_PATH, VECTOR_COLLECTION_NAME
 from app.services.rag_embeddings import get_embeddings_with_fallback
 from app.services.rag_hybrid import (
     _should_use_hyde,
@@ -22,6 +23,41 @@ from app.services.rag_policy import get_langsearch_service
 logger = logging.getLogger(__name__)
 
 
+def _get_child_corpus(vectorstore, where: Dict, limit: int) -> Tuple[List[str], List[dict]]:
+    raw = vectorstore.get(
+        where=where,
+        include=['documents', 'metadatas'],
+        limit=limit,
+    )
+    stored_texts = raw.get('documents', []) or []
+    stored_metas = raw.get('metadatas', []) or []
+    return _exclude_parent_corpus(stored_texts, stored_metas)
+
+
+def _bm25_child_fallback(
+    query: str,
+    stored_texts: List[str],
+    stored_metas: List[dict],
+    top_k: int,
+) -> List[Tuple]:
+    if not stored_texts:
+        return []
+
+    ranked = _bm25_rank_docs(query, stored_texts, top_k=top_k)
+    fallback_docs: List[Tuple] = []
+    for idx, score in ranked:
+        if idx >= len(stored_texts):
+            continue
+        fallback_docs.append((
+            Document(
+                page_content=stored_texts[idx],
+                metadata=stored_metas[idx] if idx < len(stored_metas) else {},
+            ),
+            float(score),
+        ))
+    return fallback_docs
+
+
 def search_relevant_chunks(query: str, filenames: List[str] = None, top_k: int = 5, user_id: str = None) -> Tuple[List[Dict], bool]:
     try:
         embeddings, provider_name, _ = get_embeddings_with_fallback()
@@ -30,7 +66,7 @@ def search_relevant_chunks(query: str, filenames: List[str] = None, top_k: int =
             return [], False
 
         vectorstore = Chroma(
-            collection_name="documents_collection",
+            collection_name=VECTOR_COLLECTION_NAME,
             embedding_function=embeddings,
             persist_directory=CHROMA_PATH
         )
@@ -90,18 +126,16 @@ def search_relevant_chunks(query: str, filenames: List[str] = None, top_k: int =
                         search_query, k=per_doc_k, filter=f_filter
                     )
                     f_vec = _exclude_parent_search_results(f_vec)
+                    stored_texts: List[str] = []
+                    stored_metas: List[dict] = []
 
-                    if hybrid_enabled and f_vec:
+                    if hybrid_enabled:
                         try:
-                            raw = vectorstore.get(
-                                where={"$and": [user_filter, {"filename": fname}]},
-                                include=['documents', 'metadatas'],
-                                limit=bm25_cands,
+                            stored_texts, stored_metas = _get_child_corpus(
+                                vectorstore,
+                                {"$and": [user_filter, {"filename": fname}]},
+                                bm25_cands,
                             )
-                            stored_texts = raw.get('documents', []) or []
-                            stored_metas = raw.get('metadatas', []) or []
-                            stored_texts, stored_metas = _exclude_parent_corpus(stored_texts, stored_metas)
-
                             if stored_texts:
                                 bm25_ranked = _bm25_rank_docs(query, stored_texts, top_k=per_doc_k)
                                 merged = _rrf_merge_docs(
@@ -117,6 +151,22 @@ def search_relevant_chunks(query: str, filenames: List[str] = None, top_k: int =
                         except Exception as berr:
                             logger.debug("BM25 fallback ke vector untuk %s: %s", fname, berr)
 
+                    if not f_vec:
+                        if not stored_texts:
+                            try:
+                                stored_texts, stored_metas = _get_child_corpus(
+                                    vectorstore,
+                                    {"$and": [user_filter, {"filename": fname}]},
+                                    per_doc_k,
+                                )
+                            except Exception as cerr:
+                                logger.debug("Child corpus fallback gagal untuk %s: %s", fname, cerr)
+                        fallback_docs = _bm25_child_fallback(query, stored_texts, stored_metas, per_doc_k)
+                        if fallback_docs:
+                            logger.info("   📄 %s → %d chunk (child-corpus fallback)", fname, len(fallback_docs))
+                            all_docs.extend(fallback_docs)
+                            continue
+
                     logger.info("   📄 %s → %d chunk (vector only)", fname, len(f_vec))
                     all_docs.extend(f_vec)
 
@@ -131,16 +181,15 @@ def search_relevant_chunks(query: str, filenames: List[str] = None, top_k: int =
                 search_query, k=doc_candidates, filter=f_filter
             )
             f_vec = _exclude_parent_search_results(f_vec)
-            if hybrid_enabled and f_vec:
+            stored_texts: List[str] = []
+            stored_metas: List[dict] = []
+            if hybrid_enabled:
                 try:
-                    raw = vectorstore.get(
-                        where={"$and": [user_filter, {"filename": filenames[0]}]},
-                        include=['documents', 'metadatas'],
-                        limit=bm25_cands,
+                    stored_texts, stored_metas = _get_child_corpus(
+                        vectorstore,
+                        {"$and": [user_filter, {"filename": filenames[0]}]},
+                        bm25_cands,
                     )
-                    stored_texts = raw.get('documents', []) or []
-                    stored_metas = raw.get('metadatas', []) or []
-                    stored_texts, stored_metas = _exclude_parent_corpus(stored_texts, stored_metas)
                     if stored_texts:
                         bm25_ranked = _bm25_rank_docs(query, stored_texts, top_k=doc_candidates)
                         docs = _rrf_merge_docs(
@@ -157,6 +206,20 @@ def search_relevant_chunks(query: str, filenames: List[str] = None, top_k: int =
             else:
                 docs = f_vec
                 logger.info("🔍 RAG: Filtering by filename: %s untuk user_id: %s", filenames[0], user_id)
+
+            if not docs:
+                if not stored_texts:
+                    try:
+                        stored_texts, stored_metas = _get_child_corpus(
+                            vectorstore,
+                            {"$and": [user_filter, {"filename": filenames[0]}]},
+                            doc_candidates,
+                        )
+                    except Exception as cerr:
+                        logger.debug("Child corpus fallback gagal untuk %s: %s", filenames[0], cerr)
+                docs = _bm25_child_fallback(query, stored_texts, stored_metas, doc_candidates)
+                if docs:
+                    logger.info("🔍 RAG: %s — %d chunk (child-corpus fallback)", filenames[0], len(docs))
 
         else:
             logger.info("🔍 RAG: Searching all documents untuk user_id: %s", user_id)

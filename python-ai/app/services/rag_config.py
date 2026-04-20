@@ -5,6 +5,8 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 CHROMA_PATH = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "chroma_data")
+VECTOR_COLLECTION_NAME = "documents_collection"
+PARENT_COLLECTION_NAME = "documents_parent_collection"
 
 try:
     from app.config_loader import get_config as _get_config

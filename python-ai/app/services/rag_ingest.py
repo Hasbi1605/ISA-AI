@@ -9,6 +9,8 @@ from langchain_chroma import Chroma
 
 from app.services.rag_config import (
     CHROMA_PATH,
+    VECTOR_COLLECTION_NAME,
+    PARENT_COLLECTION_NAME,
     TOKEN_CHUNK_SIZE,
     TOKEN_CHUNK_OVERLAP,
     AGGRESSIVE_BATCH_SIZE,
@@ -186,14 +188,18 @@ def process_document(file_path: str, filename: str, user_id: str = "unknown"):
         logger.info("Total capacity: 2M TPM across 4 models (4 x 500K TPM)")
 
         vectorstore = Chroma(
-            collection_name="documents_collection",
+            collection_name=VECTOR_COLLECTION_NAME,
             embedding_function=embeddings,
             persist_directory=CHROMA_PATH
         )
 
         if pdr_enabled and pdr_parent_docs:
             try:
-                raw_col = vectorstore._collection
+                parent_store = Chroma(
+                    collection_name=PARENT_COLLECTION_NAME,
+                    persist_directory=CHROMA_PATH,
+                )
+                raw_col = parent_store._collection
                 p_ids   = [pid for pid, _, _ in pdr_parent_docs]
                 p_texts = [txt for _, txt, _ in pdr_parent_docs]
                 p_metas = [meta for _, _, meta in pdr_parent_docs]
@@ -285,7 +291,7 @@ def process_document(file_path: str, filename: str, user_id: str = "unknown"):
                             raise Exception(f"Semua 4 embedding models gagal (2M TPM exhausted) setelah {successful_chunks} chunks berhasil.")
 
                         vectorstore = Chroma(
-                            collection_name="documents_collection",
+                            collection_name=VECTOR_COLLECTION_NAME,
                             embedding_function=embeddings,
                             persist_directory=CHROMA_PATH
                         )
@@ -328,7 +334,7 @@ def process_document(file_path: str, filename: str, user_id: str = "unknown"):
                                             embeddings, provider_name, current_model_index = get_embeddings_with_fallback(current_model_index)
                                             if embeddings:
                                                 vectorstore = Chroma(
-                                                    collection_name="documents_collection",
+                                                    collection_name=VECTOR_COLLECTION_NAME,
                                                     embedding_function=embeddings,
                                                     persist_directory=CHROMA_PATH
                                                 )
@@ -373,14 +379,18 @@ def process_document(file_path: str, filename: str, user_id: str = "unknown"):
 
 def delete_document_vectors(filename: str):
     try:
-        from app.services.rag_config import CHROMA_PATH, EMBEDDING_MODELS
+        from app.services.rag_config import (
+            CHROMA_PATH,
+            VECTOR_COLLECTION_NAME,
+            PARENT_COLLECTION_NAME,
+        )
         embeddings, provider_name, _ = get_embeddings_with_fallback()
 
         if embeddings is None:
             return False, "Tidak dapat menginisialisasi embedding model untuk delete operation."
 
         vectorstore = Chroma(
-            collection_name="documents_collection",
+            collection_name=VECTOR_COLLECTION_NAME,
             embedding_function=embeddings,
             persist_directory=CHROMA_PATH
         )
@@ -388,7 +398,11 @@ def delete_document_vectors(filename: str):
         vectorstore.delete(where={"filename": filename})
 
         try:
-            raw_col = vectorstore._collection
+            parent_store = Chroma(
+                collection_name=PARENT_COLLECTION_NAME,
+                persist_directory=CHROMA_PATH,
+            )
+            raw_col = parent_store._collection
             raw_col.delete(where={"$and": [{"filename": filename}, {"chunk_type": "parent"}]})
             logger.info("✅ PDR parent chunks for %s deleted", filename)
         except Exception as pe:

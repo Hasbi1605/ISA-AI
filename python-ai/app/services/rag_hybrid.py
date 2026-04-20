@@ -3,6 +3,10 @@ import re
 import logging
 from typing import List, Tuple, Dict, Optional
 
+from langchain_chroma import Chroma
+
+from app.services.rag_config import CHROMA_PATH, PARENT_COLLECTION_NAME
+
 logger = logging.getLogger(__name__)
 
 _HYDE_SKIP_PATTERNS = [
@@ -255,24 +259,42 @@ def _resolve_pdr_parents(
     if not ordered_parent_ids:
         return child_chunks
 
-    try:
-        raw_col = vectorstore._collection
-        result = raw_col.get(
-            where={
-                "$and": [
-                    {"user_id": str(user_id)},
-                    {"chunk_type": "parent"},
-                    {"parent_id": {"$in": ordered_parent_ids}},
-                ]
-            },
-            include=["documents", "metadatas"],
-        )
+    parent_collections = []
 
+    try:
+        parent_store = Chroma(
+            collection_name=PARENT_COLLECTION_NAME,
+            persist_directory=CHROMA_PATH,
+        )
+        parent_collections.append(parent_store._collection)
+    except Exception as e:
+        logger.debug("⚠️  Parent collection unavailable: %s", e)
+
+    legacy_collection = getattr(vectorstore, "_collection", None)
+    if legacy_collection is not None:
+        parent_collections.append(legacy_collection)
+
+    try:
         parent_map: Dict[str, Dict] = {}
-        for doc, meta in zip(result.get("documents", []), result.get("metadatas", [])):
-            pid = meta.get("parent_id")
-            if pid:
-                parent_map[pid] = {"content": doc, "metadata": meta}
+        for raw_col in parent_collections:
+            result = raw_col.get(
+                where={
+                    "$and": [
+                        {"user_id": str(user_id)},
+                        {"chunk_type": "parent"},
+                        {"parent_id": {"$in": ordered_parent_ids}},
+                    ]
+                },
+                include=["documents", "metadatas"],
+            )
+
+            for doc, meta in zip(result.get("documents", []), result.get("metadatas", [])):
+                pid = meta.get("parent_id")
+                if pid and pid not in parent_map:
+                    parent_map[pid] = {"content": doc, "metadata": meta}
+
+            if len(parent_map) >= len(ordered_parent_ids):
+                break
 
         resolved: List[Dict] = []
         non_pdr: List[Dict] = []
