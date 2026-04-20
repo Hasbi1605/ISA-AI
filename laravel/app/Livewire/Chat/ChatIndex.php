@@ -7,6 +7,7 @@ use App\Models\Conversation;
 use App\Models\Message;
 use App\Models\Document;
 use App\Services\AIService;
+use App\Services\ChatOrchestrationService;
 use App\Services\DocumentLifecycleService;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Storage;
@@ -336,74 +337,44 @@ class ChatIndex extends Component
         }
     }
 
-    public function sendMessage(?string $prompt = null, AIService $aiService)
+    public function sendMessage(?string $prompt = null, AIService $aiService, ?ChatOrchestrationService $orchestrator = null)
     {
+        $orchestrator = $orchestrator ?? app(ChatOrchestrationService::class);
+
         if ($prompt !== null) {
             $this->prompt = $prompt;
         }
 
-        // Mencegah PHP kill process (Time Limit Exceeded) akibat lamanya process LLM
         set_time_limit(120);
-
-        // Reset pointer typewriter agar hanya pesan assistant terbaru yang dianimasikan.
         $this->newMessageId = null;
 
         $this->validate([
             'prompt' => 'required|string|min:1',
         ]);
 
-        // 1. Ensure conversation exists
-        if (!$this->currentConversationId) {
-            $conversation = Conversation::create([
-                'user_id' => Auth::id(),
-                'title' => substr($this->prompt, 0, 50) . '...'
-            ]);
-            $this->currentConversationId = $conversation->id;
-        }
+        $this->currentConversationId = $orchestrator->createConversationIfNeeded(
+            $this->currentConversationId,
+            $this->prompt
+        );
 
-        // 2. Save User Message
-        $userMessage = Message::create([
-            'conversation_id' => $this->currentConversationId,
-            'role' => 'user',
-            'content' => $this->prompt
-        ]);
-
-        $this->messages[] = $userMessage->toArray();
+        $userMessageArray = $orchestrator->saveUserMessage($this->currentConversationId, $this->prompt);
+        $this->messages[] = $userMessageArray;
         $this->dispatch('user-message-acked');
-        $userPrompt = $this->prompt;
         $this->prompt = '';
         $this->sources = [];
 
-        // 3. Prepare full history for AI
-        $history = [
-            ['role' => 'system', 'content' => "Anda adalah ISTA AI, asisten virtual istana pintar. Jawablah dengan sopan dan membantu."]
-        ];
+        $history = $orchestrator->buildHistory($this->messages);
 
-        foreach ($this->messages as $msg) {
-            $history[] = ['role' => $msg['role'], 'content' => $msg['content']];
-        }
+        $this->stream('assistant-output', "", true);
 
-        // 4. Handle Streaming Response
+        $documentFilenames = $orchestrator->getDocumentFilenames($this->conversationDocuments);
+        $sourcePolicy = $orchestrator->getSourcePolicy($documentFilenames);
+        $allowAutoRealtimeWeb = $orchestrator->shouldAllowAutoRealtimeWeb($documentFilenames);
+
         $fullResponse = "";
         $modelName = "AI";
         $streamBuffer = '';
 
-        // Push a placeholder assistant message for streaming
-        $this->stream('assistant-output', "", true);
-
-        // Get document filenames for RAG mode
-        $documentFilenames = null;
-        if (!empty($this->conversationDocuments)) {
-            $documentFilenames = Document::whereIn('id', $this->conversationDocuments)
-                ->pluck('original_name')
-                ->toArray();
-        }
-
-        $hasDocumentContext = !empty($documentFilenames);
-        $sourcePolicy = $hasDocumentContext ? 'document_context' : 'hybrid_realtime_auto';
-        $allowAutoRealtimeWeb = !$hasDocumentContext;
-
-        // Fetch stream from AIService
         foreach (
             $aiService->sendChat(
                 $history,
@@ -412,9 +383,9 @@ class ChatIndex extends Component
                 $this->webSearchMode,
                 $sourcePolicy,
                 $allowAutoRealtimeWeb
-        ) as $chunk
+            ) as $chunk
         ) {
-            [$chunk, $streamBuffer, $parsedModelName, $parsedSources] = $this->extractStreamMetadata(
+            [$chunk, $streamBuffer, $parsedModelName, $parsedSources] = $orchestrator->extractStreamMetadata(
                 (string) $chunk,
                 $streamBuffer
             );
@@ -429,7 +400,7 @@ class ChatIndex extends Component
                 $this->dispatch('assistant-sources', $this->sources);
             }
 
-            $chunk = $this->sanitizeAssistantOutput((string) $chunk);
+            $chunk = $orchestrator->sanitizeAssistantOutput((string) $chunk);
 
             if ($chunk !== '') {
                 $fullResponse .= $chunk;
@@ -437,39 +408,15 @@ class ChatIndex extends Component
             }
         }
 
-        // 5. Finalize: Save AI Message to DB 
-        $cleanContent = preg_replace('/\[SOURCES:\[.+?\]\]/s', '', $fullResponse);
-        $cleanContent = $this->sanitizeAssistantOutput((string) $cleanContent);
-        $cleanContent = trim($cleanContent);
+        $cleanContent = $orchestrator->cleanResponseContent($fullResponse);
 
-        // Append sources to the final markdown if exist
         if (!empty($this->sources)) {
-            $markdownSources = "\n\n---\n**Sumber Referensi:**\n";
-            $hasValidSource = false;
-            foreach ($this->sources as $source) {
-                if (!empty($source['url'])) {
-                    $title = !empty($source['title']) ? $source['title'] : parse_url($source['url'], PHP_URL_HOST);
-                    $markdownSources .= "- [🌐 {$title}]({$source['url']})\n  `{$source['url']}`\n";
-                    $hasValidSource = true;
-                } elseif (!empty($source['filename'])) {
-                    $markdownSources .= "- 📄 {$source['filename']}\n";
-                    $hasValidSource = true;
-                }
-            }
-            if ($hasValidSource) {
-                $cleanContent .= $markdownSources;
-            }
+            $cleanContent .= $orchestrator->sanitizeAndFormatSources($this->sources);
         }
 
-        $assistantMsg = Message::create([
-            'conversation_id' => $this->currentConversationId,
-            'role' => 'assistant',
-            'content' => $cleanContent
-        ]);
-
+        $assistantMsg = $orchestrator->saveAssistantMessage($this->currentConversationId, $cleanContent);
         $this->newMessageId = $assistantMsg->id;
 
-        // Refresh state
         $this->loadConversation($this->currentConversationId);
         $this->loadConversations();
         $this->dispatch('assistant-message-persisted');
@@ -477,67 +424,12 @@ class ChatIndex extends Component
 
     private function sanitizeAssistantOutput(string $text): string
     {
-        if ($text === '') {
-            return $text;
-        }
-
-        $replacements = [
-            '/\bchunks?\b/i' => 'bagian dokumen',
-            '/\bchunk(?:ing|ed)?\b/i' => 'bagian dokumen',
-            '/\bembeddings?\b/i' => 'representasi dokumen',
-            '/\bvectors?\b/i' => 'indeks dokumen',
-            '/\brag\b/i' => 'konteks dokumen',
-            '/\bretrieval\b/i' => 'pencarian dokumen',
-            '/\btop\s*[- ]?k\b/i' => 'hasil teratas',
-        ];
-
-        $sanitized = $text;
-        foreach ($replacements as $pattern => $replacement) {
-            $sanitized = preg_replace($pattern, $replacement, (string) $sanitized);
-        }
-
-        return (string) $sanitized;
+        return app(ChatOrchestrationService::class)->sanitizeAssistantOutput($text);
     }
 
     private function extractStreamMetadata(string $chunk, string $buffer = ''): array
     {
-        $combined = $buffer . $chunk;
-        $modelName = null;
-        $sources = null;
-
-        if (preg_match('/\[MODEL:(.+?)\]\n?/', $combined, $matches)) {
-            $modelName = trim((string) $matches[1]);
-            $combined = preg_replace('/\[MODEL:.+?\]\n?/', '', $combined, 1) ?? $combined;
-        }
-
-        if (preg_match('/\[SOURCES:(\[.+?\])\]/s', $combined, $matches)) {
-            $parsedSources = json_decode($matches[1], true);
-            if (is_array($parsedSources)) {
-                $sources = $parsedSources;
-            }
-            $combined = preg_replace('/\[SOURCES:\[.+?\]\]/s', '', $combined, 1) ?? $combined;
-        }
-
-        $nextBuffer = '';
-        foreach (['[SOURCES:', '[MODEL:'] as $marker) {
-            $markerPos = strrpos($combined, $marker);
-            if ($markerPos === false) {
-                continue;
-            }
-
-            $tail = substr($combined, $markerPos);
-            $isComplete = $marker === '[SOURCES:'
-                ? preg_match('/^\[SOURCES:(\[.+?\])\]/s', $tail) === 1
-                : preg_match('/^\[MODEL:(.+?)\]\n?/s', $tail) === 1;
-
-            if (!$isComplete) {
-                $nextBuffer = $tail;
-                $combined = substr($combined, 0, $markerPos);
-                break;
-            }
-        }
-
-        return [$combined, $nextBuffer, $modelName, $sources];
+        return app(ChatOrchestrationService::class)->extractStreamMetadata($chunk, $buffer);
     }
 
     public function render()
