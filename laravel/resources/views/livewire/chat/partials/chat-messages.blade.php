@@ -1,6 +1,7 @@
 <div x-data="chatMessages"
      class="flex-1 overflow-y-auto px-3 sm:px-6 py-6 sm:py-8 space-y-6 sm:space-y-8"
      x-ref="chatBox"
+     data-chat-box
      x-on:message-streamed.window="scrollToBottom()"
      x-on:message-send.window="optimisticUserMessage = $event.detail.text; scrollToBottom(true)">
     @if(empty($messages))

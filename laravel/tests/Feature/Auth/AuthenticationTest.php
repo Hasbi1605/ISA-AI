@@ -2,8 +2,10 @@
 
 namespace Tests\Feature\Auth;
 
+use App\Livewire\Chat\ChatIndex;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Livewire\Livewire;
 use Livewire\Volt\Volt;
 use Tests\TestCase;
 
@@ -35,6 +37,51 @@ class AuthenticationTest extends TestCase
             ->assertRedirect(route('dashboard', absolute: false));
 
         $this->assertAuthenticated();
+    }
+
+    public function test_users_are_redirected_to_chat_after_logging_in_from_guest_chat_flow(): void
+    {
+        $user = User::factory()->create();
+
+        $this->get('/guest-chat')
+            ->assertRedirect(route('login'));
+
+        $component = Volt::test('pages.auth.login')
+            ->set('form.email', $user->email)
+            ->set('form.password', 'password');
+
+        $component->call('login');
+
+        $component
+            ->assertHasNoErrors()
+            ->assertRedirect(route('chat', absolute: false));
+
+        $this->assertAuthenticated();
+    }
+
+    public function test_dashboard_prompt_is_preserved_until_chat_mount_after_guest_login(): void
+    {
+        $user = User::factory()->create();
+
+        $this->get('/guest-chat?q=ringkas berita hari ini')
+            ->assertRedirect(route('login'));
+
+        $component = Volt::test('pages.auth.login')
+            ->set('form.email', $user->email)
+            ->set('form.password', 'password');
+
+        $component->call('login');
+
+        $component
+            ->assertHasNoErrors()
+            ->assertRedirect(route('chat', absolute: false));
+
+        $this->assertAuthenticated();
+        $this->assertSame('ringkas berita hari ini', session('pending_prompt'));
+
+        Livewire::actingAs($user)
+            ->test(ChatIndex::class)
+            ->assertSet('prompt', 'ringkas berita hari ini');
     }
 
     public function test_users_can_not_authenticate_with_invalid_password(): void

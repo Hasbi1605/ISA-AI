@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="{{ str_replace('_', '-', app()->getLocale()) }}"
       x-data="{ 
-          darkMode: localStorage.getItem('theme') === 'dark' || (!('theme' in localStorage) && window.matchMedia('(prefers-color-scheme: dark)').matches)
+          darkMode: localStorage.getItem('theme') === 'dark'
       }" 
       x-init="$watch('darkMode', val => localStorage.setItem('theme', val ? 'dark' : 'light'))"
       :class="{ 'dark': darkMode }">
@@ -37,7 +37,7 @@
         <x-page-loader />
         <script>
             // Inline script to prevent flash of unstyled content (FOUC)
-            if (localStorage.theme === 'dark' || (!('theme' in localStorage) && window.matchMedia('(prefers-color-scheme: dark)').matches)) {
+            if (localStorage.theme === 'dark') {
                 document.documentElement.classList.add('dark');
             } else {
                 document.documentElement.classList.remove('dark');
