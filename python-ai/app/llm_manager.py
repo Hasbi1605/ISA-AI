@@ -74,7 +74,11 @@ def _get_default_system_prompt_fallback():
             return prompt
     return os.getenv(
         "DEFAULT_SYSTEM_PROMPT",
-        "Anda adalah ISTA AI, asisten virtual istana pintar. Jawablah dengan sopan dan membantu."
+        (
+            "Anda adalah ISTA AI, asisten kerja internal untuk pegawai "
+            "Istana Kepresidenan Yogyakarta. Jawab dengan ramah, serius, "
+            "fokus, dan ringkas."
+        )
     )
 
 
@@ -320,7 +324,7 @@ def get_llm_stream(
             )
 
         base = system_prompt_base if system_prompt_base else default_system_prompt
-        enhanced_system = search_context + base + assertive_instruction
+        enhanced_system = f"{search_context.rstrip()}\n\n{base}\n\n{assertive_instruction.strip()}".strip()
     else:
         enhanced_system = system_prompt_base if system_prompt_base else default_system_prompt
 

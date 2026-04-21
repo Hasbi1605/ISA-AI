@@ -165,13 +165,13 @@ class LangSearchService:
             url = result.get("url", "")
             date = result.get("datePublished", "")
             
-            result_str = f"""🔍 Hasil #{idx}:
-   📌 Judul: {title}
-   📝 Isi: {snippet}"""
+            result_str = f"""Hasil {idx}:
+Judul: {title}
+Ringkasan: {snippet}"""
             if url:
-                result_str += f"\n   🔗 Sumber: {url}"
+                result_str += f"\nSumber: {url}"
             if date:
-                result_str += f"\n   📅 Tanggal Publikasi: {date}"
+                result_str += f"\nTanggal publikasi: {date}"
             results_formatted.append(result_str)
         
         results_str = "\n\n".join(results_formatted)

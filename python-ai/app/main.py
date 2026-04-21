@@ -81,16 +81,34 @@ def _get_latest_user_query(messages: List[Dict[str, str]]) -> str:
 
 
 def _document_permission_message() -> str:
+    try:
+        from app.config_loader import get_rag_no_answer_prompt
+
+        prompt = get_rag_no_answer_prompt()
+        if prompt:
+            return prompt
+    except Exception:
+        pass
+
     return (
-        "Informasi yang Anda tanyakan tidak ditemukan pada dokumen yang aktif. "
-        "Apakah Anda mengizinkan saya menggunakan web search atau pengetahuan umum untuk melanjutkan?"
+        "Saya belum menemukan informasi tersebut pada dokumen yang sedang aktif. "
+        "Jika Anda berkenan, saya bisa melanjutkan dengan web search atau pengetahuan umum."
     )
 
 
 def _document_context_error_message() -> str:
+    try:
+        from app.config_loader import get_document_error_prompt
+
+        prompt = get_document_error_prompt()
+        if prompt:
+            return prompt
+    except Exception:
+        pass
+
     return (
-        "Saya belum bisa mengambil konteks dari dokumen yang dipilih. "
-        "Apakah Anda mengizinkan saya menggunakan web search atau pengetahuan umum untuk melanjutkan?"
+        "Saya belum bisa membaca konteks dari dokumen yang dipilih saat ini. "
+        "Jika Anda berkenan, saya bisa melanjutkan dengan web search atau pengetahuan umum."
     )
 
 @app.get("/api/health", response_model=HealthResponse)
