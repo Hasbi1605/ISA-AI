@@ -4,6 +4,8 @@ namespace Tests\Unit\Services\Chat;
 
 use App\Services\Chat\LaravelChatService;
 use Illuminate\Support\Facades\Config;
+use Laravel\Ai\Streaming\Events\TextDelta;
+use Laravel\Ai\Streaming\Events\Citation;
 use Tests\TestCase;
 
 class LaravelChatServiceTest extends TestCase
@@ -152,8 +154,35 @@ class LaravelChatServiceTest extends TestCase
         $this->assertStringNotContainsString('dokumen aktif belum tersedia', $output);
     }
 
-    public function test_source_metadata_emitted(): void
+    public function test_stream_parsing_handles_text_delta(): void
     {
-        $this->assertTrue(true);
+        $event = new TextDelta(
+            id: '1',
+            messageId: 'msg1',
+            delta: 'Hello',
+            timestamp: time()
+        );
+
+        $this->assertInstanceOf(TextDelta::class, $event);
+        $this->assertEquals('Hello', $event->delta);
+    }
+
+    public function test_citation_emits_source_metadata(): void
+    {
+        $citationData = new \Laravel\Ai\Responses\Data\UrlCitation(
+            title: 'Test Title',
+            url: 'https://example.com'
+        );
+
+        $event = new Citation(
+            id: '1',
+            messageId: 'msg1',
+            citation: $citationData,
+            timestamp: time()
+        );
+
+        $this->assertInstanceOf(Citation::class, $event);
+        $this->assertEquals('Test Title', $event->citation->title);
+        $this->assertEquals('https://example.com', $event->citation->url);
     }
 }

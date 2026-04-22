@@ -3,6 +3,8 @@
 namespace App\Services\Chat;
 
 use Laravel\Ai\Responses\StreamableAgentResponse;
+use Laravel\Ai\Streaming\Events\TextDelta;
+use Laravel\Ai\Streaming\Events\Citation;
 use Illuminate\Support\Facades\Log;
 
 class LaravelChatService
@@ -62,19 +64,19 @@ class LaravelChatService
         $sources = [];
 
         foreach ($stream as $event) {
-            if (isset($event->sources)) {
-                $sources = $event->sources;
-            }
-            if (isset($event->text)) {
-                yield $event->text;
-            } elseif (isset($event->delta) && isset($event->delta->text)) {
-                yield $event->delta->text;
+            if ($event instanceof TextDelta) {
+                yield $event->delta;
+            } elseif ($event instanceof Citation) {
+                $citation = $event->citation;
+                $sources[] = [
+                    'title' => $citation->title ?? '',
+                    'url' => $citation->url ?? '',
+                ];
             }
         }
 
         if (!empty($sources)) {
-            $sourceJson = json_encode($sources);
-            yield "\n[SOURCES:{$sourceJson}]\n";
+            yield "\n[SOURCES:" . json_encode($sources) . "]\n";
         }
     }
 
