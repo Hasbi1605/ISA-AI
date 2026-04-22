@@ -67,6 +67,7 @@ class LaravelAIGateway implements AIRuntimeInterface
         }
 
         return config('ai.laravel_ai.document_process_enabled', false)
-            || config('ai.laravel_ai.document_summarize_enabled', false);
+            || config('ai.laravel_ai.document_summarize_enabled', false)
+            || config('ai.laravel_ai.document_delete_enabled', true);
     }
 }

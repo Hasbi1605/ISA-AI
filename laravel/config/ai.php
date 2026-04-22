@@ -36,6 +36,7 @@ return [
         ],
         'document_process_enabled' => env('AI_DOCUMENT_PROCESS_ENABLED', false),
         'document_summarize_enabled' => env('AI_DOCUMENT_SUMMARIZE_ENABLED', false),
+        'document_delete_enabled' => env('AI_DOCUMENT_DELETE_ENABLED', true),
     ],
 
 ];
