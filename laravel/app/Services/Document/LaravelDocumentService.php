@@ -6,14 +6,19 @@ use App\Models\Document;
 use Illuminate\Support\Facades\Log;
 use Laravel\Ai\AiManager;
 use Laravel\Ai\AnonymousAgent;
+use Laravel\Ai\Files;
+use Laravel\Ai\Files\Document as AiDocument;
+use Laravel\Ai\Prompts\AgentPrompt;
 
 class LaravelDocumentService
 {
     protected AiManager $ai;
+    protected string $model;
 
     public function __construct()
     {
         $this->ai = app(AiManager::class);
+        $this->model = config('ai.laravel_ai.model', 'gpt-4o-mini');
     }
 
     public function processDocument(string $filePath, string $originalName, int $userId): array
@@ -26,23 +31,18 @@ class LaravelDocumentService
         }
 
         try {
-            $provider = $this->ai->documentProcessor();
-
-            $result = $provider->process(
-                file: $filePath,
-                originalFilename: $originalName,
-                userId: (string) $userId
-            );
+            $aiDoc = AiDocument::fromPath($filePath);
+            $storedFile = Files::put($aiDoc, null, $originalName);
 
             Log::info('LaravelDocumentService: document processed', [
                 'file' => $originalName,
-                'provider_id' => $result->id ?? null,
+                'provider_id' => $storedFile->id ?? null,
             ]);
 
             return [
                 'status' => 'success',
-                'message' => 'Dokumen berhasil diproses',
-                'provider_id' => $result->id ?? null,
+                'message' => 'Dokumen berhasil disimpan ke provider',
+                'provider_file_id' => $storedFile->id ?? null,
             ];
         } catch (\Throwable $e) {
             Log::error('LaravelDocumentService: process failed', [
@@ -57,7 +57,7 @@ class LaravelDocumentService
         }
     }
 
-    public function summarizeDocument(string $filename, ?string $user_id = null): array
+    public function summarizeDocument(string $filename, ?string $userId = null): array
     {
         if (!config('ai.laravel_ai.document_summarize_enabled', false)) {
             return [
@@ -67,9 +67,11 @@ class LaravelDocumentService
         }
 
         try {
-            $provider = $this->ai->textProvider();
-
-            $document = Document::where('original_name', $filename)->first();
+            $query = Document::where('original_name', $filename);
+            if ($userId !== null) {
+                $query->where('user_id', (int) $userId);
+            }
+            $document = $query->first();
 
             if (!$document) {
                 return [
@@ -78,19 +80,23 @@ class LaravelDocumentService
                 ];
             }
 
-            $attachments = array_filter([$document->file_path]);
+            $provider = $this->ai->textProvider();
+            $aiDoc = AiDocument::fromPath(storage_path('app/' . $document->file_path));
 
             $agent = AnonymousAgent::make(
-                instructions: 'Anda adalah asisten yang merangkum dokumen. Berikan ringkasan singkat dan akurat dari dokumen yang diberikan.'
+                instructions: 'Anda adalah asisten AI yang merangkum dokumen. Berikan ringkasan singkat dan akurat.'
             );
 
-            $result = $provider->agent(
+            $prompt = new AgentPrompt(
                 agent: $agent,
-                prompt: "Rangkum dokumen berikut: {$filename}",
-                attachments: $attachments,
+                prompt: 'Tolong rangkum dokumen berikut:',
+                attachments: [$aiDoc],
+                provider: $provider,
+                model: $this->model,
             );
 
-            $content = $result->content ?? $result->text ?? '';
+            $result = $provider->prompt($prompt);
+            $content = $result->content ?? '';
 
             Log::info('LaravelDocumentService: document summarized', [
                 'file' => $filename,
@@ -114,14 +120,34 @@ class LaravelDocumentService
         }
     }
 
-    public function deleteDocument(string $filename): bool
+    public function deleteDocument(string $filename, ?string $userId = null): bool
     {
         try {
-            $document = Document::where('original_name', $filename)->first();
-
-            if ($document) {
-                $document->delete();
+            $query = Document::where('original_name', $filename);
+            if ($userId !== null) {
+                $query->where('user_id', (int) $userId);
             }
+            $document = $query->first();
+
+            if (!$document) {
+                return true;
+            }
+
+            if ($document->provider_file_id) {
+                try {
+                    $file = Files::get($document->provider_file_id);
+                    if ($file) {
+                        Files::delete($file->id);
+                    }
+                } catch (\Throwable $e) {
+                    Log::warning('Provider file cleanup failed', [
+                        'id' => $document->provider_file_id,
+                        'error' => $e->getMessage(),
+                    ]);
+                }
+            }
+
+            $document->delete();
 
             Log::info('LaravelDocumentService: document deleted', [
                 'file' => $filename,
@@ -129,7 +155,7 @@ class LaravelDocumentService
 
             return true;
         } catch (\Throwable $e) {
-            Log::warning('LaravelDocumentService: delete failed', [
+            Log::error('LaravelDocumentService: delete failed', [
                 'file' => $filename,
                 'error' => $e->getMessage(),
             ]);

@@ -66,7 +66,30 @@ class LaravelDocumentServiceTest extends TestCase
 
         $service = new LaravelDocumentService();
 
-        $result = $service->deleteDocument('nonexistent.pdf');
+        $result = $service->deleteDocument('nonexistent.pdf', 'user1');
+
+        $this->assertIsBool($result);
+    }
+
+    public function test_summarize_document_queries_with_user_isolation(): void
+    {
+        Config::set('ai.laravel_ai.api_key', 'test-key');
+        Config::set('ai.laravel_ai.document_summarize_enabled', true);
+
+        $service = new LaravelDocumentService();
+
+        $result = $service->summarizeDocument('test.pdf', 'user1');
+
+        $this->assertIsArray($result);
+    }
+
+    public function test_delete_document_queries_with_user_isolation(): void
+    {
+        Config::set('ai.laravel_ai.api_key', 'test-key');
+
+        $service = new LaravelDocumentService();
+
+        $result = $service->deleteDocument('test.pdf', 'user1');
 
         $this->assertIsBool($result);
     }
