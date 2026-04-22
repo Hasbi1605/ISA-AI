@@ -16,6 +16,20 @@ class LaravelAIGateway implements AIRuntimeInterface
         ?string $source_policy = null,
         bool $allow_auto_realtime_web = true
     ): \Generator {
+        $document_filenames_valid = $document_filenames !== null && count($document_filenames) > 0;
+
+        if ($document_filenames_valid) {
+            $python = new PythonLegacyAdapter();
+            return $python->chat(
+                $messages,
+                $document_filenames,
+                $user_id,
+                $force_web_search,
+                $source_policy,
+                $allow_auto_realtime_web
+            );
+        }
+
         $service = app(LaravelChatService::class);
 
         yield from $service->chat(

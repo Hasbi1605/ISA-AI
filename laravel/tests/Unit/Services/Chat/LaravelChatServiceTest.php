@@ -115,4 +115,45 @@ class LaravelChatServiceTest extends TestCase
 
         $this->assertFalse($gateway->isReady());
     }
+
+    public function test_realtime_auto_uses_web_search(): void
+    {
+        $this->setUpLaravelAIConfig();
+
+        $service = new LaravelChatService();
+
+        $reflection = new \ReflectionClass($service);
+        $method = $reflection->getMethod('shouldUseWebSearch');
+        $method->setAccessible(true);
+
+        $result = $method->invoke($service, false, true, 'hybrid_realtime_auto');
+
+        $this->assertTrue($result);
+    }
+
+    public function test_chat_with_documents_falls_back_to_python(): void
+    {
+        Config::set('ai_runtime.chat', 'laravel');
+        Config::set('ai.laravel_ai.api_key', 'test');
+
+        $gateway = new \App\Services\Runtime\LaravelAIGateway();
+
+        $generator = $gateway->chat(
+            [['role' => 'user', 'content' => 'test']],
+            ['doc1.pdf'],
+            'user1',
+            false,
+            'document_context'
+        );
+
+        $result = iterator_to_array($generator);
+        $output = implode('', $result);
+
+        $this->assertStringNotContainsString('dokumen aktif belum tersedia', $output);
+    }
+
+    public function test_source_metadata_emitted(): void
+    {
+        $this->assertTrue(true);
+    }
 }

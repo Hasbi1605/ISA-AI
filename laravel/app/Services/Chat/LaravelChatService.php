@@ -59,12 +59,22 @@ class LaravelChatService
             )
         );
 
+        $sources = [];
+
         foreach ($stream as $event) {
+            if (isset($event->sources)) {
+                $sources = $event->sources;
+            }
             if (isset($event->text)) {
                 yield $event->text;
             } elseif (isset($event->delta) && isset($event->delta->text)) {
                 yield $event->delta->text;
             }
+        }
+
+        if (!empty($sources)) {
+            $sourceJson = json_encode($sources);
+            yield "\n[SOURCES:{$sourceJson}]\n";
         }
     }
 
@@ -75,6 +85,9 @@ class LaravelChatService
         }
         if (!$auto) {
             return false;
+        }
+        if ($policy === 'hybrid_realtime_auto') {
+            return $this->webSearchEnabled;
         }
         if ($policy === 'web-only' || $policy === 'web-preferred') {
             return $this->webSearchEnabled;
