@@ -21,9 +21,37 @@ class DocumentDeletionTest extends TestCase
         parent::setUp();
         $this->mock(AIRuntimeService::class, function ($mock) {
             $mock->shouldReceive('documentDelete')
+                ->withArgs(function ($filename, $userId) {
+                    return is_string($filename) && ($userId === null || is_string($userId));
+                })
                 ->andReturn(true)
                 ->byDefault();
         });
+    }
+
+    public function test_delete_document_passes_user_id_to_runtime(): void
+    {
+        Storage::fake('local');
+        $user = User::factory()->create();
+
+        $filePath = 'documents/' . $user->id . '/delete_user.pdf';
+        Storage::disk('local')->put($filePath, 'dummy content');
+
+        $document = Document::create([
+            'user_id' => $user->id,
+            'filename' => 'delete_user.pdf',
+            'original_name' => 'delete_user.pdf',
+            'file_path' => $filePath,
+            'mime_type' => 'application/pdf',
+            'file_size_bytes' => 123,
+            'status' => 'ready',
+        ]);
+
+        Livewire::actingAs($user)
+            ->test(DocumentIndex::class)
+            ->call('delete', $document->id);
+
+        $this->assertSoftDeleted($document);
     }
 
     public function test_delete_from_document_index_cleans_up_storage_and_vector(): void
