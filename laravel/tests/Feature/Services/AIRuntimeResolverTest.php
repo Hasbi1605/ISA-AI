@@ -1,0 +1,190 @@
+<?php
+
+namespace Tests\Feature\Services;
+
+use App\Services\AIRuntimeResolver;
+use App\Services\Runtime\LaravelAIGateway;
+use App\Services\Runtime\PythonLegacyAdapter;
+use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Config;
+use Tests\TestCase;
+use InvalidArgumentException;
+
+class AIRuntimeResolverTest extends TestCase
+{
+    protected function setUpRuntimeConfig(string $capability, string $runtime, bool $shadowEnabled = false): void
+    {
+        Config::set('ai_runtime.chat', 'python');
+        Config::set('ai_runtime.document_process', 'python');
+        Config::set('ai_runtime.document_summarize', 'python');
+        Config::set('ai_runtime.document_delete', 'python');
+        Config::set("ai_runtime.{$capability}", $runtime);
+        Config::set('ai_runtime.shadow.enabled', $shadowEnabled);
+        Config::set('ai_runtime.shadow.log_parity', false);
+    }
+
+    public function test_returns_python_runtime_when_configured(): void
+    {
+        $this->setUpRuntimeConfig('chat', 'python');
+
+        $resolver = new AIRuntimeResolver('chat', false);
+        $runtime = $resolver->getRuntime();
+
+        $this->assertInstanceOf(PythonLegacyAdapter::class, $runtime);
+    }
+
+    public function test_returns_laravel_runtime_when_configured(): void
+    {
+        $this->setUpRuntimeConfig('chat', 'laravel');
+
+        $resolver = new AIRuntimeResolver('chat', false);
+        $runtime = $resolver->getRuntime();
+
+        $this->assertInstanceOf(LaravelAIGateway::class, $runtime);
+    }
+
+    public function test_throws_exception_for_unknown_runtime(): void
+    {
+        $this->setUpRuntimeConfig('chat', 'unknown');
+
+        $resolver = new AIRuntimeResolver('chat', false);
+
+        $this->expectException(InvalidArgumentException::class);
+        $this->expectExceptionMessage('Unknown AI runtime type: unknown');
+
+        $resolver->getRuntime();
+    }
+
+    public function test_shadow_mode_disabled_by_default(): void
+    {
+        $this->setUpRuntimeConfig('chat', 'python', false);
+
+        $resolver = new AIRuntimeResolver('chat', false);
+
+        $this->assertFalse($resolver->isShadowMode());
+    }
+
+    public function test_shadow_mode_enabled_when_configured(): void
+    {
+        $this->setUpRuntimeConfig('chat', 'python', true);
+
+        $resolver = new AIRuntimeResolver('chat', true);
+
+        $this->assertTrue($resolver->isShadowMode());
+    }
+
+    public function test_shadow_mode_returns_secondary_runtime(): void
+    {
+        $this->setUpRuntimeConfig('chat', 'python', true);
+
+        $resolver = new AIRuntimeResolver('chat', true);
+        $primary = $resolver->getRuntime();
+        $secondary = $resolver->getSecondaryRuntime();
+
+        $this->assertInstanceOf(PythonLegacyAdapter::class, $primary);
+        $this->assertInstanceOf(LaravelAIGateway::class, $secondary);
+    }
+
+    public function test_for_factory_method_creates_resolver(): void
+    {
+        $this->setUpRuntimeConfig('chat', 'python', false);
+
+        $resolver = AIRuntimeResolver::for('chat');
+
+        $this->assertInstanceOf(AIRuntimeResolver::class, $resolver);
+        $this->assertFalse($resolver->isShadowMode());
+    }
+
+    public function test_execute_with_shadow_without_shadow_mode(): void
+    {
+        $this->setUpRuntimeConfig('chat', 'python', false);
+
+        $resolver = new AIRuntimeResolver('chat', false);
+
+        $result = $resolver->executeWithShadow(
+            fn($runtime) => 'primary_result',
+            fn($runtime) => 'secondary_result'
+        );
+
+        $this->assertEquals('primary_result', $result['primary']);
+        $this->assertNull($result['secondary']);
+        $this->assertNull($result['parity']);
+    }
+
+    public function test_execute_with_shadow_with_shadow_mode(): void
+    {
+        $this->setUpRuntimeConfig('chat', 'python', true);
+
+        $resolver = new AIRuntimeResolver('chat', true);
+
+        $result = $resolver->executeWithShadow(
+            fn($runtime) => 'primary_result',
+            fn($runtime) => 'secondary_result'
+        );
+
+        $this->assertEquals('primary_result', $result['primary']);
+        $this->assertEquals('secondary_result', $result['secondary']);
+        $this->assertNotNull($result['parity']);
+        $this->assertEquals('python', $result['parity']['primary']['source']);
+        $this->assertEquals('laravel', $result['parity']['secondary']['source']);
+    }
+
+    public function test_parity_metadata_contains_latency(): void
+    {
+        $this->setUpRuntimeConfig('chat', 'python', true);
+
+        $resolver = new AIRuntimeResolver('chat', true);
+
+        $result = $resolver->executeWithShadow(
+            fn($runtime) => 'primary_result',
+            fn($runtime) => 'secondary_result'
+        );
+
+        $this->assertArrayHasKey('latency_ms', $result['parity']['primary']);
+        $this->assertArrayHasKey('latency_ms', $result['parity']['secondary']);
+        $this->assertGreaterThan(0, $result['parity']['primary']['latency_ms']);
+    }
+
+    public function test_parity_detects_drift_when_results_differ(): void
+    {
+        $this->setUpRuntimeConfig('chat', 'python', true);
+
+        $resolver = new AIRuntimeResolver('chat', true);
+
+        $result = $resolver->executeWithShadow(
+            fn($runtime) => 'primary_result',
+            fn($runtime) => 'different_result'
+        );
+
+        $this->assertTrue($result['parity']['drift_summary']['has_drift']);
+        $this->assertEquals('content', $result['parity']['drift_summary']['type']);
+    }
+
+    public function test_parity_detects_error_when_secondary_fails(): void
+    {
+        $this->setUpRuntimeConfig('chat', 'python', true);
+
+        $resolver = new AIRuntimeResolver('chat', true);
+
+        $result = $resolver->executeWithShadow(
+            fn($runtime) => 'primary_result',
+            fn($runtime) => throw new \Exception('Secondary error')
+        );
+
+        $this->assertTrue($result['parity']['drift_summary']['has_drift']);
+        $this->assertEquals('error', $result['parity']['drift_summary']['type']);
+    }
+
+    public function test_resolver_uses_different_capabilities_independently(): void
+    {
+        Config::set('ai_runtime.chat', 'python');
+        Config::set('ai_runtime.document_process', 'laravel');
+        Config::set('ai_runtime.shadow.enabled', false);
+
+        $chatResolver = new AIRuntimeResolver('chat', false);
+        $docResolver = new AIRuntimeResolver('document_process', false);
+
+        $this->assertInstanceOf(PythonLegacyAdapter::class, $chatResolver->getRuntime());
+        $this->assertInstanceOf(LaravelAIGateway::class, $docResolver->getRuntime());
+    }
+}
