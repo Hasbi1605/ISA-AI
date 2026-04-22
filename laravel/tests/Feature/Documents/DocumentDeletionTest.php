@@ -49,6 +49,18 @@ class DocumentDeletionTest extends TestCase
 
     public function test_delete_document_passes_user_id_to_runtime(): void
     {
+        // CRITICAL: Set config to make Laravel runtime ready
+        // Without this, AIRuntimeResolver falls back to Python runtime
+        Config::set('ai.laravel_ai.api_key', 'test-key-123');
+        Config::set('ai.laravel_ai.document_delete_enabled', true);
+        Config::set('ai.laravel_ai.document_process_enabled', false);
+        Config::set('ai.laravel_ai.document_summarize_enabled', false);
+        
+        // Verify Laravel runtime is being used (not Python fallback)
+        $resolver = new \App\Services\AIRuntimeResolver('document_delete', false);
+        $runtime = $resolver->getRuntime();
+        $this->assertInstanceOf(\App\Services\Runtime\LaravelAIGateway::class, $runtime);
+
         Storage::fake('local');
         $user = User::factory()->create();
 
@@ -70,6 +82,71 @@ class DocumentDeletionTest extends TestCase
             ->call('delete', $document->id);
 
         $this->assertSoftDeleted($document);
+    }
+
+    public function test_delete_with_duplicate_filename_only_affects_requesting_users_document(): void
+    {
+        // CRITICAL: Set config to make Laravel runtime ready
+        // This tests that user_id is properly propagated to LaravelDocumentService::deleteDocument()
+        // which uses user_id in its query: Document::where('original_name', $filename)->where('user_id', (int) $userId)
+        Config::set('ai.laravel_ai.api_key', 'test-key-123');
+        Config::set('ai.laravel_ai.document_delete_enabled', true);
+        Config::set('ai.laravel_ai.document_process_enabled', false);
+        Config::set('ai.laravel_ai.document_summarize_enabled', false);
+        
+        // Verify Laravel runtime is being used
+        $resolver = new \App\Services\AIRuntimeResolver('document_delete', false);
+        $runtime = $resolver->getRuntime();
+        $this->assertInstanceOf(\App\Services\Runtime\LaravelAIGateway::class, $runtime);
+
+        Storage::fake('local');
+        
+        // Create two users with the SAME filename
+        $userA = User::factory()->create();
+        $userB = User::factory()->create();
+        
+        $sameFilename = 'shared_document.pdf';
+        
+        // User A uploads the file
+        $filePathA = 'documents/' . $userA->id . '/' . $sameFilename;
+        Storage::disk('local')->put($filePathA, 'content from user A');
+        
+        $documentA = Document::create([
+            'user_id' => $userA->id,
+            'filename' => $sameFilename . '_' . time() . '_a',
+            'original_name' => $sameFilename,
+            'file_path' => $filePathA,
+            'mime_type' => 'application/pdf',
+            'file_size_bytes' => 100,
+            'status' => 'ready',
+        ]);
+        
+        // User B uploads the same filename
+        $filePathB = 'documents/' . $userB->id . '/' . $sameFilename;
+        Storage::disk('local')->put($filePathB, 'content from user B');
+        
+        $documentB = Document::create([
+            'user_id' => $userB->id,
+            'filename' => $sameFilename . '_' . time() . '_b',
+            'original_name' => $sameFilename,
+            'file_path' => $filePathB,
+            'mime_type' => 'application/pdf',
+            'file_size_bytes' => 100,
+            'status' => 'ready',
+        ]);
+        
+        // User A deletes their document (by original_name)
+        Livewire::actingAs($userA)
+            ->test(DocumentIndex::class)
+            ->call('delete', $documentA->id);
+        
+        // CRITICAL: User A's document should be deleted, but User B's should remain
+        // This proves that user_id was propagated correctly to Laravel runtime
+        $this->assertSoftDeleted($documentA);
+        $this->assertNotSoftDeleted($documentB);
+        
+        // User B's document should still exist in storage
+        Storage::disk('local')->assertExists($filePathB);
     }
 
     public function test_delete_from_document_index_cleans_up_storage_and_vector(): void
