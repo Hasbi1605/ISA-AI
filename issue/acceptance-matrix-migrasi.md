@@ -49,4 +49,7 @@ Telah disiapkan kumpulan fixture/dataset untuk shadow mode:
   - Pertanyaan realtime (butuh web search)
   - Pertanyaan dengan dokumen aktif
   - Pertanyaan yang tidak ada di dokumen (out-of-context RAG)
-  - Summarization trigger
+  - Cek prioritas Dokumen vs Web (Policy Overlap)
+  - Lifecycle: Upload dan Ingest Dokumen (PDF & XLSX)
+  - Lifecycle: Penghapusan Dokumen (Cleanup artefak)
+  - Summarization trigger (Dokumen besar)
