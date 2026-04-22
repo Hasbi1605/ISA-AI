@@ -200,6 +200,21 @@ class AIRuntimeResolverTest extends TestCase
         $this->assertInstanceOf(PythonLegacyAdapter::class, $runtime);
     }
 
+    public function test_fallback_works_even_when_shadow_mode_enabled(): void
+    {
+        $this->setUpRuntimeConfig('chat', 'laravel', true);
+
+        $resolver = new AIRuntimeResolver('chat', true);
+
+        $runtime = $resolver->getRuntime();
+
+        $this->assertInstanceOf(PythonLegacyAdapter::class, $runtime);
+
+        $this->assertTrue($resolver->isShadowMode());
+        $secondary = $resolver->getSecondaryRuntime();
+        $this->assertNotNull($secondary);
+    }
+
     public function test_shadow_mode_runs_both_runtimes(): void
     {
         $this->setUpRuntimeConfig('chat', 'python', true);

@@ -37,7 +37,7 @@ class AIRuntimeResolver
 
         $runtime = $this->resolveRuntime($runtimeType);
 
-        if (!$this->shadowMode && !$runtime->isReady()) {
+        if (!$runtime->isReady()) {
             $runtime = $this->resolveRuntime('python');
         }
 
