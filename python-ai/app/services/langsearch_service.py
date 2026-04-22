@@ -154,7 +154,6 @@ class LangSearchService:
             return ""
         
         current_date = datetime.now().strftime("%A, %d %B %Y")
-        current_year = datetime.now().year
         
         template = get_web_search_context_prompt()
         
@@ -178,7 +177,6 @@ Ringkasan: {snippet}"""
         
         return template.format(
             current_date=current_date,
-            current_year=current_year,
             results=results_str
         )
 

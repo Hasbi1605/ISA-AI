@@ -40,7 +40,6 @@ def test_web_prompt_is_professional_and_uses_absolute_date_guidance():
 
     context = config_loader.get_web_search_context_prompt().format(
         current_date="21 April 2026",
-        current_year="2026",
         results="Hasil 1: contoh",
     )
     assert "KONTEKS WEB TERBARU" in context
@@ -50,6 +49,26 @@ def test_web_prompt_is_professional_and_uses_absolute_date_guidance():
     instruction = config_loader.get_assertive_instruction()
     assert "Gunakan tanggal absolut" in instruction
     assert "Bedakan fakta yang didukung sumber dari inferensi" in instruction
+
+
+def test_langsearch_service_builds_web_context_without_legacy_current_year_arg():
+    from app.services.langsearch_service import LangSearchService
+
+    service = LangSearchService()
+    context = service.build_search_context(
+        [
+            {
+                "title": "Portal Resmi",
+                "snippet": "Agenda terbaru diperbarui.",
+                "url": "https://example.com/agenda",
+                "datePublished": "2026-04-22",
+            }
+        ]
+    )
+
+    assert "KONTEKS WEB TERBARU" in context
+    assert "Portal Resmi" in context
+    assert "https://example.com/agenda" in context
 
 
 def test_summarization_prompts_use_work_ready_sections():
