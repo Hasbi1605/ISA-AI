@@ -46,6 +46,7 @@ return [
         'chunk_size' => env('RAG_CHUNK_SIZE', 1000),
         'chunk_overlap' => env('RAG_CHUNK_OVERLAP', 100),
         'embedding_model' => env('RAG_EMBEDDING_MODEL', 'text-embedding-3-small'),
+        'embedding_dimensions' => env('RAG_EMBEDDING_DIMENSIONS', 1536),
     ],
 
     'prompts' => [

@@ -2,9 +2,9 @@
 
 namespace App\Services\Chat;
 
-use Laravel\Ai\Responses\StreamableAgentResponse;
 use Laravel\Ai\Streaming\Events\TextDelta;
 use Laravel\Ai\Streaming\Events\Citation;
+use Laravel\Ai\Prompts\AgentPrompt;
 use Illuminate\Support\Facades\Log;
 use App\Services\Document\LaravelDocumentRetrievalService;
 use App\Services\Document\DocumentPolicyService;
@@ -63,7 +63,7 @@ class LaravelChatService
         $documentPolicy = $this->getDocumentPolicy();
 
         if ($documentFilenamesValid && $retrievalService && $documentPolicy) {
-            return $this->chatWithDocuments(
+            yield from $this->chatWithDocuments(
                 $messages,
                 $document_filenames,
                 $user_id,
@@ -73,6 +73,8 @@ class LaravelChatService
                 $retrievalService,
                 $documentPolicy
             );
+
+            return;
         }
 
         if ($documentFilenamesValid) {
@@ -93,13 +95,14 @@ class LaravelChatService
             $tools[] = $provider->webSearchTool($webSearch);
         }
 
-        $agent = \Laravel\Ai\AnonymousAgent::make(
+        $agent = new \Laravel\Ai\AnonymousAgent(
             instructions: $this->getSystemPrompt(),
+            messages: [],
             tools: $tools,
         );
 
         $stream = $provider->stream(
-            \Laravel\Ai\Prompts\AgentPrompt::for(
+            new AgentPrompt(
                 agent: $agent,
                 prompt: $prompt,
                 attachments: [],
@@ -108,23 +111,7 @@ class LaravelChatService
             )
         );
 
-        $sources = [];
-
-        foreach ($stream as $event) {
-            if ($event instanceof TextDelta) {
-                yield $event->delta;
-            } elseif ($event instanceof Citation) {
-                $citation = $event->citation;
-                $sources[] = [
-                    'title' => $citation->title ?? '',
-                    'url' => $citation->url ?? '',
-                ];
-            }
-        }
-
-        if (!empty($sources)) {
-            yield "\n[SOURCES:" . json_encode($sources) . "]\n";
-        }
+        yield from $this->streamResponseWithSources($stream);
     }
 
     protected function chatWithDocuments(
@@ -164,29 +151,21 @@ class LaravelChatService
         if ($success && !empty($chunks)) {
             $ragData = $retrievalService->buildRagPrompt($query, $chunks);
 
-            $webContext = '';
-            if ($policyResult['should_search']) {
-                $webContext = '';
-            }
-
             $prompt = $ragData['prompt'];
             $sources = $ragData['sources'];
 
-            $messagesWithRag = array_merge(
-                [['role' => 'system', 'content' => $prompt]],
-                $messages
-            );
-
             $provider = app(\Laravel\Ai\AiManager::class)->textProvider();
 
-            $agent = \Laravel\Ai\AnonymousAgent::make(
+            $agent = new \Laravel\Ai\AnonymousAgent(
                 instructions: 'Anda adalah asisten AI yang menjawab berdasarkan konteks dokumen. '
-                    . 'Jawab seringkas mungkin dan ground jawaban ke dokumen.'
+                    . 'Jawab seringkas mungkin dan ground jawaban ke dokumen.',
+                messages: [],
+                tools: []
             );
 
-            $promptObj = \Laravel\Ai\Prompts\AgentPrompt::for(
+            $promptObj = new AgentPrompt(
                 agent: $agent,
-                prompt: $query,
+                prompt: $prompt,
                 attachments: [],
                 provider: $provider,
                 model: $this->model,
@@ -194,23 +173,7 @@ class LaravelChatService
 
             $stream = $provider->stream($promptObj);
 
-            $allSources = $sources;
-
-            foreach ($stream as $event) {
-                if ($event instanceof TextDelta) {
-                    yield $event->delta;
-                } elseif ($event instanceof Citation) {
-                    $citation = $event->citation;
-                    $allSources[] = [
-                        'title' => $citation->title ?? '',
-                        'url' => $citation->url ?? '',
-                    ];
-                }
-            }
-
-            if (!empty($allSources)) {
-                yield "\n[SOURCES:" . json_encode($allSources) . "]\n";
-            }
+            yield from $this->streamResponseWithSources($stream, $sources);
 
             return;
         }
@@ -225,12 +188,13 @@ class LaravelChatService
                     $tools[] = $provider->webSearchTool($webSearch);
                 }
 
-                $agent = \Laravel\Ai\AnonymousAgent::make(
+                $agent = new \Laravel\Ai\AnonymousAgent(
                     instructions: $this->getSystemPrompt(),
+                    messages: [],
                     tools: $tools,
                 );
 
-                $promptObj = \Laravel\Ai\Prompts\AgentPrompt::for(
+                $promptObj = new AgentPrompt(
                     agent: $agent,
                     prompt: $query,
                     attachments: [],
@@ -238,7 +202,7 @@ class LaravelChatService
                     model: $this->model,
                 );
 
-                yield from $provider->stream($promptObj);
+                yield from $this->streamResponseWithSources($provider->stream($promptObj));
                 return;
             }
 
@@ -256,12 +220,13 @@ class LaravelChatService
                 $tools[] = $provider->webSearchTool($webSearch);
             }
 
-            $agent = \Laravel\Ai\AnonymousAgent::make(
+            $agent = new \Laravel\Ai\AnonymousAgent(
                 instructions: $this->getSystemPrompt(),
+                messages: [],
                 tools: $tools,
             );
 
-            $promptObj = \Laravel\Ai\Prompts\AgentPrompt::for(
+            $promptObj = new AgentPrompt(
                 agent: $agent,
                 prompt: $query,
                 attachments: [],
@@ -269,7 +234,7 @@ class LaravelChatService
                 model: $this->model,
             );
 
-            yield from $provider->stream($promptObj);
+            yield from $this->streamResponseWithSources($provider->stream($promptObj));
             return;
         }
 
@@ -301,5 +266,26 @@ Anda adalah asisten AI yang helpful dan informative.
 Selalu berikan jawaban yang akurat, jelas, dan relevan.
 Jika pengguna bertanya tentang informasi terkini atau memerlukan data realtime, lakukan web search terlebih dahulu.
 PROMPT;
+    }
+
+    protected function streamResponseWithSources(iterable $stream, array $initialSources = []): \Generator
+    {
+        $sources = $initialSources;
+
+        foreach ($stream as $event) {
+            if ($event instanceof TextDelta) {
+                yield $event->delta;
+            } elseif ($event instanceof Citation) {
+                $citation = $event->citation;
+                $sources[] = [
+                    'title' => $citation->title ?? '',
+                    'url' => $citation->url ?? '',
+                ];
+            }
+        }
+
+        if (!empty($sources)) {
+            yield "\n[SOURCES:" . json_encode($sources) . "]\n";
+        }
     }
 }

@@ -426,13 +426,16 @@ class LaravelDocumentRetrievalService implements DocumentRetrievalInterface
     protected function calculateSimilarity(string $query, string $content, $provider): float
     {
         try {
-            $model = config('ai.rag.embedding_model', 'text-embedding-3-small');
+            $model = config('ai.rag.embedding_model');
+            $dimensions = (int) config('ai.rag.embedding_dimensions', 1536);
 
             $embeddingResponse = $provider->embeddings(
-                new \Laravel\Ai\Embeddings\EmbeddingPrompt(
-                    model: $model,
-                    input: $query . ' ' . substr($content, 0, 500),
-                )
+                [
+                    $query,
+                    substr($content, 0, 500),
+                ],
+                $dimensions,
+                $model
             );
 
             $queryEmbedding = $embeddingResponse->embeddings[0] ?? [0];
