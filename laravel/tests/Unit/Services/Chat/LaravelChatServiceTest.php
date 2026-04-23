@@ -3,9 +3,18 @@
 namespace Tests\Unit\Services\Chat;
 
 use App\Services\Chat\LaravelChatService;
+use App\Services\Document\DocumentPolicyService;
+use App\Services\Document\LaravelDocumentRetrievalService;
 use Illuminate\Support\Facades\Config;
+use Laravel\Ai\AiManager;
+use Laravel\Ai\Contracts\Providers\TextProvider;
+use Laravel\Ai\Prompts\AgentPrompt;
+use Laravel\Ai\Responses\Data\Meta;
+use Laravel\Ai\Responses\Data\UrlCitation;
+use Laravel\Ai\Responses\StreamableAgentResponse;
 use Laravel\Ai\Streaming\Events\TextDelta;
 use Laravel\Ai\Streaming\Events\Citation;
+use Mockery;
 use Tests\TestCase;
 
 class LaravelChatServiceTest extends TestCase
@@ -171,7 +180,7 @@ class LaravelChatServiceTest extends TestCase
 
     public function test_citation_emits_source_metadata(): void
     {
-        $citationData = new \Laravel\Ai\Responses\Data\UrlCitation(
+        $citationData = new UrlCitation(
             title: 'Test Title',
             url: 'https://example.com'
         );
@@ -186,5 +195,140 @@ class LaravelChatServiceTest extends TestCase
         $this->assertInstanceOf(Citation::class, $event);
         $this->assertEquals('Test Title', $event->citation->title);
         $this->assertEquals('https://example.com', $event->citation->url);
+    }
+
+    public function test_chat_with_documents_success_uses_rag_prompt_and_document_sources(): void
+    {
+        $this->setUpLaravelAIConfig();
+        Config::set('ai.laravel_ai.document_retrieval_enabled', true);
+
+        $retrieval = Mockery::mock(LaravelDocumentRetrievalService::class);
+        $retrieval->shouldReceive('searchRelevantChunks')
+            ->once()
+            ->andReturn([
+                'success' => true,
+                'chunks' => [
+                    ['content' => 'isi chunk', 'filename' => 'doc1.pdf', 'chunk_index' => 0, 'score' => 0.95],
+                ],
+            ]);
+        $retrieval->shouldReceive('buildRagPrompt')
+            ->once()
+            ->andReturn([
+                'prompt' => 'RAG_CONTEXT_PROMPT',
+                'sources' => [
+                    ['filename' => 'doc1.pdf', 'chunk_index' => 0, 'relevance_score' => 0.95],
+                ],
+            ]);
+
+        $policy = Mockery::mock(DocumentPolicyService::class);
+        $policy->shouldReceive('detectExplicitWebRequest')->once()->andReturn(false);
+        $policy->shouldReceive('shouldUseWebSearch')->once()->andReturn([
+            'should_search' => false,
+            'reason_code' => 'DOC_NO_WEB',
+        ]);
+
+        $provider = Mockery::mock(TextProvider::class);
+        $provider->shouldReceive('stream')
+            ->once()
+            ->with(Mockery::on(function ($prompt) {
+                return $prompt instanceof AgentPrompt
+                    && $prompt->prompt === 'RAG_CONTEXT_PROMPT';
+            }))
+            ->andReturn($this->streamableResponseFromEvents([
+                new TextDelta(id: '1', messageId: 'm1', delta: 'Jawaban grounded', timestamp: time()),
+            ]));
+
+        $ai = Mockery::mock(AiManager::class);
+        $ai->shouldReceive('textProvider')->once()->andReturn($provider);
+
+        $this->app->instance(LaravelDocumentRetrievalService::class, $retrieval);
+        $this->app->instance(DocumentPolicyService::class, $policy);
+        $this->app->instance(AiManager::class, $ai);
+
+        $service = new LaravelChatService();
+        $result = $service->chat(
+            [['role' => 'user', 'content' => 'apa isi dokumen?']],
+            ['doc1.pdf'],
+            '1'
+        );
+
+        $output = implode('', iterator_to_array($result));
+
+        $this->assertStringContainsString('Jawaban grounded', $output);
+        $this->assertStringContainsString('[SOURCES:', $output);
+        $this->assertStringContainsString('doc1.pdf', $output);
+    }
+
+    public function test_chat_with_documents_web_fallback_normalizes_stream_and_citations(): void
+    {
+        $this->setUpLaravelAIConfig();
+        Config::set('ai.laravel_ai.document_retrieval_enabled', true);
+
+        $retrieval = Mockery::mock(LaravelDocumentRetrievalService::class);
+        $retrieval->shouldReceive('searchRelevantChunks')
+            ->once()
+            ->andReturn([
+                'success' => true,
+                'chunks' => [],
+            ]);
+
+        $policy = Mockery::mock(DocumentPolicyService::class);
+        $policy->shouldReceive('detectExplicitWebRequest')->once()->andReturn(true);
+        $policy->shouldReceive('shouldUseWebSearch')->once()->andReturn([
+            'should_search' => true,
+            'reason_code' => 'DOC_WEB_EXPLICIT',
+        ]);
+
+        $provider = Mockery::mock(TextProvider::class);
+        $provider->shouldReceive('webSearchTool')->once()->andReturn(new \stdClass());
+        $provider->shouldReceive('stream')
+            ->once()
+            ->with(Mockery::type(AgentPrompt::class))
+            ->andReturn($this->streamableResponseFromEvents([
+                new TextDelta(id: '2', messageId: 'm2', delta: 'Jawaban dari web', timestamp: time()),
+                new Citation(
+                    id: '3',
+                    messageId: 'm2',
+                    citation: new UrlCitation(title: 'Web Ref', url: 'https://example.com/ref'),
+                    timestamp: time()
+                ),
+            ]));
+
+        $ai = Mockery::mock(AiManager::class);
+        $ai->shouldReceive('textProvider')->once()->andReturn($provider);
+
+        $this->app->instance(LaravelDocumentRetrievalService::class, $retrieval);
+        $this->app->instance(DocumentPolicyService::class, $policy);
+        $this->app->instance(AiManager::class, $ai);
+
+        $service = new LaravelChatService();
+        $result = $service->chat(
+            [['role' => 'user', 'content' => 'cari di web ini']],
+            ['doc1.pdf'],
+            '1'
+        );
+
+        $output = implode('', iterator_to_array($result));
+
+        $this->assertStringContainsString('Jawaban dari web', $output);
+        $this->assertStringContainsString('[SOURCES:', $output);
+        $this->assertStringContainsString('Web Ref', $output);
+        $this->assertStringContainsString('example.com\\/ref', $output);
+    }
+
+    private function streamFromEvents(array $events): \Generator
+    {
+        foreach ($events as $event) {
+            yield $event;
+        }
+    }
+
+    private function streamableResponseFromEvents(array $events): StreamableAgentResponse
+    {
+        return new StreamableAgentResponse(
+            invocationId: 'test-invocation',
+            generator: fn () => $this->streamFromEvents($events),
+            meta: new Meta(provider: 'test', model: 'test-model')
+        );
     }
 }
