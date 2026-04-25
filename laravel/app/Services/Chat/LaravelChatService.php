@@ -135,7 +135,6 @@ class LaravelChatService
                 ]);
 
                 if ($this->shouldFallback($e) && $index < count($nodes) - 1) {
-                    yield "\n⚠️ [{$node['label']}] error, beralih ke model cadangan...\n";
                     continue;
                 }
                 
@@ -224,7 +223,6 @@ class LaravelChatService
                     ]);
 
                     if ($this->shouldFallback($e) && $index < count($nodes) - 1) {
-                        yield "\n⚠️ [{$node['label']}] error, beralih ke model cadangan...\n";
                         continue;
                     }
                     

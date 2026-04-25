@@ -53,7 +53,33 @@ class AIParityMatrixTest extends TestCase
         $this->assertStringContainsString('[MODEL:Primary]', $output);
         $this->assertStringContainsString('[MODEL:Backup]', $output);
         $this->assertStringContainsString('Hello from backup', $output);
-        $this->assertStringContainsString('beralih ke model cadangan', $output);
+        $this->assertStringNotContainsString('beralih ke model cadangan', $output);
+    }
+
+    #[Test]
+    #[Group('parity')]
+    #[Group('chat')]
+    public function it_handles_all_providers_failure()
+    {
+        config(['ai.cascade.enabled' => true]);
+        config(['ai.cascade.nodes' => [
+            ['label' => 'Node1', 'provider' => 'openai', 'model' => 'gpt-4', 'api_key' => 'key1'],
+            ['label' => 'Node2', 'provider' => 'openai', 'model' => 'gpt-4', 'api_key' => 'key2'],
+        ]]);
+
+        \Laravel\Ai\AnonymousAgent::fake(function ($prompt) {
+            throw new \Exception('500 Service Unavailable');
+        });
+
+        $service = new \App\Services\Chat\LaravelChatService();
+        $output = '';
+        foreach ($service->chat([['role' => 'user', 'content' => 'hi']]) as $chunk) {
+            $output .= $chunk;
+        }
+
+        $this->assertStringContainsString('[MODEL:Node1]', $output);
+        $this->assertStringContainsString('[MODEL:Node2]', $output);
+        $this->assertStringContainsString('Maaf, layanan AI sedang tidak tersedia', $output);
     }
 
     #[Test]
