@@ -41,7 +41,7 @@ class PythonLegacyAdapter implements AIRuntimeInterface
         bool $allow_auto_realtime_web = true
     ): \Generator {
         $payload = [
-            'messages' => $messages,
+            'messages' => $this->normalizeMessages($messages),
             'force_web_search' => $force_web_search,
             'allow_auto_realtime_web' => $allow_auto_realtime_web,
         ];
@@ -212,5 +212,19 @@ class PythonLegacyAdapter implements AIRuntimeInterface
     public function isReady(): bool
     {
         return true;
+    }
+
+    private function normalizeMessages(array $messages): array
+    {
+        return array_values(array_filter(array_map(function (array $message): ?array {
+            if (!isset($message['role'], $message['content'])) {
+                return null;
+            }
+
+            return [
+                'role' => (string) $message['role'],
+                'content' => (string) $message['content'],
+            ];
+        }, $messages)));
     }
 }
