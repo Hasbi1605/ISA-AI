@@ -167,7 +167,7 @@ class PythonLegacyAdapter implements AIRuntimeInterface
             ]);
 
             return json_decode($response->getBody()->getContents(), true);
-        } catch (RequestException $e) {
+        } catch (\Throwable $e) {
             Log::error('PythonLegacyAdapter: Summarize Error', [
                 'message' => $e->getMessage(),
             ]);
