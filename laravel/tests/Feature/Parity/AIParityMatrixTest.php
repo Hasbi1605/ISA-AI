@@ -26,7 +26,34 @@ class AIParityMatrixTest extends TestCase
     #[Group('chat')]
     public function it_supports_multi_model_cascade_and_fallback()
     {
-        $this->markTestIncomplete('Gap: Laravel belum memiliki runtime cascade/fallback (GPT-4.1 -> 4o -> Groq -> Gemini).');
+        config(['ai.cascade.enabled' => true]);
+        config(['ai.cascade.nodes' => [
+            ['label' => 'Primary', 'provider' => 'openai', 'model' => 'gpt-4', 'api_key' => 'key1'],
+            ['label' => 'Backup', 'provider' => 'openai', 'model' => 'gpt-4o', 'api_key' => 'key2'],
+        ]]);
+
+        // Mock failure on first node, success on second
+        \Laravel\Ai\AnonymousAgent::fake(function ($prompt) {
+            static $calls = 0;
+            $calls++;
+            if ($calls === 1) {
+                throw new \Exception('429 Rate Limit');
+            }
+            return 'Hello from backup';
+        });
+
+        $service = new \App\Services\Chat\LaravelChatService();
+        $generator = $service->chat([['role' => 'user', 'content' => 'hi']]);
+        
+        $output = '';
+        foreach ($generator as $chunk) {
+            $output .= $chunk;
+        }
+
+        $this->assertStringContainsString('[MODEL:Primary]', $output);
+        $this->assertStringContainsString('[MODEL:Backup]', $output);
+        $this->assertStringContainsString('Hello from backup', $output);
+        $this->assertStringContainsString('beralih ke model cadangan', $output);
     }
 
     #[Test]
@@ -34,7 +61,45 @@ class AIParityMatrixTest extends TestCase
     #[Group('chat')]
     public function it_handles_rate_limit_and_context_window_errors()
     {
-        $this->markTestIncomplete('Gap: Laravel belum memetakan error 413/429 ke fallback policy.');
+        config(['ai.cascade.enabled' => true]);
+        config(['ai.cascade.nodes' => [
+            ['label' => 'Node1', 'provider' => 'openai', 'model' => 'gpt-4', 'api_key' => 'key1'],
+            ['label' => 'Node2', 'provider' => 'openai', 'model' => 'gpt-4', 'api_key' => 'key2'],
+        ]]);
+
+        // Test 413
+        \Laravel\Ai\AnonymousAgent::fake(function ($prompt) {
+            static $calls = 0;
+            $calls++;
+            if ($calls % 2 !== 0) {
+                throw new \Exception('413 Request Entity Too Large');
+            }
+            return 'Handled 413';
+        });
+
+        $service = new \App\Services\Chat\LaravelChatService();
+        
+        $output = '';
+        foreach ($service->chat([['role' => 'user', 'content' => 'long prompt']]) as $chunk) {
+            $output .= $chunk;
+        }
+        $this->assertStringContainsString('Handled 413', $output);
+
+        // Test 429
+        \Laravel\Ai\AnonymousAgent::fake(function ($prompt) {
+            static $calls = 0;
+            $calls++;
+            if ($calls % 2 !== 0) {
+                throw new \Exception('429 Too Many Requests');
+            }
+            return 'Handled 429';
+        });
+
+        $output = '';
+        foreach ($service->chat([['role' => 'user', 'content' => 'fast prompt']]) as $chunk) {
+            $output .= $chunk;
+        }
+        $this->assertStringContainsString('Handled 429', $output);
     }
 
     #[Test]
@@ -42,7 +107,18 @@ class AIParityMatrixTest extends TestCase
     #[Group('chat')]
     public function it_injects_model_marker_in_stream()
     {
-        $this->markTestIncomplete('Gap: Laravel stream belum menampilkan marker [MODEL:...] secara konsisten.');
+        \Laravel\Ai\AnonymousAgent::fake(function ($prompt) {
+            return 'Response content';
+        });
+
+        $service = new \App\Services\Chat\LaravelChatService();
+        $output = '';
+        foreach ($service->chat([['role' => 'user', 'content' => 'hi']]) as $chunk) {
+            $output .= $chunk;
+        }
+        
+        $this->assertStringContainsString('[MODEL:', $output);
+        $this->assertStringContainsString('Response content', $output);
     }
 
     #[Test]

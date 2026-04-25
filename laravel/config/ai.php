@@ -41,6 +41,53 @@ return [
         'use_provider_file_search' => env('AI_USE_PROVIDER_FILE_SEARCH', true),
     ],
 
+    'cascade' => [
+        'enabled' => env('AI_CASCADE_ENABLED', true),
+        'nodes' => [
+            [
+                'label' => 'GPT-4.1 (Primary)',
+                'provider' => 'openai',
+                'model' => 'gpt-4.1',
+                'api_key' => env('GITHUB_TOKEN'),
+                'base_url' => 'https://models.inference.ai.azure.com',
+            ],
+            [
+                'label' => 'GPT-4.1 (Backup)',
+                'provider' => 'openai',
+                'model' => 'gpt-4.1',
+                'api_key' => env('GITHUB_TOKEN_2'),
+                'base_url' => 'https://models.inference.ai.azure.com',
+            ],
+            [
+                'label' => 'GPT-4o (Primary)',
+                'provider' => 'openai',
+                'model' => 'gpt-4o',
+                'api_key' => env('GITHUB_TOKEN'),
+                'base_url' => 'https://models.inference.ai.azure.com',
+            ],
+            [
+                'label' => 'GPT-4o (Backup)',
+                'provider' => 'openai',
+                'model' => 'gpt-4o',
+                'api_key' => env('GITHUB_TOKEN_2'),
+                'base_url' => 'https://models.inference.ai.azure.com',
+            ],
+            [
+                'label' => 'Llama 3.3 70B (Groq)',
+                'provider' => 'openai', 
+                'model' => 'llama-3.3-70b-versatile',
+                'api_key' => env('GROQ_API_KEY'),
+                'base_url' => 'https://api.groq.com/openai/v1',
+            ],
+            [
+                'label' => 'Gemini 3 Flash',
+                'provider' => 'gemini',
+                'model' => 'gemini-3-flash-preview',
+                'api_key' => env('GEMINI_API_KEY'),
+            ],
+        ],
+    ],
+
     'rag' => [
         'top_k' => env('RAG_TOP_K', 5),
         'chunk_size' => env('RAG_CHUNK_SIZE', 1000),
