@@ -243,12 +243,12 @@ class AIParityMatrixTest extends TestCase
     #[Test]
     #[Group('parity')]
     #[Group('rag')]
-    public function it_returns_truncated_query_on_hyde_success()
+    public function it_returns_full_query_on_hyde_success_with_long_input()
     {
-        $this->assertTrue(true, 'HyDE success path sudah di-cover oleh integration test lain.');
+        $this->markTestIncomplete('Gap: HyDE success path menggunakan AiManager::textProvider() yang tidak bisa di-mock dengan AnonymousAgent::fake(). Fix kode sudah diterapkan di HydeQueryExpansionService.php:183 - menggunakan $originalQuery bukan $queryForHyde. Verifikasi dilakukan via review kode dan test fallbback.');
     }
 
-#[Test]
+    #[Test]
     #[Group('parity')]
     #[Group('rag')]
     public function it_injects_source_metadata_in_stream()

@@ -180,7 +180,7 @@ class HydeQueryExpansionService
             $hypo = trim($response->text ?? '');
 
             if (!empty($hypo)) {
-                return $query . "\n" . $hypo;
+                return $originalQuery . "\n" . $hypo;
             }
         } catch (\Throwable $e) {
         }
