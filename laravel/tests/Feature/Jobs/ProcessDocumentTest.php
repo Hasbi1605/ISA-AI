@@ -5,11 +5,10 @@ namespace Tests\Feature\Jobs;
 use App\Jobs\ProcessDocument;
 use App\Models\Document;
 use App\Models\User;
-use App\Services\AIRuntimeService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Storage;
 use Tests\TestCase;
-use Mockery;
 use Exception;
 
 class ProcessDocumentTest extends TestCase
@@ -18,11 +17,10 @@ class ProcessDocumentTest extends TestCase
 
     public function test_job_updates_status_to_ready_on_success(): void
     {
-        config(['ai_runtime.document_process' => 'python']);
-
         Storage::fake('local');
         $user = User::factory()->create();
 
+        // Create dummy file
         $filePath = 'documents/' . $user->id . '/dummy.pdf';
         Storage::disk('local')->put($filePath, 'dummy content');
 
@@ -36,109 +34,62 @@ class ProcessDocumentTest extends TestCase
             'status' => 'pending',
         ]);
 
-        $mockRuntime = Mockery::mock(AIRuntimeService::class);
-        $mockRuntime->shouldReceive('documentProcess')
-            ->once()
-            ->andReturn(['status' => 'success', 'message' => 'ok']);
-
-        $job = new class($document) extends ProcessDocument {
-            protected function resolveFilePath(): string
-            {
-                return Storage::disk('local')->path($this->document->file_path);
-            }
-
-            protected function processWithLaravel(string $filePath): array
-            {
-                return [
-                    'status' => 'error',
-                    'message' => 'Primary parser failed',
-                ];
-            }
-        };
-
-        $job->handle($mockRuntime);
-
-        $this->assertEquals('ready', $document->fresh()->status);
-    }
-
-    public function test_job_processes_unsupported_format_triggers_fallback(): void
-    {
-        config(['ai_runtime.document_process' => 'python']);
-
-        Storage::fake('local');
-        $user = User::factory()->create();
-
-        $filePath = 'documents/' . $user->id . '/test.txt';
-        Storage::disk('local')->put($filePath, 'Plain text content');
-
-        $document = Document::create([
-            'user_id' => $user->id,
-            'filename' => 'test.txt',
-            'original_name' => 'test.txt',
-            'file_path' => $filePath,
-            'mime_type' => 'text/plain',
-            'file_size_bytes' => 100,
-            'status' => 'pending',
+        Http::fake([
+            '*' => Http::response(['message' => 'success'], 200),
         ]);
-
-        $mockRuntime = Mockery::mock(AIRuntimeService::class);
-        $mockRuntime->shouldReceive('documentProcess')
-            ->once()
-            ->andReturn(['status' => 'success', 'message' => 'ok']);
 
         $job = new ProcessDocument($document);
-        $job->handle($mockRuntime);
+        $job->handle();
 
         $this->assertEquals('ready', $document->fresh()->status);
     }
 
-    public function test_job_does_not_call_runtime_fallback_when_laravel_only_local_mode_fails(): void
+    public function test_job_updates_status_to_error_on_http_failure(): void
     {
-        config([
-            'ai_runtime.document_process' => 'laravel',
-            'ai.laravel_ai.use_provider_file_search' => false,
-        ]);
-
         Storage::fake('local');
         $user = User::factory()->create();
 
-        $filePath = 'documents/' . $user->id . '/scan.pdf';
+        $filePath = 'documents/' . $user->id . '/dummy2.pdf';
         Storage::disk('local')->put($filePath, 'dummy content');
 
         $document = Document::create([
             'user_id' => $user->id,
-            'filename' => 'scan.pdf',
-            'original_name' => 'scan.pdf',
+            'filename' => 'dummy2.pdf',
+            'original_name' => 'dummy2.pdf',
             'file_path' => $filePath,
             'mime_type' => 'application/pdf',
             'file_size_bytes' => 123,
             'status' => 'pending',
         ]);
 
-        $mockRuntime = Mockery::mock(AIRuntimeService::class);
-        $mockRuntime->shouldNotReceive('documentProcess');
+        Http::fake([
+            '*' => Http::response(['message' => 'error'], 500),
+        ]);
 
-        $job = new class($document) extends ProcessDocument {
-            protected function resolveFilePath(): string
-            {
-                return Storage::disk('local')->path($this->document->file_path);
-            }
+        $job = new ProcessDocument($document);
+        $job->handle();
 
-            protected function processWithLaravel(string $filePath): array
-            {
-                return [
-                    'status' => 'error',
-                    'message' => 'OCR failed',
-                ];
-            }
-        };
+        $this->assertEquals('error', $document->fresh()->status);
+    }
 
-        try {
-            $job->handle($mockRuntime);
-            $this->fail('Expected process job to throw when no real fallback is available.');
-        } catch (Exception $e) {
-            $this->assertStringContainsString('Process failed: OCR failed', $e->getMessage());
-        }
+    public function test_job_updates_status_to_error_if_file_missing(): void
+    {
+        $user = User::factory()->create();
+
+        $document = Document::create([
+            'user_id' => $user->id,
+            'filename' => 'missing.pdf',
+            'original_name' => 'missing.pdf',
+            'file_path' => 'documents/' . $user->id . '/missing.pdf',
+            'mime_type' => 'application/pdf',
+            'file_size_bytes' => 123,
+            'status' => 'pending',
+        ]);
+
+        // Do not put file in storage
+
+        $job = new ProcessDocument($document);
+        $job->handle();
 
         $this->assertEquals('error', $document->fresh()->status);
     }

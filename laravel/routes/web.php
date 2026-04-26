@@ -1,7 +1,6 @@
 <?php
 
 use App\Livewire\Chat\ChatIndex;
-use App\Livewire\Documents\DocumentIndex;
 use Illuminate\Support\Facades\Route;
 
 Route::view('/', 'dashboard')
@@ -22,9 +21,5 @@ Route::view('profile', 'profile')
 Route::get('chat', ChatIndex::class)
     ->middleware(['auth', 'verified'])
     ->name('chat');
-
-Route::get('documents', DocumentIndex::class)
-    ->middleware(['auth', 'verified'])
-    ->name('documents.index');
 
 require __DIR__ . '/auth.php';

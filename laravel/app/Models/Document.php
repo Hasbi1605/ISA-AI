@@ -16,7 +16,6 @@ class Document extends Model
         'user_id',
         'filename',
         'original_name',
-        'provider_file_id',
         'file_path',
         'mime_type',
         'file_size_bytes',
@@ -59,10 +58,5 @@ class Document extends Model
     public function user(): BelongsTo
     {
         return $this->belongsTo(User::class);
-    }
-
-    public function chunks(): \Illuminate\Database\Eloquent\Relations\HasMany
-    {
-        return $this->hasMany(DocumentChunk::class);
     }
 }
