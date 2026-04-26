@@ -129,10 +129,10 @@ class LaravelDocumentService
                 if (count($batchSummaries) > 1) {
                     $finalResult = $this->summarizeWithCascade($combinedSummary);
                     $summary = $finalResult['text'] ?? $combinedSummary;
-                    $usedModel = $finalResult['model'] ?? $usedModel ?? $this->model;
+                    $usedModel = $finalResult['model'] ?? $this->model;
                 } else {
                     $summary = $combinedSummary;
-                    $usedModel = $result['model'] ?? $this->model;
+                    $usedModel = $this->model;
                 }
             }
 
@@ -208,6 +208,27 @@ class LaravelDocumentService
         return $batches;
     }
 
+    protected function getProviderForNode(array $node, $agent = null)
+    {
+        $configKey = 'ai.providers.temp_cascade';
+        config([$configKey => [
+            'driver' => $node['provider'],
+            'key' => $node['api_key'],
+            'url' => $node['base_url'] ?? null,
+            'models' => [
+                'text' => [
+                    'default' => $node['model'],
+                ],
+            ],
+        ]]);
+
+        if ($agent) {
+            return app(\Laravel\Ai\AiManager::class)->textProviderFor($agent, 'temp_cascade');
+        }
+
+        return app(\Laravel\Ai\AiManager::class)->textProvider('temp_cascade');
+    }
+
     protected function summarizeWithCascade(string $content): array
     {
         $nodes = $this->cascadeEnabled && !empty($this->cascadeNodes)
@@ -220,20 +241,9 @@ class LaravelDocumentService
             tools: []
         );
 
-        $prompt = new AgentPrompt(
-            agent: $agent,
-            prompt: 'Rangkum bagian dokumen berikut dengan detail dan akurat: ' . $content,
-            attachments: [],
-            provider: $this->ai->textProvider(),
-            model: $this->model,
-        );
-
         foreach ($nodes as $node) {
             try {
-                $provider = $this->ai->textProviderFor($node['provider'], [
-                    'model' => $node['model'],
-                    'api_key' => $node['api_key'],
-                ]);
+                $provider = $this->getProviderForNode($node, $agent);
 
                 $prompt = new AgentPrompt(
                     agent: $agent,
@@ -261,7 +271,13 @@ class LaravelDocumentService
         }
 
         $defaultProvider = $this->ai->textProvider();
-        $result = $defaultProvider->prompt($prompt);
+        $result = $defaultProvider->prompt(new AgentPrompt(
+            agent: $agent,
+            prompt: 'Rangkum bagian dokumen berikut dengan detail dan akurat: ' . $content,
+            attachments: [],
+            provider: $defaultProvider,
+            model: $this->model,
+        ));
 
         return [
             'text' => $result->text ?? '',
