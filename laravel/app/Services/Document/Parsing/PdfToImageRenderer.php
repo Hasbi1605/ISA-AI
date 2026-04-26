@@ -123,17 +123,7 @@ class PdfToImageRenderer
         ]);
 
         $baseName = $outputDir . '/page';
-        $formatArg = $this->format === 'png' ? 'png' : 'jpeg';
-
-        $dpiArg = "-r{$this->dpi}";
-        $command = sprintf(
-            'pdftoppm %s -%s -f 1 -l %d %s %s 2>&1',
-            escapeshellarg($dpiArg),
-            escapeshellarg($formatArg),
-            $pagesToProcess,
-            escapeshellarg($pdfPath),
-            escapeshellarg($baseName)
-        );
+        $command = $this->buildPdftoppmCommand($pdfPath, $baseName, $pagesToProcess);
 
         exec($command, $output, $returnCode);
 
@@ -163,6 +153,20 @@ class PdfToImageRenderer
         }
 
         return $images;
+    }
+
+    protected function buildPdftoppmCommand(string $pdfPath, string $baseName, int $pagesToProcess): string
+    {
+        $formatArg = $this->format === 'png' ? 'png' : 'jpeg';
+
+        return sprintf(
+            'pdftoppm -r %d -%s -f 1 -l %d %s %s 2>&1',
+            $this->dpi,
+            $formatArg,
+            $pagesToProcess,
+            escapeshellarg($pdfPath),
+            escapeshellarg($baseName)
+        );
     }
 
     protected function checkPdftoppmAvailable(): void

@@ -47,6 +47,33 @@ class OcrServicesTest extends TestCase
         $this->assertSame(7, $maxPages->getValue($renderer));
     }
 
+    public function test_pdf_to_image_renderer_builds_valid_pdftoppm_command(): void
+    {
+        config([
+            'ai.ocr.image_dpi' => 275,
+            'ai.ocr.image_format' => 'png',
+        ]);
+
+        $renderer = new class extends PdfToImageRenderer {
+            public function exposePdftoppmCommand(string $pdfPath, string $baseName, int $pagesToProcess): string
+            {
+                return $this->buildPdftoppmCommand($pdfPath, $baseName, $pagesToProcess);
+            }
+        };
+
+        $command = $renderer->exposePdftoppmCommand(
+            '/tmp/scan sample.pdf',
+            '/tmp/output/page',
+            3
+        );
+
+        $this->assertStringContainsString('pdftoppm -r 275 -png -f 1 -l 3', $command);
+        $this->assertStringContainsString("'/tmp/scan sample.pdf'", $command);
+        $this->assertStringContainsString("'/tmp/output/page'", $command);
+        $this->assertStringNotContainsString("'-r275'", $command);
+        $this->assertStringNotContainsString("-'png'", $command);
+    }
+
     public function test_ocr_orchestrator_can_be_instantiated(): void
     {
         config(['ai.ocr.enabled' => false]);

@@ -7,6 +7,7 @@ use App\Models\DocumentChunk;
 use App\Models\User;
 use App\Services\Document\HybridRetrievalService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Storage;
 use PHPUnit\Framework\Attributes\Group;
 use PHPUnit\Framework\Attributes\Test;
@@ -74,6 +75,109 @@ class HybridRetrievalServiceTest extends TestCase
         $result = $service->search('teknologi', [], 5, (string) $this->user->id);
         
         $this->assertNotEmpty($result);
+    }
+
+    #[Test]
+    public function it_reranks_rag_candidates_with_langsearch_when_enabled(): void
+    {
+        config([
+            'ai.rag.hybrid.enabled' => true,
+            'ai.rag.pdr.enabled' => false,
+            'ai.rag.semantic_rerank.enabled' => true,
+            'ai.rag.semantic_rerank.top_n' => 2,
+            'ai.rag.semantic_rerank.doc_candidates' => 3,
+            'ai.langsearch.api_key' => 'test-langsearch-key',
+            'ai.langsearch.rerank_url' => 'https://api.langsearch.com/v1/rerank',
+            'ai.langsearch.rerank_model' => 'langsearch-reranker-v1',
+        ]);
+
+        Http::fake([
+            'api.langsearch.com/v1/rerank' => Http::response([
+                'results' => [
+                    ['index' => 1, 'relevance_score' => 0.99],
+                    ['index' => 0, 'relevance_score' => 0.88],
+                ],
+            ], 200),
+        ]);
+
+        $documentId = $this->document->id;
+
+        $service = new class($documentId) extends HybridRetrievalService {
+            public function __construct(private readonly int $documentId)
+            {
+                parent::__construct();
+            }
+
+            protected function getDocumentsForUser(array $filenames, string $userId): array
+            {
+                return [['id' => $this->documentId, 'original_name' => 'doc-a.pdf']];
+            }
+
+            protected function getQueryEmbedding(string $query): ?array
+            {
+                return [1.0, 0.0];
+            }
+
+            protected function getBm25ScoredChunks(Document $document, string $query, int $limit): array
+            {
+                return [
+                    [
+                        'content' => 'Chunk pertama',
+                        'score' => 0.7,
+                        'bm25_score' => 0.7,
+                        'filename' => 'doc-a.pdf',
+                        'chunk_index' => 0,
+                        'chunk_id' => 10,
+                        'chunk_type' => 'child',
+                    ],
+                    [
+                        'content' => 'Chunk kedua',
+                        'score' => 0.6,
+                        'bm25_score' => 0.6,
+                        'filename' => 'doc-a.pdf',
+                        'chunk_index' => 1,
+                        'chunk_id' => 11,
+                        'chunk_type' => 'child',
+                    ],
+                ];
+            }
+
+            protected function getVectorScoredChunks(Document $document, ?array $queryEmbedding, string $query, int $limit): array
+            {
+                return [
+                    [
+                        'content' => 'Chunk pertama',
+                        'score' => 0.8,
+                        'vector_score' => 0.8,
+                        'filename' => 'doc-a.pdf',
+                        'chunk_index' => 0,
+                        'chunk_id' => 10,
+                        'chunk_type' => 'child',
+                    ],
+                    [
+                        'content' => 'Chunk kedua',
+                        'score' => 0.5,
+                        'vector_score' => 0.5,
+                        'filename' => 'doc-a.pdf',
+                        'chunk_index' => 1,
+                        'chunk_id' => 11,
+                        'chunk_type' => 'child',
+                    ],
+                ];
+            }
+
+            protected function ensureDocumentIngested(Document $document, bool $usePdr): void
+            {
+                // no-op for deterministic test
+            }
+        };
+
+        $result = $service->search('query retrieval', [], 2, (string) $this->user->id);
+
+        $this->assertTrue($result['success']);
+        $this->assertSame('Chunk kedua', $result['chunks'][0]['content']);
+        $this->assertSame(0.99, $result['chunks'][0]['rerank_score']);
+        $this->assertSame('Chunk pertama', $result['chunks'][1]['content']);
     }
 
     #[Test]

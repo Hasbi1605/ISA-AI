@@ -105,8 +105,14 @@ class LaravelChatService
 
         $lastMessage = end($messages);
         $prompt = is_array($lastMessage) ? ($lastMessage['content'] ?? '') : (string) $lastMessage;
-
-        $useWebSearch = $this->shouldUseWebSearch($force_web_search, $allow_auto_realtime_web, $source_policy);
+        $policyResult = $this->evaluateWebSearchPolicy(
+            $prompt,
+            $force_web_search,
+            $allow_auto_realtime_web,
+            $source_policy,
+            false
+        );
+        $useWebSearch = $policyResult['should_search'] ?? false;
 
         $nodes = $this->cascadeEnabled && !empty($this->cascadeNodes) 
             ? $this->cascadeNodes 
@@ -167,13 +173,11 @@ class LaravelChatService
         $lastMessage = end($messages);
         $query = is_array($lastMessage) ? ($lastMessage['content'] ?? '') : (string) $lastMessage;
 
-        $explicitWebRequest = $documentPolicy->detectExplicitWebRequest($query);
-
-        $policyResult = $documentPolicy->shouldUseWebSearch(
+        $policyResult = $this->evaluateWebSearchPolicy(
             $query,
             $force_web_search,
-            $explicitWebRequest,
             $allow_auto_realtime_web,
+            $source_policy,
             true
         );
 
@@ -189,10 +193,20 @@ class LaravelChatService
         $success = $retrievalResult['success'] ?? false;
 
         if ($success && !empty($chunks)) {
-            $ragData = $retrievalService->buildRagPrompt($query, $chunks);
+            $webSearchResults = [];
+            $webContext = '';
+            if (($policyResult['should_search'] ?? false) && $this->useLangSearch) {
+                $webSearchResults = $this->performLangSearch($query);
+                $webContext = $this->buildWebSearchContext($webSearchResults);
+            }
+
+            $ragData = $retrievalService->buildRagPrompt($query, $chunks, true, $webContext);
 
             $prompt = $ragData['prompt'];
-            $sources = $ragData['sources'];
+            $sources = array_merge(
+                $ragData['sources'] ?? [],
+                $this->getWebSearchSources($webSearchResults)
+            );
 
             $nodes = $this->cascadeEnabled && !empty($this->cascadeNodes) 
                 ? $this->cascadeNodes 
@@ -336,6 +350,77 @@ class LaravelChatService
             return $this->webSearchEnabled;
         }
         return false;
+    }
+
+    protected function evaluateWebSearchPolicy(
+        string $query,
+        bool $forceWebSearch,
+        bool $allowAutoRealtimeWeb,
+        ?string $sourcePolicy,
+        bool $documentsActive
+    ): array {
+        if (!$this->webSearchEnabled) {
+            return [
+                'should_search' => false,
+                'reason_code' => 'WEB_DISABLED',
+                'realtime_intent' => 'low',
+            ];
+        }
+
+        [$resolvedAutoRealtimeWeb, $normalizedPolicy] = $this->resolvePolicyFlags(
+            $allowAutoRealtimeWeb,
+            $sourcePolicy,
+            $documentsActive
+        );
+
+        $documentPolicy = $this->getDocumentPolicy();
+        $explicitWebRequest = $documentPolicy?->detectExplicitWebRequest($query) ?? false;
+
+        if (in_array($normalizedPolicy, ['web-only', 'web-preferred'], true)) {
+            return [
+                'should_search' => true,
+                'reason_code' => strtoupper(str_replace('-', '_', $normalizedPolicy)),
+                'realtime_intent' => $documentPolicy?->detectRealtimeIntentLevel($query) ?? 'low',
+            ];
+        }
+
+        if ($documentPolicy === null) {
+            return [
+                'should_search' => $this->shouldUseWebSearch($forceWebSearch, $resolvedAutoRealtimeWeb, $normalizedPolicy),
+                'reason_code' => 'LEGACY_FALLBACK',
+                'realtime_intent' => 'low',
+            ];
+        }
+
+        return $documentPolicy->shouldUseWebSearch(
+            query: $query,
+            forceWebSearch: $forceWebSearch,
+            explicitWebRequest: $explicitWebRequest,
+            allowAutoRealtimeWeb: $resolvedAutoRealtimeWeb,
+            documentsActive: $documentsActive
+        );
+    }
+
+    protected function resolvePolicyFlags(bool $allowAutoRealtimeWeb, ?string $sourcePolicy, bool $documentsActive): array
+    {
+        $normalizedPolicy = strtolower(trim((string) $sourcePolicy));
+
+        if ($normalizedPolicy === 'document_context') {
+            $allowAutoRealtimeWeb = false;
+        } elseif ($normalizedPolicy === 'hybrid_realtime_auto') {
+            $allowAutoRealtimeWeb = true;
+        } elseif ($normalizedPolicy !== '' && !in_array($normalizedPolicy, ['web-only', 'web-preferred'], true)) {
+            Log::warning('LaravelChatService: unknown source policy received', [
+                'source_policy' => $normalizedPolicy,
+                'documents_active' => $documentsActive,
+            ]);
+        }
+
+        if ($normalizedPolicy === 'document_context' && !$documentsActive) {
+            Log::warning('LaravelChatService: document_context policy received without active documents');
+        }
+
+        return [$allowAutoRealtimeWeb, $normalizedPolicy];
     }
 
     protected function getSystemPrompt(): string
@@ -513,22 +598,26 @@ PROMPT;
         if (!$langSearch) {
             return [];
         }
+
+        $rerankConfig = config('ai.rag.semantic_rerank', []);
+        $rerankEnabled = (bool) ($rerankConfig['enabled'] ?? true);
+        $webCandidates = max(1, (int) ($rerankConfig['web_candidates'] ?? $count));
+        $webTopN = max(1, (int) ($rerankConfig['web_top_n'] ?? $count));
+
+        $searchCount = max($count, $webCandidates);
+        $results = $langSearch->search($query, $freshness, $searchCount);
         
-        $results = $langSearch->search($query, $freshness, $count);
-        
-        if (count($results) >= 2) {
-            $reranked = $langSearch->rerank($query, $results, $count);
+        if ($rerankEnabled && count($results) >= 2) {
+            $candidates = array_slice($results, 0, $webCandidates);
+            $reranked = $langSearch->rerank($query, $candidates, $webTopN);
             if ($reranked !== null) {
-                $urlMap = [];
-                foreach ($results as $r) {
-                    $urlMap[$r['url']] = $r;
-                }
-                
                 $rerankedResults = [];
                 foreach ($reranked as $item) {
-                    $doc = $item['document'] ?? null;
-                    if ($doc && isset($urlMap[$doc['url'] ?? ''])) {
-                        $rerankedResults[] = $urlMap[$doc['url']];
+                    $index = $item['index'] ?? null;
+                    if (is_int($index) && isset($candidates[$index])) {
+                        $result = $candidates[$index];
+                        $result['rerank_score'] = (float) ($item['relevance_score'] ?? 0);
+                        $rerankedResults[] = $result;
                     }
                 }
                 
@@ -538,6 +627,6 @@ PROMPT;
             }
         }
         
-        return $results;
+        return array_slice($results, 0, $count);
     }
 }

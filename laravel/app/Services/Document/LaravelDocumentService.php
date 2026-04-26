@@ -39,6 +39,19 @@ class LaravelDocumentService
         }
 
         try {
+            if (!config('ai.laravel_ai.use_provider_file_search', false)) {
+                Log::info('LaravelDocumentService: skipping provider upload for local document process', [
+                    'file' => $originalName,
+                    'user_id' => $userId,
+                ]);
+
+                return [
+                    'status' => 'success',
+                    'message' => 'Dokumen siap diproses lokal tanpa upload provider',
+                    'provider_file_id' => null,
+                ];
+            }
+
             $aiDoc = AiDocument::fromPath($filePath);
             $storedFile = Files::put($aiDoc, null, $originalName);
 

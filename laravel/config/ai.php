@@ -163,6 +163,15 @@ return [
             'timeout' => env('RAG_HYDE_TIMEOUT', 5),
             'max_tokens' => env('RAG_HYDE_MAX_TOKENS', 100),
         ],
+
+        'semantic_rerank' => [
+            'enabled' => env('LANGSEARCH_RERANK_ENABLED', true),
+            'top_k' => (int) env('RAG_RERANK_TOP_K', 8),
+            'top_n' => (int) env('RAG_RERANK_TOP_N', 8),
+            'doc_candidates' => (int) env('RAG_RERANK_DOC_CANDIDATES', 25),
+            'web_candidates' => (int) env('LANGSEARCH_RERANK_WEB_CANDIDATES', 10),
+            'web_top_n' => (int) env('LANGSEARCH_RERANK_WEB_TOP_N', 5),
+        ],
     ],
 
     'ocr' => [

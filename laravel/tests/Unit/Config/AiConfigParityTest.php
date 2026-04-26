@@ -83,6 +83,15 @@ class AiConfigParityTest extends TestCase
         $this->assertNotNull(config('ai.rag.batching.retry_delay_base'));
     }
 
+    public function test_semantic_rerank_keys_exist(): void
+    {
+        $this->assertNotNull(config('ai.rag.semantic_rerank.enabled'));
+        $this->assertNotNull(config('ai.rag.semantic_rerank.top_n'));
+        $this->assertNotNull(config('ai.rag.semantic_rerank.doc_candidates'));
+        $this->assertNotNull(config('ai.rag.semantic_rerank.web_candidates'));
+        $this->assertNotNull(config('ai.rag.semantic_rerank.web_top_n'));
+    }
+
     public function test_ocr_keys_exist(): void
     {
         $this->assertTrue((bool) config('ai.ocr.enabled'));

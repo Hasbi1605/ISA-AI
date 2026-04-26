@@ -5,6 +5,7 @@ namespace App\Services\Document;
 use App\Models\Document;
 use App\Models\DocumentChunk;
 use App\Services\AI\EmbeddingCascadeService;
+use App\Services\LangSearchService;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
 use Laravel\Ai\AiManager;
@@ -26,6 +27,10 @@ class HybridRetrievalService
     protected int $pdrParentOverlap;
     protected bool $hydeEnabled;
     protected string $hydeMode;
+    protected bool $semanticRerankEnabled;
+    protected int $semanticRerankTopN;
+    protected int $semanticRerankDocCandidates;
+    protected ?LangSearchService $langSearchService;
 
     public function __construct()
     {
@@ -52,6 +57,12 @@ class HybridRetrievalService
         $hyde = $ragConfig['hyde'] ?? [];
         $this->hydeEnabled = $hyde['enabled'] ?? true;
         $this->hydeMode = $hyde['mode'] ?? 'smart';
+
+        $semanticRerank = $ragConfig['semantic_rerank'] ?? [];
+        $this->semanticRerankEnabled = (bool) ($semanticRerank['enabled'] ?? true);
+        $this->semanticRerankTopN = max(1, (int) ($semanticRerank['top_n'] ?? $this->topK));
+        $this->semanticRerankDocCandidates = max($this->semanticRerankTopN, (int) ($semanticRerank['doc_candidates'] ?? 25));
+        $this->langSearchService = null;
 
         if ($this->hydeEnabled) {
             try {
@@ -125,6 +136,8 @@ class HybridRetrievalService
         }
 
         usort($allChunks, fn($a, $b) => ($b['score'] ?? 0) <=> ($a['score'] ?? 0));
+
+        $allChunks = $this->rerankChunks($originalQuery, $allChunks, $topK);
         
         return [
             'chunks' => array_slice($allChunks, 0, $topK),
@@ -158,6 +171,7 @@ class HybridRetrievalService
         }
 
         $merged = $this->performRrfMerge($bm25Results, $vectorResults, $topK);
+        $merged = $this->rerankChunks($originalQuery, $merged, $topK);
 
         if ($this->pdrEnabled && !empty($merged)) {
             $merged = $this->resolvePdrParents($merged, $userId);
@@ -752,5 +766,68 @@ class HybridRetrievalService
         }
 
         return $dotProduct / ($normA * $normB);
+    }
+
+    protected function rerankChunks(string $query, array $chunks, int $topK): array
+    {
+        if (!$this->semanticRerankEnabled || count($chunks) < 2) {
+            return array_slice($chunks, 0, $topK);
+        }
+
+        $langSearch = $this->getLangSearchService();
+        if ($langSearch === null) {
+            return array_slice($chunks, 0, $topK);
+        }
+
+        $candidates = array_slice($chunks, 0, $this->semanticRerankDocCandidates);
+        $documents = array_map(fn(array $chunk) => (string) ($chunk['content'] ?? ''), $candidates);
+        $rerankResults = $langSearch->rerank($query, $documents, $this->semanticRerankTopN);
+
+        if ($rerankResults === null) {
+            Log::warning('HybridRetrievalService: rerank failed, using original retrieval order', [
+                'query' => $query,
+                'candidate_count' => count($candidates),
+            ]);
+            return array_slice($chunks, 0, $topK);
+        }
+
+        $reranked = [];
+        foreach ($rerankResults as $result) {
+            $index = $result['index'] ?? null;
+            if (!is_int($index) || !isset($candidates[$index])) {
+                continue;
+            }
+
+            $chunk = $candidates[$index];
+            $chunk['rerank_score'] = (float) ($result['relevance_score'] ?? 0);
+            $reranked[] = $chunk;
+        }
+
+        if (empty($reranked)) {
+            return array_slice($chunks, 0, $topK);
+        }
+
+        return array_slice($reranked, 0, $topK);
+    }
+
+    protected function getLangSearchService(): ?LangSearchService
+    {
+        if ($this->langSearchService !== null) {
+            return $this->langSearchService;
+        }
+
+        if (config('ai.langsearch.api_key') === null && config('ai.langsearch.api_key_backup') === null) {
+            return null;
+        }
+
+        try {
+            $this->langSearchService = app(LangSearchService::class);
+        } catch (\Throwable $e) {
+            Log::warning('HybridRetrievalService: LangSearch service unavailable', [
+                'error' => $e->getMessage(),
+            ]);
+        }
+
+        return $this->langSearchService;
     }
 }

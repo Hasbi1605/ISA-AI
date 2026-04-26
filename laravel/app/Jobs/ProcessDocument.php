@@ -54,7 +54,11 @@ class ProcessDocument implements ShouldQueue
                 return;
             }
 
-            Log::warning('ProcessDocument: Laravel processing failed, falling back to Python', [
+            if (!$this->shouldFallbackToRuntimeDocumentProcess()) {
+                throw new Exception("Process failed: " . ($laravelResult['message'] ?? 'Unknown error'));
+            }
+
+            Log::warning('ProcessDocument: Laravel processing failed, falling back to runtime document process', [
                 'document_id' => $this->document->id,
                 'error' => $laravelResult['message'] ?? 'Unknown',
             ]);
@@ -90,6 +94,17 @@ class ProcessDocument implements ShouldQueue
         }
         
         return $filePath;
+    }
+
+    protected function shouldFallbackToRuntimeDocumentProcess(): bool
+    {
+        $runtime = config('ai_runtime.document_process', 'laravel');
+
+        if ($runtime !== 'laravel') {
+            return true;
+        }
+
+        return config('ai.laravel_ai.use_provider_file_search', false);
     }
 
     protected function processWithLaravel(string $filePath): array

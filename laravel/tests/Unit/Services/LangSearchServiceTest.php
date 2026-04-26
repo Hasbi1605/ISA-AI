@@ -234,6 +234,57 @@ class LangSearchServiceTest extends TestCase
         $this->assertEquals(1, $results[0]['index']);
     }
 
+    public function test_rerank_normalizes_search_results_before_request(): void
+    {
+        Http::fake([
+            'https://api.langsearch.com/v1/rerank' => function ($request) {
+                $this->assertSame('test query', $request['query']);
+                $this->assertSame('langsearch-reranker-v1', $request['model']);
+                $this->assertSame([
+                    [
+                        'text' => "Artikel Pertama\n\nRingkasan pertama",
+                        'url' => 'https://example.com/first',
+                    ],
+                    [
+                        'text' => "Artikel Kedua\n\nRingkasan kedua",
+                        'url' => 'https://example.com/second',
+                    ],
+                ], $request['documents']);
+
+                return Http::response([
+                    'results' => [
+                        [
+                            'index' => 1,
+                            'document' => [
+                                'url' => 'https://example.com/second',
+                                'text' => "Artikel Kedua\n\nRingkasan kedua",
+                            ],
+                            'relevance_score' => 0.97,
+                        ],
+                    ],
+                ], 200);
+            },
+        ]);
+
+        $service = new LangSearchService();
+        $results = $service->rerank('test query', [
+            [
+                'title' => 'Artikel Pertama',
+                'snippet' => 'Ringkasan pertama',
+                'url' => 'https://example.com/first',
+            ],
+            [
+                'title' => 'Artikel Kedua',
+                'snippet' => 'Ringkasan kedua',
+                'url' => 'https://example.com/second',
+            ],
+        ], 2);
+
+        $this->assertNotNull($results);
+        $this->assertCount(1, $results);
+        $this->assertEquals('https://example.com/second', $results[0]['document']['url']);
+    }
+
     public function test_rerank_error_returns_null(): void
     {
         Http::fake([

@@ -42,6 +42,28 @@ class LaravelDocumentServiceTest extends TestCase
         $this->assertArrayHasKey('status', $result);
     }
 
+    public function test_document_process_skips_provider_upload_when_local_mode_is_enabled(): void
+    {
+        Config::set('ai.laravel_ai.api_key', null);
+        Config::set('ai.laravel_ai.document_process_enabled', true);
+        Config::set('ai.laravel_ai.use_provider_file_search', false);
+
+        $tempFile = tempnam(sys_get_temp_dir(), 'ista-doc-');
+        file_put_contents($tempFile, 'dummy local document content');
+
+        try {
+            $service = new LaravelDocumentService();
+            $result = $service->processDocument($tempFile, 'local-only.pdf', 1);
+        } finally {
+            @unlink($tempFile);
+        }
+
+        $this->assertSame('success', $result['status']);
+        $this->assertArrayHasKey('provider_file_id', $result);
+        $this->assertNull($result['provider_file_id']);
+        $this->assertStringContainsString('lokal', $result['message']);
+    }
+
     public function test_document_summarize_returns_array_structure_when_disabled(): void
     {
         Config::set('ai.laravel_ai.document_summarize_enabled', false);

@@ -127,7 +127,12 @@ class LangSearchService
             return null;
         }
 
-        $documents = array_slice($documents, 0, 50);
+        $documents = $this->normalizeDocumentsForRerank(array_slice($documents, 0, 50));
+
+        if (count($documents) < 2) {
+            Log::info('LangSearch Rerank: skipping rerank (no valid documents after normalization)');
+            return null;
+        }
 
         $payload = [
             'model' => $this->rerankModel,
@@ -149,6 +154,59 @@ class LangSearchService
         Log::info("LangSearch Rerank: query='{$query}', returned " . count($results) . " results");
 
         return $results;
+    }
+
+    protected function normalizeDocumentsForRerank(array $documents): array
+    {
+        $normalized = [];
+
+        foreach ($documents as $document) {
+            $normalizedDocument = $this->normalizeDocumentForRerank($document);
+
+            if ($normalizedDocument !== null) {
+                $normalized[] = $normalizedDocument;
+            }
+        }
+
+        return $normalized;
+    }
+
+    protected function normalizeDocumentForRerank(mixed $document): ?array
+    {
+        if (is_string($document)) {
+            $text = trim($document);
+
+            return $text === '' ? null : ['text' => $text];
+        }
+
+        if (!is_array($document)) {
+            return null;
+        }
+
+        $text = trim((string) ($document['text'] ?? ''));
+        if ($text === '') {
+            $text = trim(implode("\n\n", array_filter([
+                $document['title'] ?? '',
+                $document['snippet'] ?? '',
+            ])));
+        }
+
+        $url = trim((string) ($document['url'] ?? ''));
+        if ($text === '' && $url !== '') {
+            $text = $url;
+        }
+
+        if ($text === '') {
+            return null;
+        }
+
+        $normalized = ['text' => $text];
+
+        if ($url !== '') {
+            $normalized['url'] = $url;
+        }
+
+        return $normalized;
     }
 
     public function buildSearchContext(array $results): string
@@ -225,7 +283,10 @@ PROMPT;
                             Log::warning("LangSearch Rerank: API error {$statusCode}. Retrying with backup key...");
                             continue;
                         }
-                        Log::error("LangSearch Rerank: API error code={$statusCode}, msg=" . ($data['msg'] ?? ''));
+                        $logMethod = $statusCode >= 500 ? 'warning' : 'error';
+                        Log::{$logMethod}(
+                            "LangSearch Rerank: API error code={$statusCode}, msg=" . ($data['msg'] ?? '') . '. Falling back to search results.'
+                        );
                         return null;
                     }
                     
@@ -233,9 +294,17 @@ PROMPT;
                 }
 
                 $statusCode = $response->status();
-                if ($i < count($this->apiKeys) - 1 && in_array($statusCode, [401, 403, 429]) || $statusCode >= 500) {
+                $canRetryWithBackup = $i < count($this->apiKeys) - 1
+                    && (in_array($statusCode, [401, 403, 429]) || $statusCode >= 500);
+
+                if ($canRetryWithBackup) {
                     Log::warning("LangSearch {$type}: attempt " . ($i + 1) . " failed ({$statusCode}). Retrying with backup key...");
                     continue;
+                }
+
+                if ($type === 'rerank' && $statusCode >= 500) {
+                    Log::warning("LangSearch Rerank: HTTP {$statusCode}. Falling back to search results.");
+                    return null;
                 }
                 
                 Log::error("LangSearch {$type}: API error code={$statusCode}");

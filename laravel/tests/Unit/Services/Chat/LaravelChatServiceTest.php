@@ -144,6 +144,78 @@ class LaravelChatServiceTest extends TestCase
         $this->assertTrue($result);
     }
 
+    public function test_regular_chat_auto_mode_skips_web_search_for_simple_query(): void
+    {
+        $this->setUpLaravelAIConfig();
+        Config::set('ai.langsearch.api_key', 'test-langsearch-key');
+        Config::set('ai.langsearch.api_url', 'https://api.langsearch.com/v1/web-search');
+
+        Http::fake([
+            'api.langsearch.com/v1/web-search' => Http::response([
+                'data' => ['webPages' => ['value' => []]],
+            ], 200),
+            'api.openai.com/v1/chat/completions' => Http::response(
+                $this->sseBody(['Halo juga']),
+                200
+            ),
+        ]);
+
+        $service = new LaravelChatService();
+        $result = $service->chat(
+            [['role' => 'user', 'content' => 'halo']],
+            null,
+            '1',
+            false,
+            'hybrid_realtime_auto',
+            true
+        );
+
+        $output = $this->collectStream($result);
+
+        $this->assertStringContainsString('Halo juga', $output);
+        Http::assertNotSent(fn ($request) => str_contains($request->url(), '/web-search'));
+    }
+
+    public function test_regular_chat_auto_mode_uses_web_search_for_realtime_query(): void
+    {
+        $this->setUpLaravelAIConfig();
+        Config::set('ai.langsearch.api_key', 'test-langsearch-key');
+        Config::set('ai.langsearch.api_url', 'https://api.langsearch.com/v1/web-search');
+
+        Http::fake([
+            'api.langsearch.com/v1/web-search' => Http::response([
+                'data' => [
+                    'webPages' => [
+                        'value' => [
+                            ['name' => 'Berita A', 'snippet' => 'Update terkini', 'url' => 'https://news.example/a'],
+                        ],
+                    ],
+                ],
+            ], 200),
+            'api.openai.com/v1/chat/completions' => Http::response(
+                $this->sseBody(['Ringkasan berita terbaru']),
+                200
+            ),
+        ]);
+
+        Cache::flush();
+
+        $service = new LaravelChatService();
+        $result = $service->chat(
+            [['role' => 'user', 'content' => 'berita terbaru indonesia']],
+            null,
+            '1',
+            false,
+            'hybrid_realtime_auto',
+            true
+        );
+
+        $output = $this->collectStream($result);
+
+        $this->assertStringContainsString('Ringkasan berita terbaru', $output);
+        Http::assertSent(fn ($request) => str_contains($request->url(), '/web-search'));
+    }
+
     public function test_chat_with_documents_falls_back_to_python(): void
     {
         Config::set('ai_runtime.chat', 'laravel');
@@ -219,6 +291,80 @@ class LaravelChatServiceTest extends TestCase
         $this->assertStringContainsString('[SOURCES:', $output);
         $this->assertStringContainsString('doc1.pdf', $output);
         Http::assertSent(fn ($r) => str_contains($r->url(), '/chat/completions'));
+    }
+
+    public function test_chat_with_documents_can_merge_explicit_web_context_into_rag_prompt(): void
+    {
+        $this->setUpLaravelAIConfig();
+        Config::set('ai.laravel_ai.document_retrieval_enabled', true);
+        Config::set('ai.langsearch.api_key', 'test-key');
+        Config::set('ai.langsearch.api_url', 'https://api.langsearch.com/v1/web-search');
+        Config::set('ai.langsearch.rerank_url', 'https://api.langsearch.com/v1/rerank');
+
+        Http::fake([
+            'api.langsearch.com/v1/web-search' => Http::response([
+                'data' => [
+                    'webPages' => [
+                        'value' => [
+                            ['name' => 'Web Ref', 'snippet' => 'Reference', 'url' => 'https://example.com/ref'],
+                        ],
+                    ],
+                ],
+            ], 200),
+            'api.openai.com/v1/chat/completions' => Http::response(
+                $this->sseBody(['Jawaban gabungan']),
+                200
+            ),
+        ]);
+
+        $retrieval = Mockery::mock(LaravelDocumentRetrievalService::class);
+        $retrieval->shouldReceive('searchRelevantChunks')
+            ->once()
+            ->andReturn([
+                'success' => true,
+                'chunks' => [
+                    ['content' => 'isi chunk', 'filename' => 'doc1.pdf', 'chunk_index' => 0, 'score' => 0.95],
+                ],
+            ]);
+        $retrieval->shouldReceive('buildRagPrompt')
+            ->once()
+            ->withArgs(function ($question, $chunks, $includeSources, $webContext) {
+                return $question === 'cari di web lalu cocokkan dengan dokumen'
+                    && $includeSources === true
+                    && str_contains($webContext, 'Web Ref');
+            })
+            ->andReturn([
+                'prompt' => 'RAG_PLUS_WEB_PROMPT',
+                'sources' => [
+                    ['filename' => 'doc1.pdf', 'chunk_index' => 0, 'relevance_score' => 0.95],
+                ],
+            ]);
+
+        $policy = Mockery::mock(DocumentPolicyService::class);
+        $policy->shouldReceive('detectExplicitWebRequest')->once()->andReturn(true);
+        $policy->shouldReceive('shouldUseWebSearch')->once()->andReturn([
+            'should_search' => true,
+            'reason_code' => 'DOC_WEB_EXPLICIT',
+            'realtime_intent' => 'low',
+        ]);
+
+        $this->app->instance(LaravelDocumentRetrievalService::class, $retrieval);
+        $this->app->instance(DocumentPolicyService::class, $policy);
+
+        Cache::flush();
+
+        $service = new LaravelChatService();
+        $result = $service->chat(
+            [['role' => 'user', 'content' => 'cari di web lalu cocokkan dengan dokumen']],
+            ['doc1.pdf'],
+            '1'
+        );
+
+        $output = $this->collectStream($result);
+
+        $this->assertStringContainsString('Jawaban gabungan', $output);
+        $this->assertStringContainsString('doc1.pdf', $output);
+        $this->assertStringContainsString('example.com\\/ref', $output);
     }
 
     public function test_chat_with_documents_web_fallback_normalizes_stream_and_citations(): void
