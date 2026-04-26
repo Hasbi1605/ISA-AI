@@ -272,6 +272,21 @@ class LaravelChatServiceTest extends TestCase
     {
         $this->setUpLaravelAIConfig();
         Config::set('ai.laravel_ai.document_retrieval_enabled', true);
+        Config::set('ai.langsearch.api_key', 'test-key');
+        Config::set('ai.langsearch.api_url', 'https://api.langsearch.com/v1/web-search');
+        Config::set('ai.langsearch.rerank_url', 'https://api.langsearch.com/v1/rerank');
+        
+        Http::fake([
+            'api.langsearch.com/v1/web-search' => Http::response([
+                'data' => [
+                    'webPages' => [
+                        'value' => [
+                            ['name' => 'Web Ref', 'snippet' => 'Reference', 'url' => 'https://example.com/ref'],
+                        ]
+                    ]
+                ]
+            ], 200),
+        ]);
 
         $retrieval = Mockery::mock(LaravelDocumentRetrievalService::class);
         $retrieval->shouldReceive('searchRelevantChunks')
@@ -288,8 +303,7 @@ class LaravelChatServiceTest extends TestCase
             'reason_code' => 'DOC_WEB_EXPLICIT',
         ]);
 
-        $provider = Mockery::mock(TextProvider::class . ', \Laravel\Ai\Contracts\Providers\SupportsWebSearch');
-        $provider->shouldReceive('webSearchTool')->once()->andReturn(new \stdClass());
+        $provider = Mockery::mock(TextProvider::class);
         $provider->shouldReceive('stream')
             ->once()
             ->with(Mockery::type(AgentPrompt::class))
@@ -311,6 +325,8 @@ class LaravelChatServiceTest extends TestCase
         $this->app->instance(DocumentPolicyService::class, $policy);
         $this->app->instance(AiManager::class, $ai);
 
+        Cache::flush();
+        
         $service = new LaravelChatService();
         $result = $service->chat(
             [['role' => 'user', 'content' => 'cari di web ini']],

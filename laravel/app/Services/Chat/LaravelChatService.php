@@ -125,26 +125,29 @@ class LaravelChatService
 
                 $provider = $this->getProviderForNode($node, $agent);
                 
-                $tools = [];
-                if ($useWebSearch && $this->webSearchEnabled && $provider instanceof \Laravel\Ai\Contracts\Providers\SupportsWebSearch) {
-                    $webSearch = new \Laravel\Ai\Providers\Tools\WebSearch();
-                    $tools[] = $provider->webSearchTool($webSearch);
-                    $agent->tools = $tools;
+$webSearchResults = [];
+                if ($useWebSearch && $this->useLangSearch) {
+                    $webSearchResults = $this->performLangSearch($prompt);
+                    $agent->instructions = $this->getWebSearchPrompt();
                 }
 
                 yield "[MODEL:{$node['label']}]\n";
 
+                $promptToUse = !empty($webSearchResults)
+                    ? $this->buildWebSearchContext($webSearchResults) . "\n\n" . $prompt
+                    : $prompt;
+
                 $stream = $provider->stream(
                     new AgentPrompt(
                         agent: $agent,
-                        prompt: $prompt,
+                        prompt: $promptToUse,
                         attachments: [],
                         provider: $provider,
                         model: $node['model'],
                     )
                 );
 
-                yield from $this->streamResponseWithSources($stream);
+                yield from $this->streamResponseWithSources($stream, $this->getWebSearchSources($webSearchResults));
                 $success = true;
                 break;
             } catch (\Throwable $e) {
@@ -271,24 +274,27 @@ class LaravelChatService
 
                         $provider = $this->getProviderForNode($node, $agent);
 
-                        $tools = [];
-                        if ($this->webSearchEnabled && $provider instanceof \Laravel\Ai\Contracts\Providers\SupportsWebSearch) {
-                            $webSearch = new \Laravel\Ai\Providers\Tools\WebSearch();
-                            $tools[] = $provider->webSearchTool($webSearch);
-                            $agent->tools = $tools;
+                        $webSearchResults = [];
+                        if ($this->useLangSearch) {
+                            $webSearchResults = $this->performLangSearch($query);
+                            $agent->instructions = $this->getWebSearchPrompt();
                         }
 
                         yield "[MODEL:{$node['label']}]\n";
 
+                        $promptToUse = !empty($webSearchResults)
+                            ? $this->buildWebSearchContext($webSearchResults) . "\n\n" . $query
+                            : $query;
+
                         $promptObj = new AgentPrompt(
                             agent: $agent,
-                            prompt: $query,
+                            prompt: $promptToUse,
                             attachments: [],
                             provider: $provider,
                             model: $node['model'],
                         );
 
-                        yield from $this->streamResponseWithSources($provider->stream($promptObj));
+                        yield from $this->streamResponseWithSources($provider->stream($promptObj), $this->getWebSearchSources($webSearchResults));
                         $chatSuccess = true;
                         break;
                     } catch (\Throwable $e) {
@@ -324,24 +330,27 @@ class LaravelChatService
 
                     $provider = $this->getProviderForNode($node, $agent);
 
-                    $tools = [];
-                    if ($this->webSearchEnabled && $provider instanceof \Laravel\Ai\Contracts\Providers\SupportsWebSearch) {
-                        $webSearch = new \Laravel\Ai\Providers\Tools\WebSearch();
-                        $tools[] = $provider->webSearchTool($webSearch);
-                        $agent->tools = $tools;
+                    $webSearchResults = [];
+                    if ($this->useLangSearch) {
+                        $webSearchResults = $this->performLangSearch($query);
+                        $agent->instructions = $this->getWebSearchPrompt();
                     }
 
                     yield "[MODEL:{$node['label']}]\n";
 
+                    $promptToUse = !empty($webSearchResults)
+                        ? $this->buildWebSearchContext($webSearchResults) . "\n\n" . $query
+                        : $query;
+
                     $promptObj = new AgentPrompt(
                         agent: $agent,
-                        prompt: $query,
+                        prompt: $promptToUse,
                         attachments: [],
                         provider: $provider,
                         model: $node['model'],
                     );
 
-                    yield from $this->streamResponseWithSources($provider->stream($promptObj));
+                    yield from $this->streamResponseWithSources($provider->stream($promptObj), $this->getWebSearchSources($webSearchResults));
                     $chatSuccess = true;
                     break;
                 } catch (\Throwable $e) {
@@ -384,6 +393,40 @@ Anda adalah asisten AI yang helpful dan informative.
 Selalu berikan jawaban yang akurat, jelas, dan relevan.
 Jika pengguna bertanya tentang informasi terkini atau memerlukan data realtime, lakukan web search terlebih dahulu.
 PROMPT;
+    }
+
+    protected function getWebSearchPrompt(): string
+    {
+        return <<<'PROMPT'
+Anda adalah asisten AI yang helpful dan informative. 
+Selalu berikan jawaban yang akurat, jelas, dan relevan berdasarkan hasil pencarian web terkini.
+PROMPT;
+    }
+
+    protected function buildWebSearchContext(array $results): string
+    {
+        if (empty($results)) {
+            return '';
+        }
+
+        $langSearch = $this->getLangSearchService();
+        if (!$langSearch) {
+            return '';
+        }
+
+        return $langSearch->buildSearchContext($results);
+    }
+
+    protected function getWebSearchSources(array $results): array
+    {
+        $sources = [];
+        foreach ($results as $result) {
+            $sources[] = [
+                'title' => $result['title'] ?? '',
+                'url' => $result['url'] ?? '',
+            ];
+        }
+        return $sources;
     }
 
     protected function streamResponseWithSources(iterable $stream, array $initialSources = []): \Generator

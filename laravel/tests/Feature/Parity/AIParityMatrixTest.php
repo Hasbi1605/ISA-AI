@@ -4,7 +4,9 @@ namespace Tests\Feature\Parity;
 
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Config;
+use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Facades\Cache;
 use PHPUnit\Framework\Attributes\Group;
 use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
@@ -179,6 +181,45 @@ class AIParityMatrixTest extends TestCase
         $result = $service->rerank('test query', ['doc1', 'doc2']);
         
         $this->assertNull($result); 
+    }
+
+    #[Test]
+    #[Group('parity')]
+    #[Group('web')]
+    public function it_uses_langsearch_in_chat_flow()
+    {
+        Config::set('ai.langsearch.api_key', 'test-key');
+        Config::set('ai.langsearch.api_url', 'https://api.langsearch.com/v1/web-search');
+        Config::set('ai.langsearch.rerank_url', 'https://api.langsearch.com/v1/rerank');
+        Config::set('ai.langsearch.rerank_model', 'langsearch-reranker-v1');
+        
+        Http::fake([
+            'api.langsearch.com/v1/web-search' => Http::response([
+                'data' => [
+                    'webPages' => [
+                        'value' => [
+                            ['name' => 'Result A', 'snippet' => 'Desc A', 'url' => 'https://a.com'],
+                            ['name' => 'Result B', 'snippet' => 'Desc B', 'url' => 'https://b.com'],
+                        ]
+                    ]
+                ]
+            ], 200),
+            'api.langsearch.com/v1/rerank' => Http::response([
+                'results' => [
+                    ['index' => 1, 'document' => ['url' => 'https://b.com'], 'relevance_score' => 0.9],
+                    ['index' => 0, 'document' => ['url' => 'https://a.com'], 'relevance_score' => 0.8],
+                ]
+            ], 200),
+        ]);
+        
+        Cache::flush();
+        
+        $chatService = new \App\Services\Chat\LaravelChatService();
+        $results = $chatService->performLangSearch('test query', 'oneWeek', 5);
+        
+        $this->assertCount(2, $results);
+        $this->assertEquals('https://b.com', $results[0]['url']);
+        $this->assertEquals('https://a.com', $results[1]['url']);
     }
 
     #[Test]
