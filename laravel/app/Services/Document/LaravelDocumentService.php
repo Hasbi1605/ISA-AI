@@ -132,7 +132,7 @@ class LaravelDocumentService
                     $usedModel = $finalResult['model'] ?? $this->model;
                 } else {
                     $summary = $combinedSummary;
-                    $usedModel = $this->model;
+                    $usedModel = $batchResult['model'] ?? $this->model;
                 }
             }
 
