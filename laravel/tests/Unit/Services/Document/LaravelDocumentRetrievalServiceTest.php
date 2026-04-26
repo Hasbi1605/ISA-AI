@@ -297,6 +297,71 @@ class LaravelDocumentRetrievalServiceTest extends TestCase
         ]);
     }
 
+    public function test_search_reembeds_stale_chunks_when_document_has_mixed_embedding_states(): void
+    {
+        Config::set('ai.laravel_ai.use_provider_file_search', false);
+
+        $user = User::factory()->create();
+        $document = Document::factory()->for($user)->create([
+            'status' => 'ready',
+            'original_name' => 'mixed.txt',
+            'file_path' => 'documents/mixed.txt',
+        ]);
+
+        DocumentChunk::create([
+            'document_id' => $document->id,
+            'text_content' => 'Current chunk',
+            'embedding' => [1.0, 0.0],
+            'embedding_model' => 'text-embedding-3-small',
+            'embedding_dimensions' => 2,
+        ]);
+
+        $staleChunk = DocumentChunk::create([
+            'document_id' => $document->id,
+            'text_content' => 'Stale chunk',
+            'embedding' => [0.4, 0.5, 0.6],
+            'embedding_model' => 'text-embedding-3-large',
+            'embedding_dimensions' => 3,
+        ]);
+
+        $mockCascade = Mockery::mock(EmbeddingCascadeService::class);
+        $mockCascade->shouldReceive('embed')
+            ->once()
+            ->with(['laravel'])
+            ->andReturn(new EmbeddingsResponse(
+                embeddings: [[1.0, 0.0]],
+                tokens: 1,
+                meta: new Meta(provider: 'test', model: 'text-embedding-3-small')
+            ));
+        $mockCascade->shouldReceive('embed')
+            ->once()
+            ->with(['Stale chunk'], 'text-embedding-3-small')
+            ->andReturn(new EmbeddingsResponse(
+                embeddings: [[0.8, 0.2]],
+                tokens: 1,
+                meta: new Meta(provider: 'test', model: 'text-embedding-3-small')
+            ));
+
+        $this->app->instance(EmbeddingCascadeService::class, $mockCascade);
+
+        $service = new LaravelDocumentRetrievalService();
+
+        $result = $service->searchRelevantChunks(
+            'laravel',
+            ['mixed.txt'],
+            5,
+            (string) $user->id
+        );
+
+        $this->assertTrue($result['success']);
+        $this->assertCount(2, $result['chunks']);
+        $this->assertDatabaseHas('document_chunks', [
+            'id' => $staleChunk->id,
+            'embedding_model' => 'text-embedding-3-small',
+            'embedding_dimensions' => 2,
+        ]);
+    }
+
     public function test_search_uses_lexical_fallback_when_query_embedding_fails(): void
     {
         Config::set('ai.laravel_ai.use_provider_file_search', false);
@@ -333,5 +398,51 @@ class LaravelDocumentRetrievalServiceTest extends TestCase
         $this->assertTrue($result['success']);
         $this->assertCount(1, $result['chunks']);
         $this->assertStringContainsString('Laravel retrieval lexical fallback', $result['chunks'][0]['content']);
+    }
+
+    public function test_search_uses_lexical_fallback_when_document_embedding_refresh_fails(): void
+    {
+        Config::set('ai.laravel_ai.use_provider_file_search', false);
+
+        $user = User::factory()->create();
+        $document = Document::factory()->for($user)->create([
+            'status' => 'ready',
+            'original_name' => 'doc-refresh-fallback.txt',
+            'file_path' => 'documents/doc-refresh-fallback.txt',
+        ]);
+
+        DocumentChunk::create([
+            'document_id' => $document->id,
+            'text_content' => 'Laravel refresh fallback chunk',
+        ]);
+
+        $mockCascade = Mockery::mock(EmbeddingCascadeService::class);
+        $mockCascade->shouldReceive('embed')
+            ->once()
+            ->with(['laravel'])
+            ->andReturn(new EmbeddingsResponse(
+                embeddings: [[1.0, 0.0]],
+                tokens: 1,
+                meta: new Meta(provider: 'test', model: 'text-embedding-3-small')
+            ));
+        $mockCascade->shouldReceive('embed')
+            ->once()
+            ->with(['Laravel refresh fallback chunk'], 'text-embedding-3-small')
+            ->andThrow(new \RuntimeException('Document embeddings unavailable'));
+
+        $this->app->instance(EmbeddingCascadeService::class, $mockCascade);
+
+        $service = new LaravelDocumentRetrievalService();
+
+        $result = $service->searchRelevantChunks(
+            'laravel',
+            ['doc-refresh-fallback.txt'],
+            5,
+            (string) $user->id
+        );
+
+        $this->assertTrue($result['success']);
+        $this->assertCount(1, $result['chunks']);
+        $this->assertStringContainsString('Laravel refresh fallback chunk', $result['chunks'][0]['content']);
     }
 }

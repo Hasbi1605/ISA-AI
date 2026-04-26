@@ -290,9 +290,18 @@ class LaravelDocumentRetrievalService implements DocumentRetrievalInterface
             } else {
                 $dbChunks = $this->getChunksForEmbeddingTarget($document, $actualModel, $actualDimensions);
 
-                if ($dbChunks->isEmpty()) {
+                if ($this->documentNeedsEmbeddingRefresh($document, $dbChunks)) {
                     $this->computeEmbeddingsForDocument($document, $actualModel, $actualDimensions);
                     $dbChunks = $this->getChunksForEmbeddingTarget($document, $actualModel, $actualDimensions);
+                }
+
+                if ($dbChunks->isEmpty()) {
+                    Log::warning('LaravelDocumentRetrieval: falling back to lexical scoring for document after embedding refresh miss', [
+                        'document_id' => $document->id,
+                        'model' => $actualModel,
+                        'dimensions' => $actualDimensions,
+                    ]);
+                    $dbChunks = $document->chunks()->get();
                 }
             }
 
@@ -405,6 +414,13 @@ class LaravelDocumentRetrievalService implements DocumentRetrievalInterface
             ->where('embedding_model', $model)
             ->where('embedding_dimensions', $dimensions)
             ->get();
+    }
+
+    protected function documentNeedsEmbeddingRefresh(Document $document, $matchedChunks): bool
+    {
+        $totalChunks = $document->chunks()->count();
+
+        return $totalChunks > 0 && $matchedChunks->count() !== $totalChunks;
     }
 
     protected function calculateLexicalScore(string $query, string $content): float
