@@ -8,6 +8,7 @@ use Laravel\Ai\Prompts\AgentPrompt;
 use Illuminate\Support\Facades\Log;
 use App\Services\Document\LaravelDocumentRetrievalService;
 use App\Services\Document\DocumentPolicyService;
+use App\Services\LangSearchService;
 
 class LaravelChatService
 {
@@ -18,6 +19,8 @@ class LaravelChatService
     protected ?DocumentPolicyService $documentPolicy;
     protected bool $cascadeEnabled;
     protected array $cascadeNodes;
+    protected ?LangSearchService $langSearchService;
+    protected bool $useLangSearch;
 
     public function __construct()
     {
@@ -28,6 +31,22 @@ class LaravelChatService
         $this->documentPolicy = null;
         $this->cascadeEnabled = config('ai.cascade.enabled', true);
         $this->cascadeNodes = config('ai.cascade.nodes', []);
+        $this->langSearchService = null;
+        $this->useLangSearch = config('ai.langsearch.api_key') !== null;
+    }
+
+    protected function getLangSearchService(): ?LangSearchService
+    {
+        if ($this->langSearchService === null && $this->useLangSearch) {
+            try {
+                $this->langSearchService = app(LangSearchService::class);
+            } catch (\Throwable $e) {
+                Log::warning('LaravelChatService: LangSearchService not available', [
+                    'error' => $e->getMessage(),
+                ]);
+            }
+        }
+        return $this->langSearchService;
     }
 
     protected function getDocumentRetrieval(): ?LaravelDocumentRetrievalService
@@ -413,21 +432,53 @@ PROMPT;
     {
         $msg = strtolower($e->getMessage());
         
-        // 413 Context Too Large
         if (str_contains($msg, '413') || str_contains($msg, 'too large') || str_contains($msg, 'context_length_exceeded')) {
             return true;
         }
 
-        // 429 Rate Limit
         if (str_contains($msg, '429') || str_contains($msg, 'rate limit') || str_contains($msg, 'quota')) {
             return true;
         }
 
-        // Timeout or connection error
         if (str_contains($msg, 'timeout') || str_contains($msg, 'connection')) {
             return true;
         }
 
-        return true; // Fallback for most errors to ensure availability
+        return true;
+    }
+
+    public function performLangSearch(string $query, string $freshness = 'oneWeek', int $count = 5): array
+    {
+        $langSearch = $this->getLangSearchService();
+        
+        if (!$langSearch) {
+            return [];
+        }
+        
+        $results = $langSearch->search($query, $freshness, $count);
+        
+        if (count($results) >= 2) {
+            $reranked = $langSearch->rerank($query, $results, $count);
+            if ($reranked !== null) {
+                $urlMap = [];
+                foreach ($results as $r) {
+                    $urlMap[$r['url']] = $r;
+                }
+                
+                $rerankedResults = [];
+                foreach ($reranked as $item) {
+                    $doc = $item['document'] ?? null;
+                    if ($doc && isset($urlMap[$doc['url'] ?? ''])) {
+                        $rerankedResults[] = $urlMap[$doc['url']];
+                    }
+                }
+                
+                if (!empty($rerankedResults)) {
+                    return $rerankedResults;
+                }
+            }
+        }
+        
+        return $results;
     }
 }

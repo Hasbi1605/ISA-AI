@@ -42,9 +42,10 @@ class LangSearchService
         return !empty($this->apiKeys);
     }
 
-    protected function getCacheKey(string $query, string $type = 'search'): string
+    protected function getCacheKey(string $query, string $type = 'search', string $freshness = '', int $count = 0): string
     {
-        $hash = md5($query . $type);
+        $keyParts = [$query, $type, $freshness, (string) $count];
+        $hash = md5(implode('|', $keyParts));
         return "langsearch:{$type}:{$hash}";
     }
 
@@ -53,18 +54,18 @@ class LangSearchService
         return intval(time() / $this->cacheTtl);
     }
 
-    protected function getCachedResult(string $query, string $type = 'search'): ?array
+    protected function getCachedResult(string $query, string $type = 'search', string $freshness = '', int $count = 0): ?array
     {
         $bucket = $this->getTimeBucket();
-        $key = $this->getCacheKey("{$query}:{$bucket}", $type);
+        $key = $this->getCacheKey("{$query}:{$bucket}", $type, $freshness, $count);
         
         return Cache::get($key);
     }
 
-    protected function cacheResult(string $query, string $type, array $results): void
+    protected function cacheResult(string $query, string $type, array $results, string $freshness = '', int $count = 0): void
     {
         $bucket = $this->getTimeBucket();
-        $key = $this->getCacheKey("{$query}:{$bucket}", $type);
+        $key = $this->getCacheKey("{$query}:{$bucket}", $type, $freshness, $count);
         
         Cache::put($key, $results, $this->cacheTtl);
     }
@@ -76,7 +77,7 @@ class LangSearchService
             return [];
         }
 
-        $cached = $this->getCachedResult($query);
+        $cached = $this->getCachedResult($query, 'search', $freshness, $count);
         if ($cached !== null) {
             Log::info("LangSearch: cache hit for '{$query}'");
             return $cached;
@@ -109,7 +110,7 @@ class LangSearchService
 
         Log::info("LangSearch: query='{$query}', results=" . count($results));
 
-        $this->cacheResult($query, 'search', $results);
+        $this->cacheResult($query, 'search', $results, $freshness, $count);
 
         return $results;
     }
