@@ -86,7 +86,7 @@ class TextChunker
             }
             
             $segments = explode($separator, $text);
-            $result = $this->merge($segments);
+            $result = $this->merge($segments, $separator);
             
             if (count($result) > 1) {
                 return $result;
@@ -96,28 +96,30 @@ class TextChunker
         return [$text];
     }
 
-    protected function merge(array $segments): array
+    protected function merge(array $segments, string $separator = ""): array
     {
         $chunks = [];
         $currentChunk = "";
         
         foreach ($segments as $segment) {
-            $segmentWithSeparator = $segment;
+            $segmentWithSeparator = $separator !== "" ? $segment : $segment;
             $testChunk = $currentChunk === "" 
                 ? $segmentWithSeparator 
-                : $currentChunk . $segmentWithSeparator;
+                : $currentChunk . $separator . $segmentWithSeparator;
             
             $tokens = $this->tokenCounter->count($testChunk);
             
             if ($tokens > $this->chunkSize && $currentChunk !== "") {
-                $chunks[] = $this->addOverlap($currentChunk);
-                $currentChunk = $segmentWithSeparator;
+                $chunks[] = $this->addOverlap($currentChunk, $separator);
+                $currentChunk = $separator !== "" ? $segmentWithSeparator : $segment;
                 
                 if ($this->chunkOverlap > 0 && isset($segments[array_search($segment, $segments) - 1])) {
                     $prevSegment = $segments[array_search($segment, $segments) - 1];
                     $overlapTokens = $this->tokenCounter->count($prevSegment);
                     if ($overlapTokens <= $this->chunkOverlap) {
-                        $currentChunk = $prevSegment . $segment;
+                        $currentChunk = $separator !== "" 
+                            ? $prevSegment . $separator . $segment
+                            : $prevSegment . $segment;
                     }
                 }
             } else {
@@ -132,8 +134,15 @@ class TextChunker
         return array_values(array_filter($chunks));
     }
 
-    protected function addOverlap(string $chunk): string
+    protected function addOverlap(string $chunk, string $separator = ""): string
     {
+        if ($this->chunkOverlap > 0) {
+            $chunks = explode($separator ?: " ", $chunk);
+            if (count($chunks) > 1) {
+                $overlapWords = array_slice($chunks, -min($this->chunkOverlap, count($chunks)));
+                return implode($separator ?: " ", $overlapWords) . $chunk;
+            }
+        }
         return $chunk;
     }
 

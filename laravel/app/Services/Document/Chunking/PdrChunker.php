@@ -130,7 +130,7 @@ class PdrChunker
             }
             
             $segments = explode($separator, $text);
-            $chunks = $this->mergeByTokens($segments, $this->parentChunkSize, $this->parentChunkOverlap);
+            $chunks = $this->mergeByTokens($segments, $this->parentChunkSize, $this->parentChunkOverlap, $separator);
             
             if (count($chunks) > 1) {
                 return $chunks;
@@ -152,7 +152,7 @@ class PdrChunker
             }
             
             $segments = explode($separator, $parentText);
-            $chunks = $this->mergeByTokens($segments, $this->childChunkSize, $this->childChunkOverlap);
+            $chunks = $this->mergeByTokens($segments, $this->childChunkSize, $this->childChunkOverlap, $separator);
             
             if (count($chunks) > 1) {
                 return $chunks;
@@ -164,21 +164,29 @@ class PdrChunker
         return str_split($parentText, $charsPerChunk);
     }
 
-    protected function mergeByTokens(array $segments, int $targetSize, int $overlap): array
+    protected function mergeByTokens(array $segments, int $targetSize, int $overlap, string $separator = ""): array
     {
         $chunks = [];
         $currentChunk = "";
         
-        foreach ($segments as $segment) {
-            $testChunk = $currentChunk === "" ? $segment : $currentChunk . $segment;
+        foreach ($segments as $index => $segment) {
+            $testChunk = $currentChunk === "" 
+                ? $segment 
+                : $currentChunk . $separator . $segment;
             
             $tokens = $this->tokenCounter->count($testChunk);
             
             if ($tokens > $targetSize && $currentChunk !== "") {
                 $chunks[] = trim($currentChunk);
                 
-                $prevKey = array_search($segment, $segments) - 1;
-                $currentChunk = $segments[$prevKey] ?? $segment;
+                $prevKey = $index - 1;
+                $currentChunk = (isset($segments[$prevKey]) && $overlap > 0) 
+                    ? $segments[$prevKey] 
+                    : $segment;
+                
+                if ($separator !== "" && $currentChunk !== $segment) {
+                    $currentChunk = $segment;
+                }
             } else {
                 $currentChunk = $testChunk;
             }
