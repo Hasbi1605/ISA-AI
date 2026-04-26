@@ -176,11 +176,23 @@ class AIParityMatrixTest extends TestCase
     #[Group('web')]
     public function it_supports_langsearch_semantic_rerank()
     {
+        Http::fake([
+            'api.langsearch.com/*' => Http::response([
+                'code' => 200,
+                'results' => [
+                    ['index' => 1, 'relevance_score' => 0.9],
+                    ['index' => 0, 'relevance_score' => 0.4],
+                ],
+            ], 200),
+        ]);
+
         $service = new \App\Services\LangSearchService();
-        
+
         $result = $service->rerank('test query', ['doc1', 'doc2']);
-        
-        $this->assertNull($result); 
+
+        $this->assertIsArray($result);
+        $this->assertNotEmpty($result);
+        $this->assertArrayHasKey('relevance_score', $result[0]);
     }
 
     #[Test]
