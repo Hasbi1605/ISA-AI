@@ -210,14 +210,14 @@ class ProcessDocument implements ShouldQueue
             $batchChunk = array_map(function ($chunk) use ($tokenCounter, $embeddingModel, $embeddingDimensions, $throttleService, $documentId) {
                 $tokens = $tokenCounter->count($chunk['text']);
                 return [
-'document_id' => $documentId,
-                    'text' => $chunk['text'],
+                    'document_id' => $documentId,
+                    'text_content' => $chunk['text'],
                     'chunk_type' => $chunk['chunk_type'],
                     'parent_id' => $chunk['parent_id'] ?? null,
                     'parent_index' => $chunk['parent_index'] ?? null,
                     'child_index' => $chunk['child_index'] ?? null,
-                    'metadata' => json_encode($chunk['metadata'] ?? []),
-                    'token_count' => $tokens,
+                    'page_number' => $chunk['page_number'] ?? $chunk['metadata']['page_number'] ?? 1,
+                    'embedding' => null,
                     'embedding_model' => $embeddingModel,
                     'embedding_dimensions' => $embeddingDimensions,
                     'created_at' => now(),

@@ -161,9 +161,9 @@ class TextChunker
         
         $tail = substr($text, -$targetChars);
         
-        $firstSpace = strpos($tail, ' ');
-        if ($firstSpace !== false && $firstSpace > 0) {
-            $tail = substr($tail, $firstSpace);
+        $lastSpace = strrpos($tail, ' ');
+        if ($lastSpace !== false && $lastSpace > 0) {
+            $tail = substr($tail, $lastSpace + 1);
         }
         
         return ltrim($tail) ?: $text;

@@ -108,4 +108,55 @@ class TokenChunkerTest extends TestCase
             $this->assertEquals('user123', $chunk['metadata']['user_id']);
         }
     }
+
+    public function test_text_chunker_overlap_is_word_safe(): void
+    {
+        $chunker = new TextChunker(15, 5);
+        
+        $pages = [
+            ['page_content' => 'one two three four five six', 'page_number' => 1],
+        ];
+        
+        $chunks = $chunker->chunk($pages);
+        
+        $this->assertNotEmpty($chunks);
+        
+        foreach ($chunks as $chunk) {
+            $this->assertStringStartsWith('o', $chunk, 'Chunk should start at word boundary, not middle of word');
+        }
+    }
+
+    public function test_pdr_chunker_preserves_separator(): void
+    {
+        $chunker = new PdrChunker(30, 10, 15, 5);
+        
+        $pages = [
+            ['page_content' => 'word1 word2 word3 word4 word5', 'page_number' => 1],
+        ];
+        
+        $chunks = $chunker->chunk($pages, 'test.pdf', 'user1');
+        
+        $this->assertNotEmpty($chunks);
+        
+        foreach ($chunks as $chunk) {
+            $this->assertStringContainsString(' ', $chunk['text'], 'Chunk should preserve spaces between words');
+        }
+    }
+
+    public function test_text_chunker_preserves_period_separator(): void
+    {
+        $chunker = new TextChunker(20, 5);
+        
+        $pages = [
+            ['page_content' => 'First sentence. Second sentence. Third sentence.', 'page_number' => 1],
+        ];
+        
+        $chunks = $chunker->chunk($pages);
+        
+        $this->assertNotEmpty($chunks);
+        
+        foreach ($chunks as $chunk) {
+            $this->assertStringContainsString('. ', $chunk, 'Chunk should preserve period-space separator');
+        }
+    }
 }

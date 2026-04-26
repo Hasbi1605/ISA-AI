@@ -34,7 +34,7 @@ class PdrChunker
         $this->tokenCounter = new TokenCounter();
     }
 
-    public function chunk(array $pages, string $filename, string $userId): array
+public function chunk(array $pages, string $filename, string $userId): array
     {
         $fullText = $this->mergePages($pages);
         
@@ -42,7 +42,7 @@ class PdrChunker
             Log::warning('PdrChunker: empty content, skipping chunking');
             return [];
         }
-
+        
         $parentChunks = $this->createParentChunks($fullText);
         
         $chunks = [];
@@ -55,6 +55,7 @@ class PdrChunker
                 'chunk_type' => 'parent',
                 'parent_id' => $parentId,
                 'parent_index' => $pIndex,
+                'page_number' => 1,
                 'metadata' => [
                     'filename' => $filename,
                     'user_id' => $userId,
@@ -73,6 +74,7 @@ class PdrChunker
                     'parent_id' => $parentId,
                     'parent_index' => $pIndex,
                     'child_index' => $cIndex,
+                    'page_number' => 1,
                     'metadata' => [
                         'filename' => $filename,
                         'user_id' => $userId,
@@ -170,7 +172,9 @@ class PdrChunker
         $currentChunk = "";
         
 foreach ($segments as $index => $segment) {
-            $testChunk = $currentChunk === "" ? $segment : $currentChunk . $segment;
+            $testChunk = $currentChunk === "" 
+                ? $segment 
+                : $currentChunk . ($separator !== "" ? $separator : "") . $segment;
             
             $tokens = $this->tokenCounter->count($testChunk);
             
@@ -182,7 +186,7 @@ foreach ($segments as $index => $segment) {
                     $overlapText = $this->getTailText($currentChunk, $overlap);
                 }
                 
-$currentChunk = $overlapText . $segment;
+                $currentChunk = $overlapText . ($separator !== "" ? $separator : "") . $segment;
             } else {
                 $currentChunk = $testChunk;
             }
@@ -219,9 +223,9 @@ $currentChunk = $overlapText . $segment;
         
         $tail = substr($text, -$targetChars);
         
-        $firstSpace = strpos($tail, ' ');
-        if ($firstSpace !== false && $firstSpace > 0) {
-            $tail = substr($tail, $firstSpace);
+        $lastSpace = strrpos($tail, ' ');
+        if ($lastSpace !== false && $lastSpace > 0) {
+            $tail = substr($tail, $lastSpace + 1);
         }
         
         return ltrim($tail) ?: $text;
