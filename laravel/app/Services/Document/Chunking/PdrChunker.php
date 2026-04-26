@@ -169,24 +169,20 @@ class PdrChunker
         $chunks = [];
         $currentChunk = "";
         
-        foreach ($segments as $index => $segment) {
-            $testChunk = $currentChunk === "" 
-                ? $segment 
-                : $currentChunk . $separator . $segment;
+foreach ($segments as $index => $segment) {
+            $testChunk = $currentChunk === "" ? $segment : $currentChunk . $segment;
             
             $tokens = $this->tokenCounter->count($testChunk);
             
             if ($tokens > $targetSize && $currentChunk !== "") {
                 $chunks[] = trim($currentChunk);
                 
-                $prevKey = $index - 1;
-                $currentChunk = (isset($segments[$prevKey]) && $overlap > 0) 
-                    ? $segments[$prevKey] 
-                    : $segment;
-                
-                if ($separator !== "" && $currentChunk !== $segment) {
-                    $currentChunk = $segment;
+                $overlapText = "";
+                if ($overlap > 0) {
+                    $overlapText = $this->getTailText($currentChunk, $overlap);
                 }
+                
+$currentChunk = $overlapText . $segment;
             } else {
                 $currentChunk = $testChunk;
             }
@@ -204,5 +200,30 @@ class PdrChunker
         $raw = "{$filename}:{$userId}:{$index}:" . substr($text, 0, 50);
         
         return md5($raw);
+    }
+
+    protected function getTailText(string $text, int $maxTokens): string
+    {
+        $textTokens = $this->tokenCounter->count($text);
+        
+        if ($textTokens <= $maxTokens) {
+            return $text;
+        }
+        
+        $charsPerToken = TokenCounter::CHARS_PER_TOKEN;
+        $targetChars = $maxTokens * $charsPerToken;
+        
+        if ($targetChars >= strlen($text)) {
+            return $text;
+        }
+        
+        $tail = substr($text, -$targetChars);
+        
+        $firstSpace = strpos($tail, ' ');
+        if ($firstSpace !== false && $firstSpace > 0) {
+            $tail = substr($tail, $firstSpace);
+        }
+        
+        return ltrim($tail) ?: $text;
     }
 }

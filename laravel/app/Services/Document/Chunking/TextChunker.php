@@ -101,27 +101,27 @@ class TextChunker
         $chunks = [];
         $currentChunk = "";
         
-        foreach ($segments as $segment) {
-            $segmentWithSeparator = $separator !== "" ? $segment : $segment;
+        foreach ($segments as $index => $segment) {
             $testChunk = $currentChunk === "" 
-                ? $segmentWithSeparator 
-                : $currentChunk . $separator . $segmentWithSeparator;
+                ? $segment 
+                : $currentChunk . ($separator !== "" ? $separator : "") . $segment;
             
             $tokens = $this->tokenCounter->count($testChunk);
             
             if ($tokens > $this->chunkSize && $currentChunk !== "") {
-                $chunks[] = $this->addOverlap($currentChunk, $separator);
-                $currentChunk = $separator !== "" ? $segmentWithSeparator : $segment;
+                $chunks[] = $currentChunk;
                 
-                if ($this->chunkOverlap > 0 && isset($segments[array_search($segment, $segments) - 1])) {
-                    $prevSegment = $segments[array_search($segment, $segments) - 1];
-                    $overlapTokens = $this->tokenCounter->count($prevSegment);
-                    if ($overlapTokens <= $this->chunkOverlap) {
-                        $currentChunk = $separator !== "" 
-                            ? $prevSegment . $separator . $segment
-                            : $prevSegment . $segment;
+                $overlapText = "";
+                if ($this->chunkOverlap > 0) {
+                    $currentTokens = $this->tokenCounter->count($currentChunk);
+                    if ($currentTokens <= $this->chunkOverlap) {
+                        $overlapText = $currentChunk;
+                    } else {
+                        $overlapText = $this->getTailText($currentChunk, $this->chunkOverlap);
                     }
                 }
+                
+                $currentChunk = $overlapText . ($separator !== "" ? $separator : "") . $segment;
             } else {
                 $currentChunk = $testChunk;
             }
@@ -134,18 +134,6 @@ class TextChunker
         return array_values(array_filter($chunks));
     }
 
-    protected function addOverlap(string $chunk, string $separator = ""): string
-    {
-        if ($this->chunkOverlap > 0) {
-            $chunks = explode($separator ?: " ", $chunk);
-            if (count($chunks) > 1) {
-                $overlapWords = array_slice($chunks, -min($this->chunkOverlap, count($chunks)));
-                return implode($separator ?: " ", $overlapWords) . $chunk;
-            }
-        }
-        return $chunk;
-    }
-
     protected function hardSplit(string $text): array
     {
         $chunks = [];
@@ -154,5 +142,30 @@ class TextChunker
         $chunks = str_split($text, $charsPerChunk);
         
         return array_values(array_filter($chunks));
+    }
+
+    protected function getTailText(string $text, int $maxTokens): string
+    {
+        $textTokens = $this->tokenCounter->count($text);
+        
+        if ($textTokens <= $maxTokens) {
+            return $text;
+        }
+        
+        $charsPerToken = TokenCounter::CHARS_PER_TOKEN;
+        $targetChars = $maxTokens * $charsPerToken;
+        
+        if ($targetChars >= strlen($text)) {
+            return $text;
+        }
+        
+        $tail = substr($text, -$targetChars);
+        
+        $firstSpace = strpos($tail, ' ');
+        if ($firstSpace !== false && $firstSpace > 0) {
+            $tail = substr($tail, $firstSpace);
+        }
+        
+        return ltrim($tail) ?: $text;
     }
 }
