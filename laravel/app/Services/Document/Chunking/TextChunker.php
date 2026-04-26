@@ -86,7 +86,7 @@ class TextChunker
             }
             
             $segments = explode($separator, $text);
-            $result = $this->merge($segments);
+            $result = $this->merge($segments, $separator);
             
             if (count($result) > 1) {
                 return $result;
@@ -96,16 +96,15 @@ class TextChunker
         return [$text];
     }
 
-    protected function merge(array $segments): array
+    protected function merge(array $segments, string $separator = ""): array
     {
         $chunks = [];
         $currentChunk = "";
-        $overlapText = "";
         
         foreach ($segments as $index => $segment) {
             $testChunk = $currentChunk === "" 
                 ? $segment 
-                : $currentChunk . $segment;
+                : $currentChunk . ($separator !== "" ? $separator : "") . $segment;
             
             $tokens = $this->tokenCounter->count($testChunk);
             
@@ -113,19 +112,16 @@ class TextChunker
                 $chunks[] = $currentChunk;
                 
                 $overlapText = "";
-                if ($this->chunkOverlap > 0 && $index > 0) {
-                    $prevSegment = $segments[$index - 1];
-                    $prevTokens = $this->tokenCounter->count($prevSegment);
-                    if ($prevTokens <= $this->chunkOverlap) {
-                        $overlapText = $prevSegment;
+                if ($this->chunkOverlap > 0) {
+                    $currentTokens = $this->tokenCounter->count($currentChunk);
+                    if ($currentTokens <= $this->chunkOverlap) {
+                        $overlapText = $currentChunk;
                     } else {
-                        $prevChars = substr($prevSegment, -min(100, strlen($prevSegment)));
-                        $overlapText = $prevChars;
+                        $overlapText = $this->getTailText($currentChunk, $this->chunkOverlap);
                     }
                 }
                 
-                $currentChunk = $overlapText . $segment;
-                $overlapText = "";
+                $currentChunk = $overlapText . ($separator !== "" ? $separator : "") . $segment;
             } else {
                 $currentChunk = $testChunk;
             }
@@ -146,5 +142,30 @@ class TextChunker
         $chunks = str_split($text, $charsPerChunk);
         
         return array_values(array_filter($chunks));
+    }
+
+    protected function getTailText(string $text, int $maxTokens): string
+    {
+        $textTokens = $this->tokenCounter->count($text);
+        
+        if ($textTokens <= $maxTokens) {
+            return $text;
+        }
+        
+        $charsPerToken = TokenCounter::CHARS_PER_TOKEN;
+        $targetChars = $maxTokens * $charsPerToken;
+        
+        if ($targetChars >= strlen($text)) {
+            return $text;
+        }
+        
+        $tail = substr($text, -$targetChars);
+        
+        $lastSpace = strrpos($tail, ' ');
+        if ($lastSpace !== false && $lastSpace > 0) {
+            $tail = substr($tail, $lastSpace + 1);
+        }
+        
+        return ltrim($tail) ?: $text;
     }
 }
