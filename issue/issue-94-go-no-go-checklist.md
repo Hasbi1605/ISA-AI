@@ -81,7 +81,7 @@ cd python-ai && source venv/bin/activate && pytest
 
 ## next Steps
 
-1. Issue ini dinyatakan SELESAI - parity gate LOOS
+1. Issue ini dinyatakan SELESAI - parity gate LOLOS
 2. Issue decommission (cutover) sudah bisa dilanjutkan
 3. OCR gap bisa dimonitoring - jika tidak menjadi masalah, bisa diabaikan
 4. AI_SERVICE_URL dan AI_SERVICE_TOKEN baru dihapus saat decommission final
