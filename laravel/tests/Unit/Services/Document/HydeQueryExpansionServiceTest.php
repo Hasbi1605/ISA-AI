@@ -193,7 +193,7 @@ class HydeQueryExpansionServiceTest extends TestCase
 
     public function test_returns_full_query_on_hyde_success_with_long_input(): void
     {
-$longQuery = 'mengapa inflasi terjadi di indonesia saat ini sangat mempengaruhi ekonomi masyarakat kecil '
+        $longQuery = 'mengapa inflasi terjadi di indonesia saat ini sangat mempengaruhi ekonomi masyarakat kecil '
             . 'dan bagaimana dampak perubahan harga barang kebutuhan pokok terhadap daya beli rakyat '
             . 'serta apa langkah pemerintah yang seharusnya diambil untuk mengatasi kenaikan biaya hidup '
             . 'yang terus meningkat setiap tahunnya akibat dari policy monetary yang diterapkan '
@@ -210,7 +210,9 @@ $longQuery = 'mengapa inflasi terjadi di indonesia saat ini sangat mempengaruhi 
             'mode' => 'smart',
             'timeout' => 5,
             'max_tokens' => 100,
-            'cascade_nodes' => $this->getPrivateProperty($this->hydeService, 'cascadeNodes'),
+            'cascade_nodes' => [
+                ['model' => 'test-model', 'provider' => 'openai', 'api_key' => 'test-key']
+            ],
         ]) extends HydeQueryExpansionService
         {
             protected function generateWithNode(array $node, string $query, string $originalQuery): string
@@ -223,5 +225,7 @@ $longQuery = 'mengapa inflasi terjadi di indonesia saat ini sangat mempengaruhi 
 
         $this->assertStringContainsString($longQuery, $result);
         $this->assertGreaterThan(500, strlen($result));
+        $this->assertStringContainsString('Hipotesis jawaban faktual', $result);
+        $this->assertNotEquals($longQuery, $result, 'Result harus berbeda dari originalQuery karena success-path harus dijalankan');
     }
 }
