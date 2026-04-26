@@ -16,6 +16,8 @@ class LaravelChatService
     protected string $webSearchProvider;
     protected ?LaravelDocumentRetrievalService $documentRetrieval;
     protected ?DocumentPolicyService $documentPolicy;
+    protected bool $cascadeEnabled;
+    protected array $cascadeNodes;
 
     public function __construct()
     {
@@ -24,6 +26,8 @@ class LaravelChatService
         $this->webSearchProvider = config('ai.laravel_ai.web_search.provider', 'ddg');
         $this->documentRetrieval = null;
         $this->documentPolicy = null;
+        $this->cascadeEnabled = config('ai.cascade.enabled', true);
+        $this->cascadeNodes = config('ai.cascade.nodes', []);
     }
 
     protected function getDocumentRetrieval(): ?LaravelDocumentRetrievalService
@@ -82,36 +86,63 @@ class LaravelChatService
             return;
         }
 
-        $provider = app(\Laravel\Ai\AiManager::class)->textProvider();
-
         $lastMessage = end($messages);
         $prompt = is_array($lastMessage) ? ($lastMessage['content'] ?? '') : (string) $lastMessage;
 
         $useWebSearch = $this->shouldUseWebSearch($force_web_search, $allow_auto_realtime_web, $source_policy);
 
-        $tools = [];
-        if ($useWebSearch && $this->webSearchEnabled) {
-            $webSearch = new \Laravel\Ai\Providers\Tools\WebSearch();
-            $tools[] = $provider->webSearchTool($webSearch);
+        $nodes = $this->cascadeEnabled && !empty($this->cascadeNodes) 
+            ? $this->cascadeNodes 
+            : [['label' => 'Default', 'provider' => 'openai', 'model' => $this->model, 'api_key' => config('ai.laravel_ai.api_key')]];
+
+        $success = false;
+        foreach ($nodes as $index => $node) {
+            try {
+                $agent = new \Laravel\Ai\AnonymousAgent(
+                    instructions: $this->getSystemPrompt(),
+                    messages: [],
+                    tools: [], // tools will be added later if supported
+                );
+
+                $provider = $this->getProviderForNode($node, $agent);
+                
+                $tools = [];
+                if ($useWebSearch && $this->webSearchEnabled && $provider instanceof \Laravel\Ai\Contracts\Providers\SupportsWebSearch) {
+                    $webSearch = new \Laravel\Ai\Providers\Tools\WebSearch();
+                    $tools[] = $provider->webSearchTool($webSearch);
+                    $agent->tools = $tools;
+                }
+
+                yield "[MODEL:{$node['label']}]\n";
+
+                $stream = $provider->stream(
+                    new AgentPrompt(
+                        agent: $agent,
+                        prompt: $prompt,
+                        attachments: [],
+                        provider: $provider,
+                        model: $node['model'],
+                    )
+                );
+
+                yield from $this->streamResponseWithSources($stream);
+                $success = true;
+                break;
+            } catch (\Throwable $e) {
+                Log::warning("LaravelChatService: Node [{$node['label']}] failed", [
+                    'error' => $e->getMessage(),
+                    'is_last' => $index === count($nodes) - 1
+                ]);
+
+                if ($this->shouldFallback($e) && $index < count($nodes) - 1) {
+                    continue;
+                }
+                
+                if ($index === count($nodes) - 1 && !$success) {
+                    yield "\n❌ Maaf, layanan AI sedang tidak tersedia. Silakan coba lagi nanti.";
+                }
+            }
         }
-
-        $agent = new \Laravel\Ai\AnonymousAgent(
-            instructions: $this->getSystemPrompt(),
-            messages: [],
-            tools: $tools,
-        );
-
-        $stream = $provider->stream(
-            new AgentPrompt(
-                agent: $agent,
-                prompt: $prompt,
-                attachments: [],
-                provider: $provider,
-                model: $this->model,
-            )
-        );
-
-        yield from $this->streamResponseWithSources($stream);
     }
 
     protected function chatWithDocuments(
@@ -154,55 +185,102 @@ class LaravelChatService
             $prompt = $ragData['prompt'];
             $sources = $ragData['sources'];
 
-            $provider = app(\Laravel\Ai\AiManager::class)->textProvider();
+            $nodes = $this->cascadeEnabled && !empty($this->cascadeNodes) 
+                ? $this->cascadeNodes 
+                : [['label' => 'Default', 'provider' => 'openai', 'model' => $this->model, 'api_key' => config('ai.laravel_ai.api_key')]];
 
-            $agent = new \Laravel\Ai\AnonymousAgent(
-                instructions: 'Anda adalah asisten AI yang menjawab berdasarkan konteks dokumen. '
-                    . 'Jawab seringkas mungkin dan ground jawaban ke dokumen.',
-                messages: [],
-                tools: []
-            );
+            $chatSuccess = false;
+            foreach ($nodes as $index => $node) {
+                try {
+                    $agent = new \Laravel\Ai\AnonymousAgent(
+                        instructions: 'Anda adalah ISTA AI, asisten kerja internal untuk pegawai Istana Kepresidenan Yogyakarta. '
+                            . 'Gunakan Bahasa Indonesia yang baku dan luwes. Jawab berdasarkan dokumen yang diberikan.',
+                        messages: [],
+                        tools: []
+                    );
 
-            $promptObj = new AgentPrompt(
-                agent: $agent,
-                prompt: $prompt,
-                attachments: [],
-                provider: $provider,
-                model: $this->model,
-            );
+                    $provider = $this->getProviderForNode($node, $agent);
 
-            $stream = $provider->stream($promptObj);
+                    yield "[MODEL:{$node['label']}]\n";
 
-            yield from $this->streamResponseWithSources($stream, $sources);
+                    $promptObj = new AgentPrompt(
+                        agent: $agent,
+                        prompt: $prompt,
+                        attachments: [],
+                        provider: $provider,
+                        model: $node['model'],
+                    );
+
+                    $stream = $provider->stream($promptObj);
+
+                    yield from $this->streamResponseWithSources($stream, $sources);
+                    $chatSuccess = true;
+                    break;
+                } catch (\Throwable $e) {
+                    Log::warning("LaravelChatService(RAG): Node [{$node['label']}] failed", [
+                        'error' => $e->getMessage(),
+                        'is_last' => $index === count($nodes) - 1
+                    ]);
+
+                    if ($this->shouldFallback($e) && $index < count($nodes) - 1) {
+                        continue;
+                    }
+                    
+                    if ($index === count($nodes) - 1 && !$chatSuccess) {
+                        yield "\n❌ Maaf, layanan AI sedang tidak tersedia. Silakan coba lagi nanti.";
+                    }
+                }
+            }
 
             return;
         }
 
         if ($success && empty($chunks)) {
             if ($policyResult['should_search']) {
-                $provider = app(\Laravel\Ai\AiManager::class)->textProvider();
+                $nodes = $this->cascadeEnabled && !empty($this->cascadeNodes) 
+                    ? $this->cascadeNodes 
+                    : [['label' => 'Default', 'provider' => 'openai', 'model' => $this->model, 'api_key' => config('ai.laravel_ai.api_key')]];
 
-                $tools = [];
-                if ($this->webSearchEnabled) {
-                    $webSearch = new \Laravel\Ai\Providers\Tools\WebSearch();
-                    $tools[] = $provider->webSearchTool($webSearch);
+                $chatSuccess = false;
+                foreach ($nodes as $index => $node) {
+                    try {
+                        $agent = new \Laravel\Ai\AnonymousAgent(
+                            instructions: $this->getSystemPrompt(),
+                            messages: [],
+                            tools: [],
+                        );
+
+                        $provider = $this->getProviderForNode($node, $agent);
+
+                        $tools = [];
+                        if ($this->webSearchEnabled && $provider instanceof \Laravel\Ai\Contracts\Providers\SupportsWebSearch) {
+                            $webSearch = new \Laravel\Ai\Providers\Tools\WebSearch();
+                            $tools[] = $provider->webSearchTool($webSearch);
+                            $agent->tools = $tools;
+                        }
+
+                        yield "[MODEL:{$node['label']}]\n";
+
+                        $promptObj = new AgentPrompt(
+                            agent: $agent,
+                            prompt: $query,
+                            attachments: [],
+                            provider: $provider,
+                            model: $node['model'],
+                        );
+
+                        yield from $this->streamResponseWithSources($provider->stream($promptObj));
+                        $chatSuccess = true;
+                        break;
+                    } catch (\Throwable $e) {
+                        if ($this->shouldFallback($e) && $index < count($nodes) - 1) {
+                            continue;
+                        }
+                        if ($index === count($nodes) - 1 && !$chatSuccess) {
+                            yield "\n❌ Maaf, layanan AI sedang tidak tersedia.";
+                        }
+                    }
                 }
-
-                $agent = new \Laravel\Ai\AnonymousAgent(
-                    instructions: $this->getSystemPrompt(),
-                    messages: [],
-                    tools: $tools,
-                );
-
-                $promptObj = new AgentPrompt(
-                    agent: $agent,
-                    prompt: $query,
-                    attachments: [],
-                    provider: $provider,
-                    model: $this->model,
-                );
-
-                yield from $this->streamResponseWithSources($provider->stream($promptObj));
                 return;
             }
 
@@ -212,29 +290,50 @@ class LaravelChatService
         }
 
         if ($policyResult['should_search']) {
-            $provider = app(\Laravel\Ai\AiManager::class)->textProvider();
+            $nodes = $this->cascadeEnabled && !empty($this->cascadeNodes) 
+                ? $this->cascadeNodes 
+                : [['label' => 'Default', 'provider' => 'openai', 'model' => $this->model, 'api_key' => config('ai.laravel_ai.api_key')]];
 
-            $tools = [];
-            if ($this->webSearchEnabled) {
-                $webSearch = new \Laravel\Ai\Providers\Tools\WebSearch();
-                $tools[] = $provider->webSearchTool($webSearch);
+            $chatSuccess = false;
+            foreach ($nodes as $index => $node) {
+                try {
+                    $agent = new \Laravel\Ai\AnonymousAgent(
+                        instructions: $this->getSystemPrompt(),
+                        messages: [],
+                        tools: [],
+                    );
+
+                    $provider = $this->getProviderForNode($node, $agent);
+
+                    $tools = [];
+                    if ($this->webSearchEnabled && $provider instanceof \Laravel\Ai\Contracts\Providers\SupportsWebSearch) {
+                        $webSearch = new \Laravel\Ai\Providers\Tools\WebSearch();
+                        $tools[] = $provider->webSearchTool($webSearch);
+                        $agent->tools = $tools;
+                    }
+
+                    yield "[MODEL:{$node['label']}]\n";
+
+                    $promptObj = new AgentPrompt(
+                        agent: $agent,
+                        prompt: $query,
+                        attachments: [],
+                        provider: $provider,
+                        model: $node['model'],
+                    );
+
+                    yield from $this->streamResponseWithSources($provider->stream($promptObj));
+                    $chatSuccess = true;
+                    break;
+                } catch (\Throwable $e) {
+                    if ($this->shouldFallback($e) && $index < count($nodes) - 1) {
+                        continue;
+                    }
+                    if ($index === count($nodes) - 1 && !$chatSuccess) {
+                        yield "\n❌ Maaf, layanan AI sedang tidak tersedia.";
+                    }
+                }
             }
-
-            $agent = new \Laravel\Ai\AnonymousAgent(
-                instructions: $this->getSystemPrompt(),
-                messages: [],
-                tools: $tools,
-            );
-
-            $promptObj = new AgentPrompt(
-                agent: $agent,
-                prompt: $query,
-                attachments: [],
-                provider: $provider,
-                model: $this->model,
-            );
-
-            yield from $this->streamResponseWithSources($provider->stream($promptObj));
             return;
         }
 
@@ -287,5 +386,48 @@ PROMPT;
         if (!empty($sources)) {
             yield "\n[SOURCES:" . json_encode($sources) . "]\n";
         }
+    }
+
+    protected function getProviderForNode(array $node, $agent = null)
+    {
+        $configKey = 'ai.providers.temp_cascade';
+        config([$configKey => [
+            'driver' => $node['provider'],
+            'key' => $node['api_key'],
+            'url' => $node['base_url'] ?? null,
+            'models' => [
+                'text' => [
+                    'default' => $node['model'],
+                ],
+            ],
+        ]]);
+
+        if ($agent) {
+            return app(\Laravel\Ai\AiManager::class)->textProviderFor($agent, 'temp_cascade');
+        }
+
+        return app(\Laravel\Ai\AiManager::class)->textProvider('temp_cascade');
+    }
+
+    protected function shouldFallback(\Throwable $e): bool
+    {
+        $msg = strtolower($e->getMessage());
+        
+        // 413 Context Too Large
+        if (str_contains($msg, '413') || str_contains($msg, 'too large') || str_contains($msg, 'context_length_exceeded')) {
+            return true;
+        }
+
+        // 429 Rate Limit
+        if (str_contains($msg, '429') || str_contains($msg, 'rate limit') || str_contains($msg, 'quota')) {
+            return true;
+        }
+
+        // Timeout or connection error
+        if (str_contains($msg, 'timeout') || str_contains($msg, 'connection')) {
+            return true;
+        }
+
+        return true; // Fallback for most errors to ensure availability
     }
 }

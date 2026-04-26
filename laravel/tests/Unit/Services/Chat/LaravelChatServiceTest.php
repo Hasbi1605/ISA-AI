@@ -29,6 +29,8 @@ class LaravelChatServiceTest extends TestCase
         Config::set('ai.laravel_ai.document_summarize_enabled', true);
         Config::set('ai.laravel_ai.document_delete_enabled', true);
         Config::set('ai.laravel_ai.document_retrieval_enabled', true);
+        Config::set('ai.laravel_ai.use_provider_file_search', true);
+        Config::set('ai.cascade.enabled', false);
     }
 
     public function test_chat_with_documents_returns_fallback_message(): void
@@ -242,7 +244,8 @@ class LaravelChatServiceTest extends TestCase
             ]));
 
         $ai = Mockery::mock(AiManager::class);
-        $ai->shouldReceive('textProvider')->once()->andReturn($provider);
+        $ai->shouldReceive('textProviderFor')->andReturn($provider);
+        $ai->shouldReceive('textProvider')->zeroOrMoreTimes()->andReturn($provider);
 
         $this->app->instance(LaravelDocumentRetrievalService::class, $retrieval);
         $this->app->instance(DocumentPolicyService::class, $policy);
@@ -282,7 +285,7 @@ class LaravelChatServiceTest extends TestCase
             'reason_code' => 'DOC_WEB_EXPLICIT',
         ]);
 
-        $provider = Mockery::mock(TextProvider::class);
+        $provider = Mockery::mock(TextProvider::class . ', \Laravel\Ai\Contracts\Providers\SupportsWebSearch');
         $provider->shouldReceive('webSearchTool')->once()->andReturn(new \stdClass());
         $provider->shouldReceive('stream')
             ->once()
@@ -298,7 +301,8 @@ class LaravelChatServiceTest extends TestCase
             ]));
 
         $ai = Mockery::mock(AiManager::class);
-        $ai->shouldReceive('textProvider')->once()->andReturn($provider);
+        $ai->shouldReceive('textProviderFor')->andReturn($provider);
+        $ai->shouldReceive('textProvider')->zeroOrMoreTimes()->andReturn($provider);
 
         $this->app->instance(LaravelDocumentRetrievalService::class, $retrieval);
         $this->app->instance(DocumentPolicyService::class, $policy);
