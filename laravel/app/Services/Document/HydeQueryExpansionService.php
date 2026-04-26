@@ -134,7 +134,7 @@ class HydeQueryExpansionService
             $attemptedModels[] = $modelName;
 
             try {
-                $enhanced = $this->generateWithNode($node, $queryForHyde);
+                $enhanced = $this->generateWithNode($node, $queryForHyde, $originalQuery);
                 if ($enhanced !== $originalQuery) {
                     return $enhanced;
                 }
@@ -146,10 +146,10 @@ class HydeQueryExpansionService
         return $originalQuery;
     }
 
-    protected function generateWithNode(array $node, string $query): string
+    protected function generateWithNode(array $node, string $query, string $originalQuery): string
     {
         if (!app()->bound('config') || !app()->bound(AiManager::class)) {
-            return $query;
+            return $originalQuery;
         }
 
         try {
@@ -166,7 +166,7 @@ class HydeQueryExpansionService
             ]]);
 
             $ai = app(AiManager::class);
-            $provider = $ai->textProvider($configKey);
+            $provider = $ai->textProvider('hyde_temp');
 
             $systemPrompt = 'Buat jawaban hipotetis singkat 2-3 kalimat untuk pertanyaan berikut. Padat, faktual, gunakan kosakata yang relevan dengan topik.';
 
@@ -180,12 +180,12 @@ class HydeQueryExpansionService
             $hypo = trim($response->text ?? '');
 
             if (!empty($hypo)) {
-                return $originalQuery = $query . "\n" . $hypo;
+                return $query . "\n" . $hypo;
             }
         } catch (\Throwable $e) {
         }
 
-        return $query;
+        return $originalQuery;
     }
 
     public function isEnabled(): bool
