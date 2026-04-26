@@ -74,7 +74,8 @@ class HybridRetrievalService
 
             $chunks = $this->getVectorScoredChunks(
                 $document, 
-                $queryEmbedding, 
+                $queryEmbedding,
+                $query,
                 $topK * 2
             );
 
@@ -110,7 +111,7 @@ class HybridRetrievalService
             $bm25Scored = $this->getBm25ScoredChunks($document, $query, $topK * 3);
             $bm25Results = array_merge($bm25Results, $bm25Scored);
 
-            $vectorScored = $this->getVectorScoredChunks($document, $queryEmbedding, $topK * 3);
+            $vectorScored = $this->getVectorScoredChunks($document, $queryEmbedding, $query, $topK * 3);
             $vectorResults = array_merge($vectorResults, $vectorScored);
         }
 
@@ -153,11 +154,23 @@ class HybridRetrievalService
 
     protected function ensureDocumentIngested(Document $document, bool $usePdr): void
     {
-        $existingChunks = $document->chunks()
+        $existingChildChunks = $document->chunks()
             ->where('chunk_type', 'child')
-            ->count();
+            ->get();
 
-        if ($existingChunks > 0) {
+        $hasNonPdrChunks = $existingChildChunks->isNotEmpty() && $existingChildChunks->every(fn($c) => $c->parent_id === null);
+        $hasPdrChunks = $existingChildChunks->isNotEmpty() && $existingChildChunks->some(fn($c) => $c->parent_id !== null);
+
+        if ($usePdr && !$hasPdrChunks && $hasNonPdrChunks) {
+            Log::info('HybridRetrievalService: upgrading existing non-PDR document to PDR', [
+                'document_id' => $document->id,
+                'existing_chunks' => $existingChildChunks->count(),
+            ]);
+            $document->chunks()->delete();
+            $existingChildChunks = collect();
+        }
+
+        if ($existingChildChunks->isNotEmpty()) {
             return;
         }
 
@@ -400,10 +413,10 @@ class HybridRetrievalService
         return $results;
     }
 
-    protected function getVectorScoredChunks(Document $document, ?array $queryEmbedding, int $limit): array
+    protected function getVectorScoredChunks(Document $document, ?array $queryEmbedding, string $query, int $limit): array
     {
         if ($queryEmbedding === null) {
-            return $this->getLexicalScoredChunks($document, $limit);
+            return $this->getLexicalScoredChunks($document, $query, $limit);
         }
         
         $chunksWithEmbeddings = $document->chunks()
@@ -414,7 +427,7 @@ class HybridRetrievalService
             ->get();
             
         if ($chunksWithEmbeddings->isEmpty()) {
-            return $this->getLexicalScoredChunks($document, $limit);
+            return $this->getLexicalScoredChunks($document, $query, $limit);
         }
 
         $results = [];
@@ -438,7 +451,7 @@ class HybridRetrievalService
         return array_slice($results, 0, $limit);
     }
 
-    protected function getLexicalScoredChunks(Document $document, int $limit): array
+    protected function getLexicalScoredChunks(Document $document, string $query, int $limit): array
     {
         $chunks = $document->chunks()
             ->where('chunk_type', 'child')
@@ -448,12 +461,22 @@ class HybridRetrievalService
             return [];
         }
 
+        $texts = $chunks->pluck('text_content')->toArray();
+        $scores = $this->calculateBm25Scores($query, $texts);
+
+        $maxScore = !empty($scores) ? max($scores) : 1.0;
+        if ($maxScore == 0) {
+            $maxScore = 1.0;
+        }
+
         $results = [];
-        foreach ($chunks as $chunk) {
+        foreach ($chunks as $index => $chunk) {
+            $normalizedScore = ($scores[$index] ?? 0.0) / $maxScore;
             $results[] = [
                 'content' => $chunk->text_content,
-                'score' => 1.0,
+                'score' => $normalizedScore,
                 'vector_score' => 0.0,
+                'bm25_score' => $scores[$index] ?? 0.0,
                 'filename' => $document->original_name,
                 'chunk_index' => $chunk->child_index ?? $chunk->id,
                 'chunk_id' => $chunk->id,
@@ -461,6 +484,8 @@ class HybridRetrievalService
                 'chunk_type' => $chunk->chunk_type,
             ];
         }
+
+        usort($results, fn($a, $b) => ($b['score'] ?? 0) <=> ($a['score'] ?? 0));
 
         return array_slice($results, 0, $limit);
     }

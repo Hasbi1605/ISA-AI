@@ -50,7 +50,7 @@ class LaravelDocumentRetrievalService implements DocumentRetrievalInterface
         $this->topK = config('ai.rag.top_k', 5);
         $this->useProviderFileSearch = config('ai.laravel_ai.use_provider_file_search', false);
         
-        $hybridEnabled = config('ai.rag.hybrid.enabled', true);
+        $hybridEnabled = config('ai.rag.hybrid.enabled', false);
         if ($hybridEnabled) {
             $this->hybridService = app(HybridRetrievalService::class);
         }
@@ -62,10 +62,6 @@ class LaravelDocumentRetrievalService implements DocumentRetrievalInterface
         int $topK,
         string $userId
     ): array {
-        if ($this->hybridService !== null) {
-            return $this->hybridService->search($query, $filenames, $topK, $userId);
-        }
-
         $chunks = [];
         $success = false;
 
@@ -74,6 +70,8 @@ class LaravelDocumentRetrievalService implements DocumentRetrievalInterface
                 $result = $this->searchViaProviderFileSearch($query, $filenames, $topK, $userId);
                 $chunks = $result['chunks'] ?? [];
                 $success = $result['success'] ?? false;
+            } elseif ($this->hybridService !== null) {
+                return $this->hybridService->search($query, $filenames, $topK, $userId);
             } else {
                 $documents = $this->getDocumentsForUser($filenames, $userId);
 
