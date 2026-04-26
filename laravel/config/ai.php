@@ -399,4 +399,52 @@ PROMPT
         'document_error' => 'Saya belum bisa membaca konteks dari dokumen yang dipilih saat ini. Jika Anda berkenan, saya bisa melanjutkan dengan web search atau pengetahuan umum.',
     ],
 
+    'ocr' => [
+        'enabled' => env('AI_OCR_ENABLED', true),
+        'min_text_length' => (int) env('AI_OCR_MIN_TEXT_LENGTH', 50),
+        'sample_pages' => (int) env('AI_OCR_SAMPLE_PAGES', 3),
+    ],
+
+    'vision_cascade' => [
+        'enabled' => env('AI_VISION_CASCADE_ENABLED', true),
+        'max_pages' => (int) env('AI_VISION_MAX_PAGES', 20),
+        'nodes' => [
+            [
+                'label' => 'GPT-4.1 Vision (Primary)',
+                'provider' => 'openai',
+                'model' => env('AI_VISION_MODEL_PRIMARY', 'gpt-4.1'),
+                'api_key' => env('GITHUB_TOKEN'),
+                'base_url' => env('AI_VISION_BASE_URL_PRIMARY', 'https://models.inference.ai.azure.com'),
+            ],
+            [
+                'label' => 'GPT-4.1 Vision (Backup)',
+                'provider' => 'openai',
+                'model' => env('AI_VISION_MODEL_PRIMARY', 'gpt-4.1'),
+                'api_key' => env('GITHUB_TOKEN_2'),
+                'base_url' => env('AI_VISION_BASE_URL_PRIMARY', 'https://models.inference.ai.azure.com'),
+            ],
+            [
+                'label' => 'GPT-4o Vision (Primary)',
+                'provider' => 'openai',
+                'model' => env('AI_VISION_MODEL_BACKUP', 'gpt-4o'),
+                'api_key' => env('GITHUB_TOKEN'),
+                'base_url' => env('AI_VISION_BASE_URL_PRIMARY', 'https://models.inference.ai.azure.com'),
+            ],
+            [
+                'label' => 'GPT-4o Vision (Backup)',
+                'provider' => 'openai',
+                'model' => env('AI_VISION_MODEL_BACKUP', 'gpt-4o'),
+                'api_key' => env('GITHUB_TOKEN_2'),
+                'base_url' => env('AI_VISION_BASE_URL_PRIMARY', 'https://models.inference.ai.azure.com'),
+            ],
+            [
+                'label' => 'Gemini Vision (Fallback)',
+                'provider' => 'gemini',
+                'model' => env('AI_VISION_MODEL_GEMINI', 'gemini-1.5-flash'),
+                'api_key' => env('GEMINI_API_KEY'),
+                'base_url' => env('AI_VISION_BASE_URL_GEMINI', 'https://generativelanguage.googleapis.com/v1beta/openai'),
+            ],
+        ],
+    ],
+
 ];
