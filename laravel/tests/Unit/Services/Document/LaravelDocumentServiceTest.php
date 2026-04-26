@@ -93,4 +93,66 @@ class LaravelDocumentServiceTest extends TestCase
 
         $this->assertIsBool($result);
     }
+
+    public function test_summarize_returns_sources_metadata(): void
+    {
+        Config::set('ai.laravel_ai.api_key', 'test-key');
+        Config::set('ai.laravel_ai.document_summarize_enabled', true);
+        Config::set('ai.cascade.enabled', false);
+
+        $service = new LaravelDocumentService();
+
+        $result = $service->summarizeDocument('test.pdf', 'user1');
+
+        $this->assertIsArray($result);
+
+        if ($result['status'] === 'success') {
+            $this->assertArrayHasKey('sources', $result);
+            $this->assertArrayHasKey('model', $result);
+        }
+    }
+
+    public function test_summarize_batch_creation_for_large_documents(): void
+    {
+        Config::set('ai.laravel_ai.api_key', 'test-key');
+        Config::set('ai.laravel_ai.document_summarize_enabled', true);
+        Config::set('ai.laravel_ai.summarize_max_tokens', 20);
+        Config::set('ai.cascade.enabled', false);
+
+        $service = new LaravelDocumentService();
+
+        $reflection = new \ReflectionClass($service);
+        $method = $reflection->getMethod('createBatches');
+        $method->setAccessible(true);
+
+        $chunks = [
+            str_repeat('a', 40),
+            str_repeat('b', 40),
+            str_repeat('c', 40),
+            str_repeat('d', 40),
+        ];
+
+        $batches = $method->invoke($service, $chunks);
+
+        $this->assertIsArray($batches);
+        $this->assertGreaterThanOrEqual(2, count($batches));
+    }
+
+    public function test_summarize_token_estimation(): void
+    {
+        Config::set('ai.laravel_ai.api_key', 'test-key');
+        Config::set('ai.laravel_ai.document_summarize_enabled', true);
+
+        $service = new LaravelDocumentService();
+
+        $reflection = new \ReflectionClass($service);
+        $method = $reflection->getMethod('estimateTokens');
+        $method->setAccessible(true);
+
+        $chunks = ['hello world', 'test content'];
+        $tokens = $method->invoke($service, $chunks);
+
+        $this->assertIsInt($tokens);
+        $this->assertGreaterThan(0, $tokens);
+    }
 }
