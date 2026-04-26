@@ -128,10 +128,19 @@ return [
 
     'rag' => [
         'top_k' => env('RAG_TOP_K', 5),
-        'chunk_size' => env('RAG_CHUNK_SIZE', 1000),
-        'chunk_overlap' => env('RAG_CHUNK_OVERLAP', 100),
+        'chunk_size' => env('RAG_CHUNK_SIZE', 1500),
+        'chunk_overlap' => env('RAG_CHUNK_OVERLAP', 150),
         'embedding_model' => env('RAG_EMBEDDING_MODEL', 'text-embedding-3-small'),
         'embedding_dimensions' => env('RAG_EMBEDDING_DIMENSIONS', 1536),
+
+        'batching' => [
+            'enabled' => env('RAG_BATCHING_ENABLED', true),
+            'batch_size' => env('RAG_BATCH_SIZE', 100),
+            'max_tokens_per_batch' => env('RAG_MAX_TOKENS_PER_BATCH', 40000),
+            'delay_seconds' => env('RAG_BATCH_DELAY', 0.8),
+            'retry_attempts' => env('RAG_BATCH_RETRY', 3),
+            'retry_delay_base' => env('RAG_BATCH_RETRY_DELAY', 1.0),
+        ],
 
         'hybrid' => [
             'enabled' => env('RAG_HYBRID_ENABLED', true),
