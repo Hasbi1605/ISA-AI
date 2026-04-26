@@ -119,6 +119,42 @@ class LaravelChatServiceTest extends TestCase
         $this->assertFalse($result);
     }
 
+    public function test_get_system_prompt_uses_config_when_set(): void
+    {
+        $this->setUpLaravelAIConfig();
+        Config::set('ai.prompts.system.default', 'Custom system prompt for ISTA');
+
+        $service = new LaravelChatService();
+        $method = (new \ReflectionClass($service))->getMethod('getSystemPrompt');
+        $method->setAccessible(true);
+
+        $this->assertSame('Custom system prompt for ISTA', $method->invoke($service));
+    }
+
+    public function test_get_system_prompt_falls_back_when_config_empty(): void
+    {
+        $this->setUpLaravelAIConfig();
+        Config::set('ai.prompts.system.default', null);
+
+        $service = new LaravelChatService();
+        $method = (new \ReflectionClass($service))->getMethod('getSystemPrompt');
+        $method->setAccessible(true);
+
+        $this->assertStringContainsString('asisten AI', $method->invoke($service));
+    }
+
+    public function test_get_web_search_prompt_uses_config_when_set(): void
+    {
+        $this->setUpLaravelAIConfig();
+        Config::set('ai.prompts.web_search.assertive_instruction', 'Custom web search instruction');
+
+        $service = new LaravelChatService();
+        $method = (new \ReflectionClass($service))->getMethod('getWebSearchPrompt');
+        $method->setAccessible(true);
+
+        $this->assertSame('Custom web search instruction', $method->invoke($service));
+    }
+
     public function test_is_ready_returns_true_when_api_key_set(): void
     {
         $this->setUpLaravelAIConfig();
@@ -427,10 +463,11 @@ class LaravelChatServiceTest extends TestCase
     public function test_perform_lang_search_returns_empty_when_not_configured(): void
     {
         Config::set('ai.langsearch.api_key', null);
-        
+        Config::set('ai.langsearch.api_key_backup', null);
+
         $service = new LaravelChatService();
         $results = $service->performLangSearch('test query');
-        
+
         $this->assertEquals([], $results);
     }
 

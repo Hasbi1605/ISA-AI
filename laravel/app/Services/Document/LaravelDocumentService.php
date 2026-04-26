@@ -83,15 +83,25 @@ class LaravelDocumentService
             $provider = $this->ai->textProvider();
             $aiDoc = AiDocument::fromPath(storage_path('app/' . $document->file_path));
 
+            $instructions = config('ai.prompts.summarization.instructions');
+            if (!is_string($instructions) || trim($instructions) === '') {
+                $instructions = 'Anda adalah asisten AI yang merangkum dokumen. Berikan ringkasan singkat dan akurat.';
+            }
+
+            $promptBody = config('ai.prompts.summarization.single');
+            if (!is_string($promptBody) || trim($promptBody) === '') {
+                $promptBody = 'Tolong rangkum dokumen berikut:';
+            }
+
             $agent = AnonymousAgent::make(
-                instructions: 'Anda adalah asisten AI yang merangkum dokumen. Berikan ringkasan singkat dan akurat.',
+                instructions: $instructions,
                 messages: [],
                 tools: []
             );
 
             $prompt = new AgentPrompt(
                 agent: $agent,
-                prompt: 'Tolong rangkum dokumen berikut:',
+                prompt: $promptBody,
                 attachments: [$aiDoc],
                 provider: $provider,
                 model: $this->model,

@@ -176,11 +176,17 @@ class AIParityMatrixTest extends TestCase
     #[Group('web')]
     public function it_supports_langsearch_semantic_rerank()
     {
+        // Memastikan rerank() short-circuit ke null saat tidak ada api key.
+        // Tanpa kedua key di-null, default .env (yang ter-load saat test) bisa
+        // memicu HTTP call ke LangSearch sungguhan dan mengembalikan array.
+        Config::set('ai.langsearch.api_key', null);
+        Config::set('ai.langsearch.api_key_backup', null);
+
         $service = new \App\Services\LangSearchService();
-        
+
         $result = $service->rerank('test query', ['doc1', 'doc2']);
-        
-        $this->assertNull($result); 
+
+        $this->assertNull($result);
     }
 
     #[Test]
