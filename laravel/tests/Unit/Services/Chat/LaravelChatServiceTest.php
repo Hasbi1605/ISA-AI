@@ -5,7 +5,10 @@ namespace Tests\Unit\Services\Chat;
 use App\Services\Chat\LaravelChatService;
 use App\Services\Document\DocumentPolicyService;
 use App\Services\Document\LaravelDocumentRetrievalService;
+use App\Services\LangSearchService;
 use Illuminate\Support\Facades\Config;
+use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Cache;
 use Laravel\Ai\AiManager;
 use Laravel\Ai\Contracts\Providers\TextProvider;
 use Laravel\Ai\Prompts\AgentPrompt;
@@ -269,6 +272,21 @@ class LaravelChatServiceTest extends TestCase
     {
         $this->setUpLaravelAIConfig();
         Config::set('ai.laravel_ai.document_retrieval_enabled', true);
+        Config::set('ai.langsearch.api_key', 'test-key');
+        Config::set('ai.langsearch.api_url', 'https://api.langsearch.com/v1/web-search');
+        Config::set('ai.langsearch.rerank_url', 'https://api.langsearch.com/v1/rerank');
+        
+        Http::fake([
+            'api.langsearch.com/v1/web-search' => Http::response([
+                'data' => [
+                    'webPages' => [
+                        'value' => [
+                            ['name' => 'Web Ref', 'snippet' => 'Reference', 'url' => 'https://example.com/ref'],
+                        ]
+                    ]
+                ]
+            ], 200),
+        ]);
 
         $retrieval = Mockery::mock(LaravelDocumentRetrievalService::class);
         $retrieval->shouldReceive('searchRelevantChunks')
@@ -285,8 +303,7 @@ class LaravelChatServiceTest extends TestCase
             'reason_code' => 'DOC_WEB_EXPLICIT',
         ]);
 
-        $provider = Mockery::mock(TextProvider::class . ', \Laravel\Ai\Contracts\Providers\SupportsWebSearch');
-        $provider->shouldReceive('webSearchTool')->once()->andReturn(new \stdClass());
+        $provider = Mockery::mock(TextProvider::class);
         $provider->shouldReceive('stream')
             ->once()
             ->with(Mockery::type(AgentPrompt::class))
@@ -308,6 +325,8 @@ class LaravelChatServiceTest extends TestCase
         $this->app->instance(DocumentPolicyService::class, $policy);
         $this->app->instance(AiManager::class, $ai);
 
+        Cache::flush();
+        
         $service = new LaravelChatService();
         $result = $service->chat(
             [['role' => 'user', 'content' => 'cari di web ini']],
@@ -337,5 +356,154 @@ class LaravelChatServiceTest extends TestCase
             generator: fn () => $this->streamFromEvents($events),
             meta: new Meta(provider: 'test', model: 'test-model')
         );
+    }
+
+    public function test_perform_lang_search_returns_results_with_rerank(): void
+    {
+        Config::set('ai.langsearch.api_key', 'test-langsearch-key');
+        Config::set('ai.langsearch.api_url', 'https://api.langsearch.com/v1/web-search');
+        Config::set('ai.langsearch.rerank_url', 'https://api.langsearch.com/v1/rerank');
+        Config::set('ai.langsearch.rerank_model', 'langsearch-reranker-v1');
+        
+        Http::fake([
+            'api.langsearch.com/v1/web-search' => Http::response([
+                'data' => [
+                    'webPages' => [
+                        'value' => [
+                            ['name' => 'Result A', 'snippet' => 'Desc A', 'url' => 'https://a.com'],
+                            ['name' => 'Result B', 'snippet' => 'Desc B', 'url' => 'https://b.com'],
+                        ]
+                    ]
+                ]
+            ], 200),
+            'api.langsearch.com/v1/rerank' => Http::response([
+                'results' => [
+                    ['index' => 1, 'document' => ['url' => 'https://b.com'], 'relevance_score' => 0.9],
+                    ['index' => 0, 'document' => ['url' => 'https://a.com'], 'relevance_score' => 0.8],
+                ]
+            ], 200),
+        ]);
+        
+        Cache::flush();
+        
+        $service = new LaravelChatService();
+        $results = $service->performLangSearch('test query', 'oneWeek', 5);
+        
+        $this->assertCount(2, $results);
+        $this->assertEquals('https://b.com', $results[0]['url']);
+        $this->assertEquals('https://a.com', $results[1]['url']);
+    }
+
+    public function test_perform_lang_search_falls_back_to_search_when_rerank_fails(): void
+    {
+        Config::set('ai.langsearch.api_key', 'test-langsearch-key');
+        Config::set('ai.langsearch.api_url', 'https://api.langsearch.com/v1/web-search');
+        Config::set('ai.langsearch.rerank_url', 'https://api.langsearch.com/v1/rerank');
+        Config::set('ai.langsearch.rerank_model', 'langsearch-reranker-v1');
+        
+        Http::fake([
+            'api.langsearch.com/v1/web-search' => Http::response([
+                'data' => [
+                    'webPages' => [
+                        'value' => [
+                            ['name' => 'Result A', 'snippet' => 'Desc A', 'url' => 'https://a.com'],
+                            ['name' => 'Result B', 'snippet' => 'Desc B', 'url' => 'https://b.com'],
+                        ]
+                    ]
+                ]
+            ], 200),
+            'api.langsearch.com/v1/rerank' => Http::response(['error' => 'Server Error'], 500),
+        ]);
+        
+        Cache::flush();
+        
+        $service = new LaravelChatService();
+        $results = $service->performLangSearch('test query');
+        
+        $this->assertCount(2, $results);
+        $this->assertEquals('Result A', $results[0]['title']);
+    }
+
+    public function test_perform_lang_search_returns_empty_when_not_configured(): void
+    {
+        Config::set('ai.langsearch.api_key', null);
+        
+        $service = new LaravelChatService();
+        $results = $service->performLangSearch('test query');
+        
+        $this->assertEquals([], $results);
+    }
+
+    public function test_perform_lang_search_returns_search_only_when_single_result(): void
+    {
+        Config::set('ai.langsearch.api_key', 'test-langsearch-key');
+        Config::set('ai.langsearch.api_url', 'https://api.langsearch.com/v1/web-search');
+        Config::set('ai.langsearch.rerank_url', 'https://api.langsearch.com/v1/rerank');
+        
+        Http::fake([
+            'api.langsearch.com/v1/web-search' => Http::response([
+                'data' => [
+                    'webPages' => [
+                        'value' => [
+                            ['name' => 'Single Result', 'snippet' => 'Only one', 'url' => 'https://single.com'],
+                        ]
+                    ]
+                ]
+            ], 200),
+        ]);
+        
+        Cache::flush();
+        
+        $service = new LaravelChatService();
+        $results = $service->performLangSearch('test query');
+        
+        $this->assertCount(1, $results);
+        $this->assertEquals('Single Result', $results[0]['title']);
+    }
+
+    public function test_uses_langsearch_with_backup_key_only(): void
+    {
+        Config::set('ai.laravel_ai.model', 'gpt-4o-mini');
+        Config::set('ai.laravel_ai.api_key', 'test-key');
+        Config::set('ai.laravel_ai.web_search.enabled', true);
+        
+        Config::set('ai.langsearch.api_key', null);
+        Config::set('ai.langsearch.api_key_backup', 'backup-key');
+        Config::set('ai.langsearch.api_url', 'https://api.langsearch.com/v1/web-search');
+        
+        $service = new LaravelChatService();
+        
+        $reflection = new \ReflectionClass($service);
+        $property = $reflection->getProperty('useLangSearch');
+        $property->setAccessible(true);
+        
+        $this->assertTrue($property->getValue($service));
+    }
+
+    public function test_perform_lang_search_with_backup_key_only_returns_results(): void
+    {
+        Config::set('ai.langsearch.api_key', null);
+        Config::set('ai.langsearch.api_key_backup', 'backup-key');
+        Config::set('ai.langsearch.api_url', 'https://api.langsearch.com/v1/web-search');
+        
+        Http::fake([
+            'api.langsearch.com/v1/web-search' => Http::response([
+                'data' => [
+                    'webPages' => [
+                        'value' => [
+                            ['name' => 'Result from backup', 'snippet' => 'Desc', 'url' => 'https://backup.com'],
+                        ]
+                    ]
+                ]
+            ], 200),
+        ]);
+        
+        Cache::flush();
+        
+        $service = new LaravelChatService();
+        $results = $service->performLangSearch('test query');
+        
+        $this->assertCount(1, $results);
+        $this->assertEquals('Result from backup', $results[0]['title']);
     }
 }
