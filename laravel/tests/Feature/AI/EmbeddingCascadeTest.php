@@ -4,7 +4,6 @@ namespace Tests\Feature\AI;
 
 use App\Services\AI\EmbeddingCascadeService;
 use Illuminate\Support\Facades\Config;
-use Illuminate\Support\Facades\Log;
 use Laravel\Ai\AiManager;
 use Laravel\Ai\Responses\Data\Meta;
 use Laravel\Ai\Responses\EmbeddingsResponse;
@@ -48,7 +47,7 @@ class EmbeddingCascadeTest extends TestCase
     public function test_it_falls_back_to_second_node_when_first_fails(): void
     {
         $mockAiManager = Mockery::mock(AiManager::class);
-        
+
         $failedProvider = Mockery::mock(\Laravel\Ai\Contracts\Providers\TextProvider::class);
         $failedProvider->shouldReceive('embeddings')->once()->andThrow(new \Exception('Rate limit'));
 
@@ -91,8 +90,31 @@ class EmbeddingCascadeTest extends TestCase
         $service = new EmbeddingCascadeService();
         $response = $service->embed(['hello']);
 
-        $this->assertEquals('text-embedding-3-large-backup', $response->meta->model);
+        $this->assertEquals('text-embedding-3-large', $response->meta->model);
         $this->assertEquals([[0.3, 0.4]], $response->embeddings);
+    }
+
+    public function test_it_throws_when_forced_model_is_not_mapped_to_a_configured_node(): void
+    {
+        $mockAiManager = Mockery::mock(AiManager::class);
+        $this->app->instance(AiManager::class, $mockAiManager);
+
+        Config::set('ai.embedding_cascade.nodes', [
+            [
+                'label' => 'Primary',
+                'provider' => 'openai',
+                'model' => 'text-embedding-3-large',
+                'dimensions' => 3072,
+                'api_key' => 'token-1',
+            ],
+        ]);
+
+        $service = new EmbeddingCascadeService();
+
+        $this->expectException(\RuntimeException::class);
+        $this->expectExceptionMessage('Forced model not-a-configured-model is not mapped');
+
+        $service->embed(['hello'], 'not-a-configured-model');
     }
 
     public function test_it_throws_exception_if_all_nodes_fail(): void

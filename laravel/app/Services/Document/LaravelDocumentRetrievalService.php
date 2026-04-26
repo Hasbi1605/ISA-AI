@@ -262,17 +262,15 @@ class LaravelDocumentRetrievalService implements DocumentRetrievalInterface
         }
 
         $allChunks = [];
-        $targetModel = config('ai.rag.embedding_model', 'text-embedding-3-small');
-        $targetDimensions = (int) config('ai.rag.embedding_dimensions', 1536);
 
         // 1. Get query embedding
         $actualModel = config('ai.rag.embedding_model', 'text-embedding-3-small');
+        $actualDimensions = (int) config('ai.rag.embedding_dimensions', 1536);
         try {
             $queryResponse = $this->embeddingCascade->embed([$query]);
             $queryEmbedding = $queryResponse->embeddings[0] ?? null;
-            
-            // Update target model from response to match what was actually used
             $actualModel = $queryResponse->meta->model;
+            $actualDimensions = $queryEmbedding ? count($queryEmbedding) : $actualDimensions;
         } catch (\Throwable $e) {
             Log::warning('LaravelDocumentRetrieval: query embedding failed, falling back to lexical search', [
                 'error' => $e->getMessage()
@@ -287,17 +285,15 @@ class LaravelDocumentRetrievalService implements DocumentRetrievalInterface
             // 2. Ensure document is chunked and embedded in DB
             $this->ensureDocumentIsIngested($document);
 
-            // 3. Fetch chunks from DB
-            $dbChunks = $document->chunks()
-                ->where('embedding_model', $actualModel)
-                ->get();
+            if ($queryEmbedding === null) {
+                $dbChunks = $document->chunks()->get();
+            } else {
+                $dbChunks = $this->getChunksForEmbeddingTarget($document, $actualModel, $actualDimensions);
 
-            if ($dbChunks->isEmpty()) {
-                // If no embeddings for target model, try to compute them now
-                $this->computeEmbeddingsForDocument($document, $actualModel, $targetDimensions);
-                $dbChunks = $document->chunks()
-                    ->where('embedding_model', $actualModel)
-                    ->get();
+                if ($dbChunks->isEmpty()) {
+                    $this->computeEmbeddingsForDocument($document, $actualModel, $actualDimensions);
+                    $dbChunks = $this->getChunksForEmbeddingTarget($document, $actualModel, $actualDimensions);
+                }
             }
 
             foreach ($dbChunks as $chunk) {
@@ -356,11 +352,16 @@ class LaravelDocumentRetrievalService implements DocumentRetrievalInterface
     protected function computeEmbeddingsForDocument(Document $document, string $model, int $dimensions): void
     {
         $chunks = $document->chunks()
-            ->where(function($q) use ($model) {
-                $q->whereNull('embedding')->orWhere('embedding_model', '!=', $model);
+            ->where(function ($q) use ($model, $dimensions) {
+                $q->whereNull('embedding')
+                    ->orWhere('embedding_model', '!=', $model)
+                    ->orWhereNull('embedding_dimensions')
+                    ->orWhere('embedding_dimensions', '!=', $dimensions);
             })
             ->get();
-        if ($chunks->isEmpty()) return;
+        if ($chunks->isEmpty()) {
+            return;
+        }
 
         try {
             $texts = $chunks->pluck('text_content')->toArray();
@@ -374,13 +375,13 @@ class LaravelDocumentRetrievalService implements DocumentRetrievalInterface
             $i = 0;
             foreach ($batches as $index => $batch) {
                 $response = $this->embeddingCascade->embed($batch, $model);
-                
+
                 $currentBatchChunks = $batchChunks->values()[$index];
                 foreach ($currentBatchChunks as $j => $chunk) {
                     $actualEmbedding = $response->embeddings[$j];
                     $chunk->update([
                         'embedding' => $actualEmbedding,
-                        'embedding_model' => $response->meta->model, // Use actual model returned
+                        'embedding_model' => $response->meta->model,
                         'embedding_dimensions' => count($actualEmbedding),
                     ]);
                 }
@@ -396,6 +397,14 @@ class LaravelDocumentRetrievalService implements DocumentRetrievalInterface
                 'error' => $e->getMessage()
             ]);
         }
+    }
+
+    protected function getChunksForEmbeddingTarget(Document $document, string $model, int $dimensions)
+    {
+        return $document->chunks()
+            ->where('embedding_model', $model)
+            ->where('embedding_dimensions', $dimensions)
+            ->get();
     }
 
     protected function calculateLexicalScore(string $query, string $content): float
