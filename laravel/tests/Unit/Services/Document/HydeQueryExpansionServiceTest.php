@@ -4,11 +4,20 @@ namespace Tests\Unit\Services\Document;
 
 use App\Services\Document\HydeQueryExpansionService;
 use App\Services\Document\DocumentPolicyService;
+use ReflectionClass;
 use PHPUnit\Framework\TestCase;
 
 class HydeQueryExpansionServiceTest extends TestCase
 {
     private HydeQueryExpansionService $hydeService;
+
+    private function getPrivateProperty(object $object, string $property): mixed
+    {
+        $reflection = new ReflectionClass($object);
+        $property = $reflection->getProperty($property);
+        $property->setAccessible(true);
+        return $property->getValue($object);
+    }
 
     protected function setUp(): void
     {
@@ -180,5 +189,39 @@ class HydeQueryExpansionServiceTest extends TestCase
         $result = $this->hydeService->generateEnhancedQuery('apa itu');
         
         $this->assertEquals('apa itu', $result);
+    }
+
+    public function test_returns_full_query_on_hyde_success_with_long_input(): void
+    {
+$longQuery = 'mengapa inflasi terjadi di indonesia saat ini sangat mempengaruhi ekonomi masyarakat kecil '
+            . 'dan bagaimana dampak perubahan harga barang kebutuhan pokok terhadap daya beli rakyat '
+            . 'serta apa langkah pemerintah yang seharusnya diambil untuk mengatasi kenaikan biaya hidup '
+            . 'yang terus meningkat setiap tahunnya akibat dari policy monetary yang diterapkan '
+            . 'oleh bank central dalam mengatur jumlah uang yang beredar di pasar domestik dan bagaimana '
+            . 'pengaruh tingkat suku bunga terhadap investasi asing yang masuk ke dalam negeri serta '
+            . 'apa yang bisa dilakukan untuk menstabilkan nilai tukar rupiah terhadap mata uang asing '
+            . 'terutama dolar amerika Serikat yang menjadi patokan utama dalam perdagangan internasional '
+            . 'dan bagaimana hal ini berdampak pada ekspor produk lokal Indonesia ke pasar global saat ini.';
+
+        $this->assertGreaterThan(500, strlen($longQuery));
+
+        $service = new class([
+            'enabled' => true,
+            'mode' => 'smart',
+            'timeout' => 5,
+            'max_tokens' => 100,
+            'cascade_nodes' => $this->getPrivateProperty($this->hydeService, 'cascadeNodes'),
+        ]) extends HydeQueryExpansionService
+        {
+            protected function generateWithNode(array $node, string $query, string $originalQuery): string
+            {
+                return $originalQuery . ' Hipotesis jawaban faktual yang menunjukkan hubungan causality.';
+            }
+        };
+
+        $result = $service->generateEnhancedQuery($longQuery);
+
+        $this->assertStringContainsString($longQuery, $result);
+        $this->assertGreaterThan(500, strlen($result));
     }
 }
