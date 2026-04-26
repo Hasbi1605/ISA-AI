@@ -90,10 +90,7 @@ class LaravelDocumentService
             $chunks = $this->getChunksForSummarization($document->id);
 
             if (empty($chunks)) {
-                return [
-                    'status' => 'error',
-                    'message' => 'Tidak ada chunks untuk diringkas.',
-                ];
+                return $this->summarizeFromFile($document, $filename);
             }
 
             $totalTokens = $this->estimateTokens($chunks);
@@ -159,6 +156,75 @@ class LaravelDocumentService
             return [
                 'status' => 'error',
                 'message' => 'Gagal merangkum dokumen: ' . $e->getMessage(),
+            ];
+        }
+    }
+
+    protected function summarizeFromFile(Document $document, string $filename): array
+    {
+        $relativePath = $document->file_path ?? '';
+        if ($relativePath === '') {
+            return [
+                'status' => 'error',
+                'message' => 'Tidak ada chunks dan file dokumen tidak tersedia untuk diringkas.',
+            ];
+        }
+
+        $absolutePath = storage_path('app/' . ltrim($relativePath, '/'));
+        if (!file_exists($absolutePath)) {
+            $absolutePath = storage_path('app/private/' . ltrim($relativePath, '/'));
+        }
+
+        if (!file_exists($absolutePath)) {
+            return [
+                'status' => 'error',
+                'message' => 'File dokumen tidak ditemukan di storage untuk diringkas.',
+            ];
+        }
+
+        try {
+            $aiDoc = AiDocument::fromPath($absolutePath);
+
+            $agent = AnonymousAgent::make(
+                instructions: 'Anda adalah asisten AI yang merangkum dokumen. Berikan ringkasan singkat dan akurat.',
+                messages: [],
+                tools: []
+            );
+
+            $result = $agent->prompt(
+                'Tolong rangkum dokumen berikut:',
+                attachments: [$aiDoc],
+                model: $this->model,
+            );
+
+            $summary = $result->text ?? '';
+
+            Log::info('LaravelDocumentService: document summarized from file', [
+                'file' => $filename,
+                'document_id' => $document->id,
+                'content_length' => strlen($summary),
+                'model' => $this->model,
+            ]);
+
+            return [
+                'status' => 'success',
+                'summary' => $summary,
+                'model' => $this->model,
+                'sources' => [[
+                    'filename' => $filename,
+                    'document_id' => $document->id,
+                    'mode' => 'file_attachment',
+                ]],
+            ];
+        } catch (\Throwable $e) {
+            Log::error('LaravelDocumentService: summarize from file failed', [
+                'file' => $filename,
+                'error' => $e->getMessage(),
+            ]);
+
+            return [
+                'status' => 'error',
+                'message' => 'Gagal merangkum dokumen dari file: ' . $e->getMessage(),
             ];
         }
     }
@@ -243,20 +309,9 @@ class LaravelDocumentService
 
         foreach ($nodes as $node) {
             try {
-                $provider = $this->getProviderForNode($node, $agent);
-
-                $prompt = new AgentPrompt(
-                    agent: $agent,
-                    prompt: 'Rangkum bagian dokumen berikut dengan detail dan akurat: ' . $content,
-                    attachments: [],
-                    provider: $provider,
-                    model: $node['model'],
-                );
-
-                $result = $provider->prompt($prompt);
-
+                $text = $this->runSummarizationOnNode($node, $agent, $content);
                 return [
-                    'text' => $result->text ?? '',
+                    'text' => $text,
                     'model' => $node['model'],
                     'provider' => $node['provider'],
                 ];
@@ -270,7 +325,36 @@ class LaravelDocumentService
             }
         }
 
+        $text = $this->runSummarizationDefault($agent, $content);
+
+        return [
+            'text' => $text,
+            'model' => $this->model,
+            'provider' => 'default',
+        ];
+    }
+
+    protected function runSummarizationOnNode(array $node, AnonymousAgent $agent, string $content): string
+    {
+        $provider = $this->getProviderForNode($node, $agent);
+
+        $prompt = new AgentPrompt(
+            agent: $agent,
+            prompt: 'Rangkum bagian dokumen berikut dengan detail dan akurat: ' . $content,
+            attachments: [],
+            provider: $provider,
+            model: $node['model'],
+        );
+
+        $result = $provider->prompt($prompt);
+
+        return $result->text ?? '';
+    }
+
+    protected function runSummarizationDefault(AnonymousAgent $agent, string $content): string
+    {
         $defaultProvider = $this->ai->textProvider();
+
         $result = $defaultProvider->prompt(new AgentPrompt(
             agent: $agent,
             prompt: 'Rangkum bagian dokumen berikut dengan detail dan akurat: ' . $content,
@@ -279,11 +363,7 @@ class LaravelDocumentService
             model: $this->model,
         ));
 
-        return [
-            'text' => $result->text ?? '',
-            'model' => $this->model,
-            'provider' => 'default',
-        ];
+        return $result->text ?? '';
     }
 
     public function deleteDocument(string $filename, ?string $userId = null): bool
