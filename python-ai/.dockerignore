@@ -1,0 +1,13 @@
+.DS_Store
+.env
+.git
+.gitignore
+.pytest_cache
+__pycache__
+chroma_data
+logs
+tests
+uploads
+venv
+*.log
+*.pyc

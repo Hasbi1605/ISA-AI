@@ -1,0 +1,141 @@
+services:
+  caddy:
+    image: caddy:2.10-alpine
+    restart: unless-stopped
+    env_file:
+      - ./.env.droplet
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      laravel:
+        condition: service_healthy
+
+  mysql:
+    image: mysql:8.0
+    restart: unless-stopped
+    env_file:
+      - ./.env.droplet
+    command:
+      - --innodb-buffer-pool-size=256M
+      - --max-connections=80
+      - --key-buffer-size=32M
+      - --tmp-table-size=64M
+      - --max-heap-table-size=64M
+    volumes:
+      - mysql_data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD-SHELL", "mysqladmin ping -h 127.0.0.1 -uroot -p$${MYSQL_ROOT_PASSWORD} --silent"]
+      interval: 30s
+      timeout: 10s
+      retries: 10
+      start_period: 30s
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command:
+      - redis-server
+      - --appendonly
+      - "yes"
+      - --maxmemory
+      - 256mb
+      - --maxmemory-policy
+      - allkeys-lru
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 30s
+      timeout: 5s
+      retries: 10
+
+  python-ai:
+    build:
+      context: ./python-ai
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    env_file:
+      - ./.env.droplet
+    environment:
+      PYTHONUNBUFFERED: "1"
+    volumes:
+      - chroma_data:/app/chroma_data
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8001/api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 10
+      start_period: 30s
+
+  laravel:
+    build:
+      context: ./laravel
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    env_file:
+      - ./.env.droplet
+    command: ["php", "artisan", "serve", "--host=0.0.0.0", "--port=8000"]
+    volumes:
+      - laravel_storage:/var/www/html/storage
+    depends_on:
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      python-ai:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8000/up"]
+      interval: 30s
+      timeout: 10s
+      retries: 10
+      start_period: 20s
+
+  horizon:
+    build:
+      context: ./laravel
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    env_file:
+      - ./.env.droplet
+    command: ["php", "artisan", "horizon"]
+    volumes:
+      - laravel_storage:/var/www/html/storage
+    depends_on:
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      python-ai:
+        condition: service_healthy
+
+  artisan:
+    build:
+      context: ./laravel
+      dockerfile: Dockerfile
+    profiles: ["ops"]
+    env_file:
+      - ./.env.droplet
+    entrypoint: ["php", "artisan"]
+    volumes:
+      - laravel_storage:/var/www/html/storage
+    depends_on:
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      python-ai:
+        condition: service_healthy
+
+volumes:
+  caddy_config:
+  caddy_data:
+  chroma_data:
+  laravel_storage:
+  mysql_data:
+  redis_data:
