@@ -114,7 +114,7 @@ class EmailVerificationTest extends TestCase
             $this->assertNotNull($user->verification_code_expires_at);
             $this->assertTrue(Carbon::parse($user->verification_code_expires_at)->equalTo(now()->addMinutes(15)));
 
-            Mail::assertQueued(VerificationCodeMail::class, fn (VerificationCodeMail $mail) => $mail->hasTo($user->email) && $mail->queue === 'mail');
+            Mail::assertQueued(VerificationCodeMail::class, fn (VerificationCodeMail $mail) => $mail->hasTo($user->email) && $mail->queue === 'mail' && $mail->tries === 1 && $mail->timeout === 15);
         } finally {
             Carbon::setTestNow();
         }

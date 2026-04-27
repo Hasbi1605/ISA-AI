@@ -46,7 +46,7 @@ class RegistrationTest extends TestCase
         $this->assertGuest();
         $this->assertDatabaseMissing('users', ['email' => 'test@example.com']);
 
-        Mail::assertQueued(VerificationCodeMail::class, fn (VerificationCodeMail $mail) => $mail->hasTo('test@example.com') && $mail->queue === 'mail');
+        Mail::assertQueued(VerificationCodeMail::class, fn (VerificationCodeMail $mail) => $mail->hasTo('test@example.com') && $mail->queue === 'mail' && $mail->tries === 1 && $mail->timeout === 15);
     }
 
     public function test_valid_otp_finalizes_registration_logs_in_and_redirects_to_intended_chat(): void
@@ -69,7 +69,7 @@ class RegistrationTest extends TestCase
         Mail::assertQueued(VerificationCodeMail::class, function (VerificationCodeMail $mail) use (&$otpCode) {
             $otpCode = $mail->code;
 
-            return $mail->hasTo('test-register@example.com') && $mail->queue === 'mail';
+            return $mail->hasTo('test-register@example.com') && $mail->queue === 'mail' && $mail->tries === 1 && $mail->timeout === 15;
         });
 
         $this->assertNotNull($otpCode);
@@ -150,7 +150,7 @@ class RegistrationTest extends TestCase
         Mail::assertQueued(VerificationCodeMail::class, function (VerificationCodeMail $mail) use (&$otpCode) {
             $otpCode = $mail->code;
 
-            return $mail->hasTo('rate-limit@example.com') && $mail->queue === 'mail';
+            return $mail->hasTo('rate-limit@example.com') && $mail->queue === 'mail' && $mail->tries === 1 && $mail->timeout === 15;
         });
 
         $wrongCode = $otpCode === '000000' ? '999999' : '000000';
@@ -188,6 +188,8 @@ class RegistrationTest extends TestCase
         $initialQueuedMail = Mail::queued(VerificationCodeMail::class)->first();
         $initialOtpCode = $initialQueuedMail->code;
         $this->assertSame('mail', $initialQueuedMail->queue);
+        $this->assertSame(1, $initialQueuedMail->tries);
+        $this->assertSame(15, $initialQueuedMail->timeout);
 
         $component->call('resendOtp')
             ->assertSet('otp_status', 'Kode OTP baru telah dikirim ke email Anda.');
@@ -197,6 +199,8 @@ class RegistrationTest extends TestCase
         $resentQueuedMail = Mail::queued(VerificationCodeMail::class)->last();
         $resentOtpCode = $resentQueuedMail->code;
         $this->assertSame('mail', $resentQueuedMail->queue);
+        $this->assertSame(1, $resentQueuedMail->tries);
+        $this->assertSame(15, $resentQueuedMail->timeout);
 
         $this->assertNotSame($initialOtpCode, $resentOtpCode);
 

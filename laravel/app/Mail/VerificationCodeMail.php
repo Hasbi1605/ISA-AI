@@ -15,9 +15,8 @@ class VerificationCodeMail extends Mailable implements ShouldQueue
     use Queueable, SerializesModels;
 
     public readonly string $code;
-    public int $tries = 3;
-    public int $timeout = 30;
-    public array $backoff = [10, 30, 60];
+    public int $tries = 1;
+    public int $timeout = 15;
 
     /**
      * Create a new message instance.
