@@ -1,4 +1,4 @@
-FROM php:8.3-cli-bookworm AS vendor
+FROM php:8.4-cli-bookworm AS vendor
 
 WORKDIR /app
 
@@ -35,7 +35,7 @@ COPY . .
 RUN npm run build
 
 
-FROM php:8.3-cli-bookworm AS app
+FROM php:8.4-cli-bookworm AS app
 
 WORKDIR /var/www/html
 
