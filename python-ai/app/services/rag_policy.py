@@ -1,10 +1,10 @@
-import os
 import re
 import hashlib
 import unicodedata
 import logging
 from typing import List, Tuple, Dict, Optional
 
+from app.env_utils import get_env_bool, get_env_int
 from app.services.rag_config import (
     EXPLICIT_WEB_PATTERNS,
     REALTIME_HIGH_PATTERNS,
@@ -262,9 +262,9 @@ def get_context_for_query(
             web_candidates = int(_rc.get('web_candidates', 10))
             web_top_n      = int(_rc.get('web_top_n', 5))
         except Exception:
-            rerank_enabled = os.getenv("LANGSEARCH_RERANK_ENABLED", "true").lower() == "true"
-            web_candidates = int(os.getenv("LANGSEARCH_RERANK_WEB_CANDIDATES", "10"))
-            web_top_n      = int(os.getenv("LANGSEARCH_RERANK_WEB_TOP_N", "5"))
+            rerank_enabled = get_env_bool("LANGSEARCH_RERANK_ENABLED", True)
+            web_candidates = get_env_int("LANGSEARCH_RERANK_WEB_CANDIDATES", 10)
+            web_top_n      = get_env_int("LANGSEARCH_RERANK_WEB_TOP_N", 5)
 
         if rerank_enabled and len(search_results) >= 2:
             candidates = search_results[:web_candidates] if len(search_results) > web_candidates else search_results

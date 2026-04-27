@@ -1,6 +1,8 @@
 import os
 import logging
 
+from app.env_utils import get_env
+
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
@@ -15,13 +17,13 @@ except Exception:
     _chunking_cfg = {}
 
 def _chunking_int(env_key: str, yaml_key: str, default: int) -> int:
-    env_val = os.getenv(env_key)
+    env_val = get_env(env_key)
     if env_val is not None:
         return int(env_val)
     return int(_chunking_cfg.get(yaml_key, default))
 
 def _chunking_float(env_key: str, yaml_key: str, default: float) -> float:
-    env_val = os.getenv(env_key)
+    env_val = get_env(env_key)
     if env_val is not None:
         return float(env_val)
     return float(_chunking_cfg.get(yaml_key, default))

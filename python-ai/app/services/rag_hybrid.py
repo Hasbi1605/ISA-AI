@@ -1,10 +1,10 @@
-import os
 import re
 import logging
 from typing import List, Tuple, Dict, Optional
 
 from langchain_chroma import Chroma
 
+from app.env_utils import get_env
 from app.services.rag_config import CHROMA_PATH, PARENT_COLLECTION_NAME
 
 logger = logging.getLogger(__name__)
@@ -78,7 +78,7 @@ def _generate_hyde_query(original_query: str, timeout: int = 5, max_tokens: int 
         for model in sorted_models:
             if model.get('provider') == 'gemini_native':
                 continue
-            api_key = os.getenv(model.get('api_key_env', ''))
+            api_key = get_env(model.get('api_key_env', ''))
             if not api_key:
                 continue
             if attempts >= max_attempts:

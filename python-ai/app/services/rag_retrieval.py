@@ -1,4 +1,3 @@
-import os
 import logging
 from typing import List, Tuple, Dict
 from collections import Counter
@@ -6,6 +5,7 @@ from collections import Counter
 from langchain_chroma import Chroma
 from langchain_core.documents import Document
 
+from app.env_utils import get_env_bool, get_env_int
 from app.services.rag_config import CHROMA_PATH, VECTOR_COLLECTION_NAME
 from app.services.rag_embeddings import get_embeddings_with_fallback
 from app.services.rag_hybrid import (
@@ -83,7 +83,7 @@ def search_relevant_chunks(query: str, filenames: List[str] = None, top_k: int =
             hybrid_cfg      = get_hybrid_search_config()
             hyde_cfg        = get_hyde_config()
         except Exception:
-            doc_candidates  = int(os.getenv("LANGSEARCH_RERANK_DOC_CANDIDATES", "25"))
+            doc_candidates  = get_env_int("LANGSEARCH_RERANK_DOC_CANDIDATES", 25)
             doc_top_n       = top_k
             hybrid_cfg      = {}
             hyde_cfg        = {}
@@ -239,7 +239,7 @@ def search_relevant_chunks(query: str, filenames: List[str] = None, top_k: int =
             return [], True
 
         langsearch_service = get_langsearch_service()
-        rerank_enabled = os.getenv("LANGSEARCH_RERANK_ENABLED", "true").lower() == "true"
+        rerank_enabled = get_env_bool("LANGSEARCH_RERANK_ENABLED", True)
 
         if rerank_enabled and len(docs) >= 2:
             documents = [doc.page_content for doc, _ in docs]

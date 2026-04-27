@@ -1,10 +1,10 @@
-import os
 import json
 import logging
 import warnings
 import requests
 import litellm
 from typing import List, Dict, Generator
+from app.env_utils import get_env
 
 logger = logging.getLogger(__name__)
 
@@ -104,7 +104,7 @@ def _get_default_system_prompt_fallback():
         except Exception as exc:
             logger.warning("⚠️  Gagal memuat system prompt dari config: %s", exc)
 
-    env_prompt = os.getenv("DEFAULT_SYSTEM_PROMPT", "").strip()
+    env_prompt = get_env("DEFAULT_SYSTEM_PROMPT", "") or ""
     if env_prompt:
         return env_prompt
 
@@ -197,7 +197,7 @@ def _stream_gemini_native(model_name: str, api_key: str, messages: List[Dict[str
 
 def _run_model(model: dict, messages: List[Dict[str, str]]) -> Generator:
     """Create a streaming generator for the given model config."""
-    api_key = os.getenv(model["api_key_env"])
+    api_key = get_env(model["api_key_env"])
     if not api_key:
         raise ValueError(f"API key env '{model['api_key_env']}' tidak ditemukan")
 

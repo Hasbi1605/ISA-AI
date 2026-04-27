@@ -16,15 +16,18 @@ class AIService
 
     public function __construct()
     {
-        $this->baseUrl = rtrim((string) config('services.ai_service.url', 'http://127.0.0.1:8001'), '/');
-        $this->token = (string) config('services.ai_service.token');
-        $this->maxRetries = max(1, (int) config('services.ai_service.retries', 2));
-        $this->retryDelayMs = max(0, (int) config('services.ai_service.retry_delay_ms', 400));
+        $this->baseUrl = rtrim(
+            $this->normalizeStringConfig(config('services.ai_service.url'), 'http://127.0.0.1:8001'),
+            '/'
+        );
+        $this->token = $this->normalizeStringConfig(config('services.ai_service.token'));
+        $this->maxRetries = max(1, $this->normalizeIntConfig(config('services.ai_service.retries'), 2));
+        $this->retryDelayMs = max(0, $this->normalizeIntConfig(config('services.ai_service.retry_delay_ms'), 400));
 
         $this->client = new Client([
-            'connect_timeout' => (float) config('services.ai_service.connect_timeout', 10),
-            'timeout' => (float) config('services.ai_service.timeout', 120),
-            'read_timeout' => (float) config('services.ai_service.read_timeout', 120),
+            'connect_timeout' => $this->normalizeFloatConfig(config('services.ai_service.connect_timeout'), 10),
+            'timeout' => $this->normalizeFloatConfig(config('services.ai_service.timeout'), 120),
+            'read_timeout' => $this->normalizeFloatConfig(config('services.ai_service.read_timeout'), 120),
         ]);
     }
 
@@ -82,15 +85,24 @@ class AIService
 
                 return;
             } catch (RequestException $e) {
+                $response = $e->getResponse();
+                $responseBody = $response?->getBody()?->getContents();
+
                 Log::warning('AI Service Error', [
                     'attempt' => $attempt,
                     'max_retries' => $this->maxRetries,
+                    'base_url' => $this->baseUrl,
+                    'status' => $response?->getStatusCode(),
                     'message' => $e->getMessage(),
+                    'response_excerpt' => $responseBody ? mb_substr($responseBody, 0, 500) : null,
                 ]);
 
                 if ($attempt >= $this->maxRetries) {
                     Log::error('AI Service Error: max retries reached', [
+                        'base_url' => $this->baseUrl,
+                        'status' => $response?->getStatusCode(),
                         'message' => $e->getMessage(),
+                        'response_excerpt' => $responseBody ? mb_substr($responseBody, 0, 500) : null,
                     ]);
                     yield "❌ Kesalahan sistem saat menghubungi otak AI. Silakan coba lagi nanti.";
                     return;
@@ -144,5 +156,35 @@ class AIService
                 'message' => 'Gagal merangkum dokumen: ' . $e->getMessage()
             ];
         }
+    }
+
+    private function normalizeStringConfig(mixed $value, string $default = ''): string
+    {
+        if ($value === null) {
+            return $default;
+        }
+
+        $normalized = trim((string) $value);
+
+        if (strlen($normalized) >= 2) {
+            $quote = $normalized[0];
+            if (($quote === '"' || $quote === "'") && $normalized[strlen($normalized) - 1] === $quote) {
+                $normalized = substr($normalized, 1, -1);
+            }
+        }
+
+        return $normalized === '' ? $default : $normalized;
+    }
+
+    private function normalizeIntConfig(mixed $value, int $default): int
+    {
+        $normalized = $this->normalizeStringConfig($value, (string) $default);
+        return is_numeric($normalized) ? (int) $normalized : $default;
+    }
+
+    private function normalizeFloatConfig(mixed $value, float $default): float
+    {
+        $normalized = $this->normalizeStringConfig($value, (string) $default);
+        return is_numeric($normalized) ? (float) $normalized : $default;
     }
 }

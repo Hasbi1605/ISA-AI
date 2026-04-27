@@ -1,4 +1,3 @@
-import os
 import logging
 import requests
 import time
@@ -6,11 +5,12 @@ from typing import List, Dict, Optional, Tuple
 from datetime import datetime
 
 from app.config_loader import get_web_search_context_prompt
+from app.env_utils import get_env, get_env_int
 
 logger = logging.getLogger(__name__)
 
-LANGSEARCH_TIMEOUT = int(os.getenv("LANGSEARCH_TIMEOUT", "10"))
-LANGSEARCH_CACHE_TTL = int(os.getenv("LANGSEARCH_CACHE_TTL", "300"))  # 5 minutes default
+LANGSEARCH_TIMEOUT = get_env_int("LANGSEARCH_TIMEOUT", 10)
+LANGSEARCH_CACHE_TTL = get_env_int("LANGSEARCH_CACHE_TTL", 300)  # 5 minutes default
 
 
 class LangSearchService:
@@ -25,7 +25,7 @@ class LangSearchService:
     def api_key(self) -> Optional[str]:
         """Lazy load API key from environment."""
         if self._api_key is None:
-            self._api_key = os.getenv("LANGSEARCH_API_KEY")
+            self._api_key = get_env("LANGSEARCH_API_KEY")
         return self._api_key
     
     def _get_cached_result(self, query: str, time_bucket: int) -> Optional[List[Dict]]:
@@ -73,7 +73,7 @@ class LangSearchService:
             return cached
         
         api_keys = [self.api_key]
-        backup_key = os.getenv("LANGSEARCH_API_KEY_BACKUP")
+        backup_key = get_env("LANGSEARCH_API_KEY_BACKUP")
         if backup_key:
             api_keys.append(backup_key)
             
@@ -213,11 +213,11 @@ Ringkasan: {snippet}"""
             documents = documents[:50]
             
         # Get configuration from environment with defaults
-        model = os.getenv("LANGSEARCH_RERANK_MODEL", "langsearch-reranker-v1")
-        timeout = int(os.getenv("LANGSEARCH_RERANK_TIMEOUT", "8"))
+        model = get_env("LANGSEARCH_RERANK_MODEL", "langsearch-reranker-v1")
+        timeout = get_env_int("LANGSEARCH_RERANK_TIMEOUT", 8)
         
         api_keys = [self.api_key]
-        backup_key = os.getenv("LANGSEARCH_API_KEY_BACKUP")
+        backup_key = get_env("LANGSEARCH_API_KEY_BACKUP")
         if backup_key:
             api_keys.append(backup_key)
         

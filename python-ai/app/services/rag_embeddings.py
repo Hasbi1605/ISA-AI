@@ -1,4 +1,3 @@
-import os
 import logging
 from typing import Tuple, Optional
 
@@ -6,6 +5,7 @@ import tiktoken
 from langchain_core.embeddings import Embeddings
 from langchain_openai import OpenAIEmbeddings
 
+from app.env_utils import get_env
 from app.services.rag_config import (
     EMBEDDING_MODELS,
     MAX_EMBEDDING_DIM,
@@ -35,7 +35,7 @@ def count_tokens(text: str) -> int:
 def get_embeddings_with_fallback(model_index: int = 0) -> Tuple[Optional[Embeddings], str, int]:
     for idx in range(model_index, len(EMBEDDING_MODELS)):
         model_config = EMBEDDING_MODELS[idx]
-        api_key = os.getenv(model_config["api_key_env"])
+        api_key = get_env(model_config["api_key_env"])
 
         if not api_key:
             logger.warning(f"⚠️ {model_config['name']}: API key tidak ditemukan")

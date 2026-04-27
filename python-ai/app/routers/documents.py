@@ -3,6 +3,7 @@ import os
 import shutil
 import uuid
 from pydantic import BaseModel
+from app.env_utils import get_env
 from app.config_loader import (
     get_summarize_single_prompt,
     get_summarize_partial_prompt,
@@ -12,7 +13,7 @@ from app.config_loader import (
 router = APIRouter(prefix="/api/documents", tags=["Documents"])
 
 # Security
-AI_SERVICE_TOKEN = os.getenv("AI_SERVICE_TOKEN", "your_internal_api_secret")
+AI_SERVICE_TOKEN = get_env("AI_SERVICE_TOKEN", "your_internal_api_secret")
 
 def verify_token(authorization: str = Header(None)):
     """Simple token-based security for internal service communication."""

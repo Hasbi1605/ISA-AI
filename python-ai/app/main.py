@@ -10,6 +10,7 @@ from typing import List, Dict, Optional, Tuple
 from fastapi import FastAPI, Depends, HTTPException, Header
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
+from app.env_utils import get_env
 from app.routers import documents
 try:
     from app.config_loader import (
@@ -29,7 +30,7 @@ logger = logging.getLogger(__name__)
 app.include_router(documents.router)
 
 # Security
-AI_SERVICE_TOKEN = os.getenv("AI_SERVICE_TOKEN", "your_internal_api_secret")
+AI_SERVICE_TOKEN = get_env("AI_SERVICE_TOKEN", "your_internal_api_secret")
 
 def verify_token(authorization: str = Header(None)):
     """Simple token-based security for internal service communication."""
