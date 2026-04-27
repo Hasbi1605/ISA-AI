@@ -40,6 +40,7 @@ FROM php:8.4-cli-bookworm AS app
 WORKDIR /var/www/html
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
+    $PHPIZE_DEPS \
     curl \
     git \
     libicu-dev \
@@ -47,6 +48,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libzip-dev \
     unzip \
     && docker-php-ext-install bcmath intl mbstring pcntl pdo_mysql zip \
+    && pecl install redis \
+    && docker-php-ext-enable redis \
+    && apt-get purge -y --auto-remove $PHPIZE_DEPS \
     && rm -rf /var/lib/apt/lists/*
 
 COPY --from=composer:2 /usr/bin/composer /usr/bin/composer
