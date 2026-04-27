@@ -64,12 +64,15 @@ RUN chmod +x /usr/local/bin/ista-entrypoint \
     && rm -f database/database.sqlite \
     && mkdir -p \
         bootstrap/cache \
+        /usr/local/share/ista-bootstrap-cache \
         storage/app/public \
         storage/framework/cache/data \
         storage/framework/sessions \
         storage/framework/views \
         storage/logs \
     && php artisan package:discover --ansi \
+    && cp bootstrap/cache/packages.php /usr/local/share/ista-bootstrap-cache/packages.php \
+    && cp bootstrap/cache/services.php /usr/local/share/ista-bootstrap-cache/services.php \
     && chown -R www-data:www-data bootstrap/cache storage
 
 EXPOSE 8000
