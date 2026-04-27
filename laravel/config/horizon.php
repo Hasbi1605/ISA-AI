@@ -97,6 +97,7 @@ return [
     */
 
     'waits' => [
+        'redis:mail' => 60,
         'redis:default' => 60,
     ],
 
@@ -199,7 +200,7 @@ return [
     'defaults' => [
         'supervisor-1' => [
             'connection' => 'redis',
-            'queue' => ['default'],
+            'queue' => ['mail', 'default'],
             'balance' => 'auto',
             'autoScalingStrategy' => 'time',
             'maxProcesses' => 1,
@@ -215,6 +216,7 @@ return [
     'environments' => [
         'production' => [
             'supervisor-1' => [
+                'queue' => ['mail', 'default'],
                 'maxProcesses' => 10,
                 'balanceMaxShift' => 1,
                 'balanceCooldown' => 3,
@@ -223,6 +225,7 @@ return [
 
         'local' => [
             'supervisor-1' => [
+                'queue' => ['mail', 'default'],
                 'maxProcesses' => 3,
             ],
         ],

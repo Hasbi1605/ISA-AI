@@ -8,12 +8,16 @@ use Illuminate\Mail\Mailable;
 use Illuminate\Mail\Mailables\Content;
 use Illuminate\Mail\Mailables\Envelope;
 use Illuminate\Queue\SerializesModels;
+use Throwable;
 
 class VerificationCodeMail extends Mailable implements ShouldQueue
 {
     use Queueable, SerializesModels;
 
     public readonly string $code;
+    public int $tries = 3;
+    public int $timeout = 30;
+    public array $backoff = [10, 30, 60];
 
     /**
      * Create a new message instance.
@@ -21,6 +25,7 @@ class VerificationCodeMail extends Mailable implements ShouldQueue
     public function __construct(string $code)
     {
         $this->code = $code;
+        $this->onQueue('mail');
     }
 
     /**
@@ -51,5 +56,23 @@ class VerificationCodeMail extends Mailable implements ShouldQueue
     public function attachments(): array
     {
         return [];
+    }
+
+    /**
+     * Handle a failed queued mail send.
+     */
+    public function failed(Throwable $exception): void
+    {
+        logger()->error('Verification code mail failed to send.', [
+            'queue' => $this->queue,
+            'recipients' => array_map(
+                static fn (mixed $recipient) => is_array($recipient)
+                    ? ($recipient['address'] ?? null)
+                    : null,
+                $this->to
+            ),
+            'exception' => $exception::class,
+            'message' => $exception->getMessage(),
+        ]);
     }
 }
