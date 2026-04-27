@@ -12,7 +12,6 @@ mkdir -p \
 chown -R www-data:www-data bootstrap/cache storage || true
 
 php artisan storage:link >/dev/null 2>&1 || true
-php artisan optimize:clear >/dev/null 2>&1 || true
 php artisan config:cache >/dev/null 2>&1 || true
 php artisan view:cache >/dev/null 2>&1 || true
 
