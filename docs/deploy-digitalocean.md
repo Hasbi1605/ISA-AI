@@ -22,7 +22,7 @@ Jika traffic masih kecil, 2 GB / 1 vCPU masih bisa dipakai untuk demo, tetapi 4 
 2. Jika memakai Cloudflare, paling aman mulai dari mode **DNS only** dulu sampai TLS origin aktif.
 3. Gunakan hostname yang akan dipakai di `APP_DOMAIN`, misalnya:
    - `ista-ai.app`
-   - `demo.ista-ai.app`
+   - `www.ista-ai.app`
 
 ## 2. Install Docker di Droplet
 

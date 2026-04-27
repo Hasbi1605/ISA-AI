@@ -1,11 +1,11 @@
-# Checklist Deploy DigitalOcean untuk `demo.ista-ai.app`
+# Checklist Deploy DigitalOcean untuk `ista-ai.app`
 
 Checklist ini memakai file lokal `.env.droplet` yang sudah disiapkan di repo root.
 
 ## Sebelum Mulai
 
 - pastikan droplet Ubuntu 24.04 sudah dibuat
-- pastikan domain `demo.ista-ai.app` diarahkan ke IP droplet
+- pastikan domain `ista-ai.app` dan `www.ista-ai.app` diarahkan ke IP droplet
 - pastikan port `80` dan `443` dibuka di firewall droplet
 - pastikan Anda akan deploy dari branch `main`
 
@@ -99,13 +99,13 @@ Semua service yang diharapkan:
 ## 8. Smoke Test
 
 ```bash
-curl -I https://demo.ista-ai.app/up
+curl -I https://ista-ai.app/up
 ```
 
 Buka:
 
 ```text
-https://demo.ista-ai.app/chat
+https://ista-ai.app/chat
 ```
 
 Lalu uji:
@@ -155,7 +155,7 @@ docker compose -f docker-compose.production.yml restart laravel horizon
 
 ## Catatan
 
-- `.env.droplet` sudah memakai `APP_DOMAIN=demo.ista-ai.app`
+- `.env.droplet` sudah memakai `APP_DOMAIN=ista-ai.app`
 - API key AI diambil dari konfigurasi lokal saat ini
 - password database dan token internal server dibuat baru khusus file deploy ini
-- jika nanti ingin pindah dari `demo.ista-ai.app` ke root domain, edit `.env.droplet` pada `APP_URL` dan `APP_DOMAIN`, lalu arahkan DNS ke droplet
+- jika nanti ingin pakai `www` juga, tambahkan record DNS `www` ke IP droplet atau pakai `CNAME www -> @`
