@@ -8,7 +8,6 @@ from app.config_loader import (
     get_summarize_partial_prompt,
     get_summarize_final_prompt,
 )
-from app.services.rag_service import process_document, delete_document_vectors, get_document_chunks_for_summarization
 
 router = APIRouter(prefix="/api/documents", tags=["Documents"])
 
@@ -19,6 +18,26 @@ def verify_token(authorization: str = Header(None)):
     """Simple token-based security for internal service communication."""
     if not authorization or authorization != f"Bearer {AI_SERVICE_TOKEN}":
         raise HTTPException(status_code=401, detail="Unauthorized access to AI Service.")
+
+
+def process_document(*args, **kwargs):
+    from app.services.rag_service import process_document as _process_document
+
+    return _process_document(*args, **kwargs)
+
+
+def delete_document_vectors(*args, **kwargs):
+    from app.services.rag_service import delete_document_vectors as _delete_document_vectors
+
+    return _delete_document_vectors(*args, **kwargs)
+
+
+def get_document_chunks_for_summarization(*args, **kwargs):
+    from app.services.rag_service import (
+        get_document_chunks_for_summarization as _get_document_chunks_for_summarization,
+    )
+
+    return _get_document_chunks_for_summarization(*args, **kwargs)
 
 @router.post("/process", dependencies=[Depends(verify_token)])
 async def upload_document(

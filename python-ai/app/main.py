@@ -10,15 +10,7 @@ from typing import List, Dict, Optional, Tuple
 from fastapi import FastAPI, Depends, HTTPException, Header
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
-from app.llm_manager import get_llm_stream, get_llm_stream_with_sources
 from app.routers import documents
-from app.services.rag_service import (
-    search_relevant_chunks,
-    build_rag_prompt,
-    detect_explicit_web_request,
-    should_use_web_search,
-    get_context_for_query,
-)
 try:
     from app.config_loader import (
         get_rag_top_k as _get_rag_top_k,
@@ -113,6 +105,30 @@ def _document_context_error_message() -> str:
         "Jika Anda berkenan, saya bisa melanjutkan dengan web search atau pengetahuan umum."
     )
 
+
+def _get_chat_streamers():
+    from app.llm_manager import get_llm_stream, get_llm_stream_with_sources
+
+    return get_llm_stream, get_llm_stream_with_sources
+
+
+def _get_rag_helpers():
+    from app.services.rag_service import (
+        search_relevant_chunks,
+        build_rag_prompt,
+        detect_explicit_web_request,
+        should_use_web_search,
+        get_context_for_query,
+    )
+
+    return (
+        search_relevant_chunks,
+        build_rag_prompt,
+        detect_explicit_web_request,
+        should_use_web_search,
+        get_context_for_query,
+    )
+
 @app.get("/api/health", response_model=HealthResponse)
 async def health_check():
     return {
@@ -131,6 +147,15 @@ async def chat_stream(request: ChatRequest):
     
     user_id is required for RAG mode to verify document ownership.
     """
+    (
+        search_relevant_chunks,
+        build_rag_prompt,
+        detect_explicit_web_request,
+        should_use_web_search,
+        get_context_for_query,
+    ) = _get_rag_helpers()
+    get_llm_stream, get_llm_stream_with_sources = _get_chat_streamers()
+
     query = _get_latest_user_query(request.messages)
     documents_active = bool(request.document_filenames)
     allow_auto_realtime_web, source_policy = _resolve_policy_flags(request, documents_active)

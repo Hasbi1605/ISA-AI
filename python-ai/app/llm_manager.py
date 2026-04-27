@@ -5,7 +5,6 @@ import warnings
 import requests
 import litellm
 from typing import List, Dict, Generator
-from app.services.rag_service import get_rag_context_for_prompt, get_context_for_query
 
 logger = logging.getLogger(__name__)
 
@@ -57,6 +56,12 @@ warnings.filterwarnings(
 )
 # Suppress asyncio logger noise dari masalah yang sama
 logging.getLogger("asyncio").setLevel(logging.CRITICAL)
+
+
+def get_context_for_query(*args, **kwargs):
+    from app.services.rag_service import get_context_for_query as _get_context_for_query
+
+    return _get_context_for_query(*args, **kwargs)
 
 
 # ─── Error Classification Helpers ─────────────────────────────────────────────
