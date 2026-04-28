@@ -1,6 +1,6 @@
 <div x-data="chatComposer({ prompt: @js($prompt ?? '') })" 
      x-on:show-drop-error.window="sendError = $event.detail.message"
-     class="px-3 sm:px-6 pb-4 sm:pb-6 pt-2 bg-transparent w-full"
+     class="chat-composer-safe shrink-0 px-3 sm:px-6 pt-2 bg-transparent w-full"
 >
     @php
         $chatDocuments = $availableDocuments->whereIn('id', $conversationDocuments)->values();

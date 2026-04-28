@@ -13,6 +13,39 @@
     border-color: inherit !important;
 }
 
+:root {
+    --app-viewport-height: 100vh;
+}
+
+@supports (height: 100dvh) {
+    :root {
+        --app-viewport-height: 100dvh;
+    }
+}
+
+.app-viewport {
+    height: var(--app-viewport-height);
+    min-height: var(--app-viewport-height);
+    overflow: hidden;
+    overscroll-behavior: none;
+}
+
+.app-main-viewport,
+.chat-viewport {
+    height: 100%;
+    min-height: 0;
+}
+
+.chat-composer-safe {
+    padding-bottom: max(1rem, calc(env(safe-area-inset-bottom, 0px) + 0.75rem));
+}
+
+@media (max-width: 640px) {
+    .chat-composer-safe {
+        padding-bottom: max(1.25rem, calc(env(safe-area-inset-bottom, 0px) + 1rem));
+    }
+}
+
 @layer components {
     .ista-shell {
         @apply min-h-screen w-full;

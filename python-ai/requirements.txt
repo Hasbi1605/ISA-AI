@@ -66,8 +66,10 @@ jsonschema-specifications==2025.9.1
 kiwisolver==1.5.0
 kubernetes==35.0.0
 langchain==1.2.15
+langchain-community==0.4.1
 langchain-core==1.2.26
 langchain-google-genai==4.2.1
+langchain-text-splitters==1.1.1
 langdetect==1.0.9
 langgraph==1.1.6
 langgraph-checkpoint==4.0.1
