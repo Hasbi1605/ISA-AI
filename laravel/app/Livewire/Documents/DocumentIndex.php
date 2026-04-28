@@ -30,7 +30,6 @@ class DocumentIndex extends Component
     public $summarizingDocumentId = null;
     public $summaryResult = null;
     public $showSummaryModal = false;
-    public $hasDocumentsInProgress = false;
 
     protected $rules = [
         'file' => [
@@ -133,10 +132,6 @@ class DocumentIndex extends Component
         $documents = Document::where('user_id', Auth::id())
             ->latest()
             ->get();
-
-        $this->hasDocumentsInProgress = $documents->contains(function (Document $document) {
-            return in_array($document->status, ['pending', 'processing'], true);
-        });
 
         return view('livewire.documents.document-index', [
             'documents' => $documents,

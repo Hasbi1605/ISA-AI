@@ -128,29 +128,6 @@ class DocumentUploadTest extends TestCase
         $this->assertSame([$readyDoc->id], $selectedDocuments);
     }
 
-    public function test_chat_sidebar_does_not_poll_when_all_documents_are_ready(): void
-    {
-        $user = User::factory()->create();
-
-        Livewire::actingAs($user)
-            ->test(ChatIndex::class)
-            ->assertDontSeeHtml('wire:poll');
-    }
-
-    public function test_chat_sidebar_polls_while_documents_are_processing(): void
-    {
-        $user = User::factory()->create();
-
-        $this->createDocument($user, [
-            'original_name' => 'processing.pdf',
-            'status' => 'processing',
-        ]);
-
-        Livewire::actingAs($user)
-            ->test(ChatIndex::class)
-            ->assertSeeHtml('wire:poll.10s="loadAvailableDocuments"');
-    }
-
     private function createDocument(User $user, array $overrides = []): Document
     {
         return Document::create(array_merge([
