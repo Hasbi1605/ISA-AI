@@ -71,12 +71,13 @@ class DocumentDeletionTest extends TestCase
             '*' => Http::response(['message' => 'success'], 200),
         ]);
 
-        Livewire::actingAs($user)
+        $component = Livewire::actingAs($user)
             ->test(ChatIndex::class)
             ->call('deleteDocument', $document->id);
 
         $this->assertSoftDeleted($document);
         Storage::disk('local')->assertMissing($filePath);
+        $component->assertSee('Dokumen berhasil dihapus.');
         Http::assertSent(function ($request) use ($document) {
             return $request->method() === 'DELETE' && str_contains($request->url(), 'delete_chat.pdf');
         });
@@ -113,7 +114,7 @@ class DocumentDeletionTest extends TestCase
             '*' => Http::response(['message' => 'success'], 200),
         ]);
 
-        Livewire::actingAs($user)
+        $component = Livewire::actingAs($user)
             ->test(ChatIndex::class)
             ->set('selectedDocuments', [$doc1->id, $doc2->id])
             ->call('deleteSelectedDocuments');
@@ -122,7 +123,7 @@ class DocumentDeletionTest extends TestCase
         $this->assertSoftDeleted($doc2);
         Storage::disk('local')->assertMissing('documents/' . $user->id . '/doc1.pdf');
         Storage::disk('local')->assertMissing('documents/' . $user->id . '/doc2.pdf');
-        
+        $component->assertSee('Dokumen terpilih berhasil dihapus.');
         Http::assertSentCount(2);
     }
 }

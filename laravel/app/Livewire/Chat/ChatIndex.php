@@ -206,20 +206,26 @@ class ChatIndex extends Component
             ->first();
 
         if (!$document) {
+            session()->flash('error', 'Dokumen tidak ditemukan atau sudah dihapus.');
             return;
         }
 
-        $documentLifecycleService->deleteDocument($document);
+        try {
+            $documentLifecycleService->deleteDocument($document);
 
-        $this->selectedDocuments = array_values(array_filter($this->selectedDocuments, function ($id) use ($documentId) {
-            return (int) $id !== (int) $documentId;
-        }));
+            $this->selectedDocuments = array_values(array_filter($this->selectedDocuments, function ($id) use ($documentId) {
+                return (int) $id !== (int) $documentId;
+            }));
 
-        $this->conversationDocuments = array_values(array_filter($this->conversationDocuments, function ($id) use ($documentId) {
-            return (int) $id !== (int) $documentId;
-        }));
+            $this->conversationDocuments = array_values(array_filter($this->conversationDocuments, function ($id) use ($documentId) {
+                return (int) $id !== (int) $documentId;
+            }));
 
-        $this->loadAvailableDocuments();
+            $this->loadAvailableDocuments();
+            session()->flash('message', 'Dokumen berhasil dihapus.');
+        } catch (\Throwable $e) {
+            session()->flash('error', 'Gagal menghapus dokumen: ' . $e->getMessage());
+        }
     }
 
     public function deleteSelectedDocuments(DocumentLifecycleService $documentLifecycleService)
@@ -227,6 +233,7 @@ class ChatIndex extends Component
         $documentIds = array_map('intval', $this->selectedDocuments);
 
         if (empty($documentIds)) {
+            session()->flash('error', 'Pilih dokumen terlebih dahulu.');
             return;
         }
 
@@ -234,14 +241,19 @@ class ChatIndex extends Component
             ->whereIn('id', $documentIds)
             ->get();
 
-        $documentLifecycleService->deleteDocuments($documents);
+        try {
+            $documentLifecycleService->deleteDocuments($documents);
 
-        $this->selectedDocuments = [];
-        $this->conversationDocuments = array_values(array_filter($this->conversationDocuments, function ($id) use ($documentIds) {
-            return !in_array((int) $id, $documentIds, true);
-        }));
+            $this->selectedDocuments = [];
+            $this->conversationDocuments = array_values(array_filter($this->conversationDocuments, function ($id) use ($documentIds) {
+                return !in_array((int) $id, $documentIds, true);
+            }));
 
-        $this->loadAvailableDocuments();
+            $this->loadAvailableDocuments();
+            session()->flash('message', 'Dokumen terpilih berhasil dihapus.');
+        } catch (\Throwable $e) {
+            session()->flash('error', 'Gagal menghapus dokumen terpilih: ' . $e->getMessage());
+        }
     }
 
     public function removeConversationDocument($documentId)

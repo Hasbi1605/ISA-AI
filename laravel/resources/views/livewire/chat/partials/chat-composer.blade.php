@@ -73,7 +73,7 @@
                 <textarea
                     x-ref="chatInput"
                     x-model="promptDraft"
-                    x-on:keydown.enter.prevent="if($event.shiftKey) return; submitPrompt($event)"
+                    x-on:keydown.enter="handleEnterKey($event)"
                     x-on:input="autoResizeTextarea($el)"
                     placeholder="Tulis pertanyaan atau arahan kerja Anda..."
                     class="chat-input w-full max-h-[200px] min-h-[44px] bg-transparent border-none focus:ring-0 focus:outline-none focus:border-transparent focus-visible:ring-0 focus-visible:outline-none resize-none text-[14.5px] text-stone-800 dark:text-[#F8FAFC] placeholder-[#94A3B8] dark:placeholder-[#64748B] px-2 py-[10px] hover:bg-transparent focus:bg-transparent"

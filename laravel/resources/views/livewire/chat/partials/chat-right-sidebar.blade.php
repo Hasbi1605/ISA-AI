@@ -18,6 +18,25 @@
         </button>
     </div>
 
+    <div class="px-4 pt-4 space-y-2">
+        <div wire:loading.flex wire:target="deleteDocument,deleteSelectedDocuments" class="items-center gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-[11.5px] text-amber-800 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-200">
+            <span class="h-3.5 w-3.5 rounded-full border-2 border-current border-t-transparent animate-spin"></span>
+            <span>Menghapus dokumen...</span>
+        </div>
+
+        @if (session()->has('message'))
+            <div x-data="{ visible: true }" x-init="setTimeout(() => visible = false, 3500)" x-show="visible" x-transition class="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-[11.5px] text-emerald-800 dark:border-emerald-500/30 dark:bg-emerald-500/10 dark:text-emerald-200">
+                {{ session('message') }}
+            </div>
+        @endif
+
+        @if (session()->has('error'))
+            <div x-data="{ visible: true }" x-init="setTimeout(() => visible = false, 4000)" x-show="visible" x-transition class="rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-[11.5px] text-rose-800 dark:border-rose-500/30 dark:bg-rose-500/10 dark:text-rose-200">
+                {{ session('error') }}
+            </div>
+        @endif
+    </div>
+
     <div class="flex-1 overflow-y-auto px-4 pt-4" @if($hasDocumentsInProgress) wire:poll.3s="loadAvailableDocuments" @else wire:poll.20s="loadAvailableDocuments" @endif>
           <div class="mb-4">
               @php
@@ -42,10 +61,11 @@
                       @endif
                   </button>
                   @if($selectedInAvailableCount > 0)
-                      <button type="button" wire:click="deleteSelectedDocuments" wire:confirm="Delete selected files from your documents?" class="inline-flex shrink-0 items-center gap-1 text-[#FF2056] text-[10.5px] font-semibold px-1.5 py-1 rounded-md bg-[#FF2056]/10 hover:bg-[#FF2056]/20 transition-colors whitespace-nowrap">
-                          <svg xmlns="http://www.w3.org/2000/svg" class="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <button type="button" wire:click="deleteSelectedDocuments" wire:confirm="Delete selected files from your documents?" wire:loading.attr="disabled" wire:target="deleteSelectedDocuments" class="inline-flex shrink-0 items-center gap-1 text-[#FF2056] text-[10.5px] font-semibold px-1.5 py-1 rounded-md bg-[#FF2056]/10 hover:bg-[#FF2056]/20 transition-colors whitespace-nowrap disabled:opacity-60">
+                          <svg wire:loading.remove wire:target="deleteSelectedDocuments" xmlns="http://www.w3.org/2000/svg" class="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
                           </svg>
+                          <span wire:loading.inline-flex wire:target="deleteSelectedDocuments" class="h-3 w-3 rounded-full border border-current border-t-transparent animate-spin"></span>
                           Delete
                       </button>
                       <button type="button" @click="$wire.addSelectedDocumentsToChat().then(() => { if (isMobile) showRightSidebar = false; })" class="ml-2 inline-flex shrink-0 items-center gap-1 text-white text-[10.5px] font-semibold px-1.5 py-1 rounded-md bg-ista-primary hover:bg-stone-800 transition-all whitespace-nowrap">
@@ -102,10 +122,11 @@
                                   <p class="text-[11.4px] text-[#64748B] dark:text-[#94A3B8]">{{ $size }} @if($isLoading) • Processing... @endif</p>
                               </div>
 
-                              <button type="button" wire:click.prevent="deleteDocument({{ $doc->id }})" wire:confirm="Delete this file from your documents?" class="h-7 w-7 rounded-md text-[#94A3B8] hover:text-red-500 dark:hover:text-red-400 hover:bg-red-50 dark:hover:bg-red-500/10 transition-colors flex items-center justify-center" title="Remove">
-                                  <svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                              <button type="button" wire:click.prevent="deleteDocument({{ $doc->id }})" wire:confirm="Delete this file from your documents?" wire:loading.attr="disabled" wire:target="deleteDocument({{ $doc->id }})" class="h-7 w-7 rounded-md text-[#94A3B8] hover:text-red-500 dark:hover:text-red-400 hover:bg-red-50 dark:hover:bg-red-500/10 transition-colors flex items-center justify-center disabled:opacity-60" title="Remove">
+                                  <svg wire:loading.remove wire:target="deleteDocument({{ $doc->id }})" xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                                       <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
                                   </svg>
+                                  <span wire:loading.inline-flex wire:target="deleteDocument({{ $doc->id }})" class="h-3.5 w-3.5 rounded-full border border-current border-t-transparent animate-spin"></span>
                               </button>
                           </label>
                        @endforeach

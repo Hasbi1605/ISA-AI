@@ -239,6 +239,23 @@ const registerChatPageData = (Alpine) => {
                 });
         },
 
+        handleEnterKey(event) {
+            if (event.isComposing) {
+                return;
+            }
+
+            if (event.shiftKey) {
+                window.requestAnimationFrame(() => {
+                    this.autoResizeTextarea(this.$refs.chatInput);
+                });
+
+                return;
+            }
+
+            event.preventDefault();
+            this.submitPrompt(event);
+        },
+
         openAttachmentPicker() {
             this.$dispatch('open-sidebar-right');
 

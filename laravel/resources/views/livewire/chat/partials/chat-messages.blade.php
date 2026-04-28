@@ -5,7 +5,7 @@
      x-on:message-streamed.window="scrollToBottom()"
      x-on:message-send.window="optimisticUserMessage = $event.detail.text; scrollToBottom(true)">
     @if(empty($messages))
-        <div class="h-full flex flex-col items-center justify-center text-center">
+        <div x-show="!optimisticUserMessage" x-transition.opacity class="h-full flex flex-col items-center justify-center text-center">
             <div class="h-16 w-16 mb-6">
                 <img src="{{ asset('images/ista/logo.png') }}" alt="ISTA AI" class="h-full w-full object-contain" />
             </div>
