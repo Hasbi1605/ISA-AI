@@ -217,7 +217,7 @@ return [
         'production' => [
             'supervisor-1' => [
                 'queue' => ['mail', 'default'],
-                'maxProcesses' => 10,
+                'maxProcesses' => 4,
                 'balanceMaxShift' => 1,
                 'balanceCooldown' => 3,
             ],

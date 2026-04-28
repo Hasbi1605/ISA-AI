@@ -21,11 +21,11 @@ services:
     env_file:
       - ./.env.droplet
     command:
-      - --innodb-buffer-pool-size=256M
-      - --max-connections=80
-      - --key-buffer-size=32M
-      - --tmp-table-size=64M
-      - --max-heap-table-size=64M
+      - --innodb-buffer-pool-size=128M
+      - --max-connections=50
+      - --key-buffer-size=16M
+      - --tmp-table-size=32M
+      - --max-heap-table-size=32M
     volumes:
       - mysql_data:/var/lib/mysql
     healthcheck:

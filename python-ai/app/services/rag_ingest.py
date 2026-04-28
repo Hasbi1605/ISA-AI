@@ -4,7 +4,6 @@ import logging
 import time
 from typing import List, Tuple
 
-from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_chroma import Chroma
 
 from app.services.rag_config import (
@@ -20,6 +19,7 @@ from app.services.rag_config import (
     EMBEDDING_MODELS,
 )
 from app.services.rag_embeddings import count_tokens, get_embeddings_with_fallback
+from app.services.lightweight_text_splitter import LightweightRecursiveTextSplitter
 
 logger = logging.getLogger(__name__)
 
@@ -91,7 +91,7 @@ def process_document(file_path: str, filename: str, user_id: str = "unknown"):
                 "Step 2: PDR Chunking (parent=%d token, child=%d token)...",
                 pdr_parent_size, pdr_child_size,
             )
-            parent_splitter = RecursiveCharacterTextSplitter(
+            parent_splitter = LightweightRecursiveTextSplitter(
                 chunk_size=pdr_parent_size,
                 chunk_overlap=pdr_parent_overlap,
                 length_function=count_tokens,
@@ -100,7 +100,7 @@ def process_document(file_path: str, filename: str, user_id: str = "unknown"):
             )
             parent_chunks = parent_splitter.split_documents(docs)
 
-            child_splitter = RecursiveCharacterTextSplitter(
+            child_splitter = LightweightRecursiveTextSplitter(
                 chunk_size=pdr_child_size,
                 chunk_overlap=pdr_child_overlap,
                 length_function=count_tokens,
@@ -143,7 +143,7 @@ def process_document(file_path: str, filename: str, user_id: str = "unknown"):
                 "Step 2: Token-Aware Recursive Chunking (chunk_size=%d, overlap=%d)...",
                 TOKEN_CHUNK_SIZE, TOKEN_CHUNK_OVERLAP,
             )
-            text_splitter = RecursiveCharacterTextSplitter(
+            text_splitter = LightweightRecursiveTextSplitter(
                 chunk_size=TOKEN_CHUNK_SIZE,
                 chunk_overlap=TOKEN_CHUNK_OVERLAP,
                 length_function=count_tokens,
