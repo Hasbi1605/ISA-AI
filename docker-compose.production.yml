@@ -138,6 +138,24 @@ services:
       redis:
         condition: service_healthy
 
+  scheduler:
+    build:
+      context: ./laravel
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    env_file:
+      - ./.env.droplet
+    environment:
+      AI_DOCUMENT_SERVICE_URL: http://python-ai-docs:8002
+    command: ["php", "artisan", "schedule:work"]
+    volumes:
+      - laravel_storage:/var/www/html/storage
+    depends_on:
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
   artisan:
     build:
       context: ./laravel

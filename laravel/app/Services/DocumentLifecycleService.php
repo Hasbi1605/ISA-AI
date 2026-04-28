@@ -13,6 +13,7 @@ use InvalidArgumentException;
 class DocumentLifecycleService
 {
     public const MAX_DOCUMENTS_PER_USER = 10;
+    public const SOFT_DELETE_RETENTION_DAYS = 7;
     
     public const ALLOWED_ATTACHMENT_MIME_TYPES = [
         'application/pdf',
@@ -105,27 +106,7 @@ class DocumentLifecycleService
      */
     public function deleteDocument(Document $document): bool
     {
-        // 1. Notify Python Microservice to delete vectors
-        $pythonUrl = rtrim((string) config('services.ai_document_service.url', config('services.ai_service.url', 'http://127.0.0.1:8001')), '/')
-            . '/api/documents/' . urlencode($document->original_name);
-        $token = config('services.ai_document_service.token', config('services.ai_service.token'));
-
-        try {
-            $response = Http::withHeaders([
-                'Authorization' => "Bearer {$token}",
-            ])->delete($pythonUrl);
-
-            if (!$response->successful() && $response->status() !== 404) {
-                logger()->warning("Vector deletion failed for {$document->original_name}, proceeding anyway: " . $response->body());
-            }
-        } catch (\Exception $e) {
-            logger()->warning("Vector deletion HTTP request failed for {$document->original_name}, proceeding anyway: " . $e->getMessage());
-        }
-
-        // 2. Delete file from storage
-        if ($document->file_path && Storage::exists($document->file_path)) {
-            Storage::delete($document->file_path);
-        }
+        $this->cleanupDocumentArtifacts($document);
 
         // 3. Delete database record (Soft Delete)
         return $document->delete();
@@ -144,6 +125,26 @@ class DocumentLifecycleService
         }
     }
 
+    public function purgeSoftDeletedDocuments(int $retentionDays = self::SOFT_DELETE_RETENTION_DAYS): int
+    {
+        $purgedDocuments = 0;
+        $cutoff = now()->subDays($retentionDays);
+
+        foreach (
+            Document::onlyTrashed()
+                ->where('deleted_at', '<=', $cutoff)
+                ->lazyById(100) as $document
+        ) {
+            $this->cleanupDocumentArtifacts($document);
+
+            if ($document->forceDelete()) {
+                $purgedDocuments++;
+            }
+        }
+
+        return $purgedDocuments;
+    }
+
     /**
      * Summarize a document, with readiness guard
      *
@@ -160,5 +161,37 @@ class DocumentLifecycleService
         }
 
         return $aiService->summarizeDocument($document->original_name, (string) $document->user_id);
+    }
+
+    private function cleanupDocumentArtifacts(Document $document): void
+    {
+        $this->deleteDocumentVectors($document);
+        $this->deleteDocumentFile($document);
+    }
+
+    private function deleteDocumentVectors(Document $document): void
+    {
+        $pythonUrl = rtrim((string) config('services.ai_document_service.url', config('services.ai_service.url', 'http://127.0.0.1:8001')), '/')
+            . '/api/documents/' . urlencode($document->original_name);
+        $token = config('services.ai_document_service.token', config('services.ai_service.token'));
+
+        try {
+            $response = Http::withHeaders([
+                'Authorization' => "Bearer {$token}",
+            ])->delete($pythonUrl);
+
+            if (!$response->successful() && $response->status() !== 404) {
+                logger()->warning("Vector deletion failed for {$document->original_name}, proceeding anyway: " . $response->body());
+            }
+        } catch (\Exception $e) {
+            logger()->warning("Vector deletion HTTP request failed for {$document->original_name}, proceeding anyway: " . $e->getMessage());
+        }
+    }
+
+    private function deleteDocumentFile(Document $document): void
+    {
+        if ($document->file_path && Storage::exists($document->file_path)) {
+            Storage::delete($document->file_path);
+        }
     }
 }
