@@ -112,9 +112,10 @@ def _get_rag_policy_helpers():
 
 
 def _get_rag_document_helpers():
-    from app.services.rag_retrieval import build_rag_prompt, search_relevant_chunks
+    from app.retrieval_runner import run_retrieval_search
+    from app.services.rag_retrieval import build_rag_prompt
 
-    return search_relevant_chunks, build_rag_prompt
+    return run_retrieval_search, build_rag_prompt
 
 
 @app.get("/api/health", response_model=HealthResponse)
