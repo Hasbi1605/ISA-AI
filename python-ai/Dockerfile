@@ -55,12 +55,9 @@ COPY . .
 EXPOSE 8001
 
 # =====================================================================
-# Jalankan dengan 2 uvicorn workers untuk concurrency ringan:
-# - --workers 2: 2 proses paralel = lebih responsif saat ada request bersamaan
-# - --timeout-keep-alive 75: koneksi streaming SSE tidak di-close terlalu cepat
+# Worker dibuat configurable via env agar production bisa lebih hemat RAM
+# tanpa mengubah image yang sama untuk environment lain.
 # =====================================================================
-CMD ["uvicorn", "app.main:app", \
-     "--host", "0.0.0.0", \
-     "--port", "8001", \
-     "--workers", "2", \
-     "--timeout-keep-alive", "75"]
+ENV UVICORN_WORKERS=1
+
+CMD ["sh", "-c", "uvicorn app.main:app --host 0.0.0.0 --port 8001 --workers ${UVICORN_WORKERS:-1} --timeout-keep-alive 75"]

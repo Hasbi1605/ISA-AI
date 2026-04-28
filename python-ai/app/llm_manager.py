@@ -59,7 +59,7 @@ logging.getLogger("asyncio").setLevel(logging.CRITICAL)
 
 
 def get_context_for_query(*args, **kwargs):
-    from app.services.rag_service import get_context_for_query as _get_context_for_query
+    from app.services.rag_policy import get_context_for_query as _get_context_for_query
 
     return _get_context_for_query(*args, **kwargs)
 

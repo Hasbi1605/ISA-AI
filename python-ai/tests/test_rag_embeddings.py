@@ -1,0 +1,81 @@
+import os
+import sys
+
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
+
+from app.services.rag_config import MAX_EMBEDDING_DIM
+from app.services.rag_embeddings import GithubOpenAIEmbeddings
+
+
+class _FakeResponseItem:
+    def __init__(self, embedding):
+        self.embedding = embedding
+
+
+class _FakeResponse:
+    def __init__(self, embeddings):
+        self.data = [_FakeResponseItem(embedding) for embedding in embeddings]
+
+
+class _FakeEmbeddingsAPI:
+    def __init__(self, embeddings):
+        self._embeddings = embeddings
+        self.calls = []
+
+    def create(self, **kwargs):
+        self.calls.append(kwargs)
+        return _FakeResponse(self._embeddings)
+
+
+class _FakeClient:
+    def __init__(self, embeddings):
+        self.embeddings = _FakeEmbeddingsAPI(embeddings)
+
+
+def test_embed_documents_pads_vectors_and_sanitizes_input():
+    client = _FakeClient([[0.1, 0.2]])
+    embeddings = GithubOpenAIEmbeddings(
+        model="text-embedding-3-large",
+        openai_api_key="test",
+        openai_api_base="https://models.inference.ai.azure.com",
+        dimensions=MAX_EMBEDDING_DIM,
+        client=client,
+    )
+
+    result = embeddings.embed_documents(["baris satu\nbaris dua"])
+
+    assert len(result) == 1
+    assert len(result[0]) == MAX_EMBEDDING_DIM
+    assert result[0][:2] == [0.1, 0.2]
+    assert client.embeddings.calls[0]["input"] == ["baris satu baris dua"]
+    assert client.embeddings.calls[0]["dimensions"] == MAX_EMBEDDING_DIM
+
+
+def test_embed_query_returns_single_vector():
+    client = _FakeClient([[0.3, 0.4, 0.5]])
+    embeddings = GithubOpenAIEmbeddings(
+        model="text-embedding-3-large",
+        openai_api_key="test",
+        openai_api_base="https://models.inference.ai.azure.com",
+        dimensions=MAX_EMBEDDING_DIM,
+        client=client,
+    )
+
+    result = embeddings.embed_query("halo")
+
+    assert len(result) == MAX_EMBEDDING_DIM
+    assert result[:3] == [0.3, 0.4, 0.5]
+
+
+def test_embed_documents_handles_empty_input():
+    client = _FakeClient([[0.1]])
+    embeddings = GithubOpenAIEmbeddings(
+        model="text-embedding-3-large",
+        openai_api_key="test",
+        openai_api_base="https://models.inference.ai.azure.com",
+        dimensions=MAX_EMBEDDING_DIM,
+        client=client,
+    )
+
+    assert embeddings.embed_documents([]) == []
+    assert client.embeddings.calls == []

@@ -22,19 +22,19 @@ def verify_token(authorization: str = Header(None)):
 
 
 def process_document(*args, **kwargs):
-    from app.services.rag_service import process_document as _process_document
+    from app.services.rag_ingest import process_document as _process_document
 
     return _process_document(*args, **kwargs)
 
 
 def delete_document_vectors(*args, **kwargs):
-    from app.services.rag_service import delete_document_vectors as _delete_document_vectors
+    from app.services.rag_ingest import delete_document_vectors as _delete_document_vectors
 
     return _delete_document_vectors(*args, **kwargs)
 
 
 def get_document_chunks_for_summarization(*args, **kwargs):
-    from app.services.rag_service import (
+    from app.services.rag_summarization import (
         get_document_chunks_for_summarization as _get_document_chunks_for_summarization,
     )
 

@@ -1,9 +1,9 @@
 import logging
-from typing import Tuple, Optional
+from typing import List, Tuple, Optional
 
 import tiktoken
+from openai import OpenAI
 from langchain_core.embeddings import Embeddings
-from langchain_openai import OpenAIEmbeddings
 
 from app.env_utils import get_env
 from app.services.rag_config import (
@@ -19,6 +19,51 @@ try:
 except Exception as e:
     logger.error(f"❌ Failed to initialize tiktoken: {e}")
     TIKTOKEN_ENCODER = None
+
+
+class GithubOpenAIEmbeddings(Embeddings):
+    """Lightweight OpenAI-compatible embeddings wrapper for Chroma/LangChain."""
+
+    def __init__(
+        self,
+        model: str,
+        openai_api_key: str,
+        openai_api_base: str,
+        dimensions: int,
+        client: Optional[OpenAI] = None,
+    ) -> None:
+        self.model = model
+        self.dimensions = dimensions
+        self.client = client or OpenAI(
+            api_key=openai_api_key,
+            base_url=openai_api_base,
+        )
+
+    @staticmethod
+    def _sanitize_texts(texts: List[str]) -> List[str]:
+        return [(text or "").replace("\n", " ") for text in texts]
+
+    @staticmethod
+    def _normalize_embedding(embedding: List[float]) -> List[float]:
+        vector = list(embedding)
+        if len(vector) < MAX_EMBEDDING_DIM:
+            vector.extend([0.0] * (MAX_EMBEDDING_DIM - len(vector)))
+        return vector[:MAX_EMBEDDING_DIM]
+
+    def embed_documents(self, texts: List[str]) -> List[List[float]]:
+        if not texts:
+            return []
+
+        response = self.client.embeddings.create(
+            model=self.model,
+            input=self._sanitize_texts(texts),
+            dimensions=self.dimensions,
+        )
+        return [self._normalize_embedding(item.embedding) for item in response.data]
+
+    def embed_query(self, text: str) -> List[float]:
+        vectors = self.embed_documents([text])
+        return vectors[0] if vectors else []
 
 
 def count_tokens(text: str) -> int:
@@ -43,7 +88,7 @@ def get_embeddings_with_fallback(model_index: int = 0) -> Tuple[Optional[Embeddi
 
         try:
             if model_config["provider"] == "github":
-                embeddings = OpenAIEmbeddings(
+                embeddings = GithubOpenAIEmbeddings(
                     model=model_config["model"],
                     openai_api_base="https://models.inference.ai.azure.com",
                     openai_api_key=api_key,
