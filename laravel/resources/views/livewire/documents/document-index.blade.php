@@ -1,4 +1,4 @@
-<div class="py-12" wire:poll.5s>
+<div class="py-12" @if($hasDocumentsInProgress) wire:poll.15s @endif>
     <div class="max-w-7xl mx-auto sm:px-6 lg:px-8 space-y-6">
         
         <!-- Header & Stats -->

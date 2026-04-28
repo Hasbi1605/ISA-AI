@@ -39,6 +39,34 @@ class DocumentIndexTest extends TestCase
         Queue::assertPushed(ProcessDocument::class, 1);
     }
 
+    public function test_document_index_does_not_poll_when_all_documents_are_ready(): void
+    {
+        $user = User::factory()->create();
+
+        $this->createDocument($user, [
+            'original_name' => 'ready.pdf',
+            'status' => 'ready',
+        ]);
+
+        Livewire::actingAs($user)
+            ->test(DocumentIndex::class)
+            ->assertDontSeeHtml('wire:poll');
+    }
+
+    public function test_document_index_polls_while_documents_are_processing(): void
+    {
+        $user = User::factory()->create();
+
+        $this->createDocument($user, [
+            'original_name' => 'processing.pdf',
+            'status' => 'processing',
+        ]);
+
+        Livewire::actingAs($user)
+            ->test(DocumentIndex::class)
+            ->assertSeeHtml('wire:poll.15s');
+    }
+
     public function test_summarize_rejects_non_ready_document(): void
     {
         $user = User::factory()->create();
@@ -57,5 +85,18 @@ class DocumentIndexTest extends TestCase
             ->test(DocumentIndex::class)
             ->call('summarize', $document->id)
             ->assertSet('showSummaryModal', false);
+    }
+
+    private function createDocument(User $user, array $overrides = []): Document
+    {
+        return Document::create(array_merge([
+            'user_id' => $user->id,
+            'filename' => uniqid('doc_', true) . '.pdf',
+            'original_name' => uniqid('file_', true) . '.pdf',
+            'file_path' => 'documents/' . $user->id . '/' . uniqid('path_', true) . '.pdf',
+            'mime_type' => 'application/pdf',
+            'file_size_bytes' => 120 * 1024,
+            'status' => 'ready',
+        ], $overrides));
     }
 }
