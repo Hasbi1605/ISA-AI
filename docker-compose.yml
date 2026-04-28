@@ -77,6 +77,8 @@ services:
       - BATCH_DELAY_SECONDS=${BATCH_DELAY_SECONDS:-0.8}
       - EMBEDDING_TIMEOUT=${EMBEDDING_TIMEOUT:-30}
       - UVICORN_WORKERS=${UVICORN_WORKERS:-2}
+      - UVICORN_APP_MODULE=${UVICORN_APP_MODULE:-app.main:app}
+      - UVICORN_PORT=${UVICORN_PORT:-8001}
       # LangSearch
       - LANGSEARCH_API_KEY=${LANGSEARCH_API_KEY}
       - LANGSEARCH_API_KEY_BACKUP=${LANGSEARCH_API_KEY_BACKUP}
@@ -104,6 +106,52 @@ services:
       retries: 5
       start_period: 30s
 
+  python-ai-docs:
+    build:
+      context: ./python-ai
+      dockerfile: Dockerfile
+    container_name: ista_python_ai_docs
+    restart: always
+    ports:
+      - "8002:8002"
+    environment:
+      - GEMINI_API_KEY=${GEMINI_API_KEY}
+      - GITHUB_TOKEN=${GITHUB_TOKEN}
+      - GITHUB_TOKEN_2=${GITHUB_TOKEN_2}
+      - GROQ_API_KEY=${GROQ_API_KEY}
+      - AI_SERVICE_TOKEN=${AI_SERVICE_TOKEN}
+      - TOKEN_CHUNK_SIZE=${TOKEN_CHUNK_SIZE:-1500}
+      - TOKEN_CHUNK_OVERLAP=${TOKEN_CHUNK_OVERLAP:-150}
+      - AGGRESSIVE_BATCH_SIZE=${AGGRESSIVE_BATCH_SIZE:-100}
+      - BATCH_DELAY_SECONDS=${BATCH_DELAY_SECONDS:-0.8}
+      - EMBEDDING_TIMEOUT=${EMBEDDING_TIMEOUT:-30}
+      - UVICORN_WORKERS=${UVICORN_DOCS_WORKERS:-1}
+      - UVICORN_APP_MODULE=${UVICORN_DOCS_APP_MODULE:-app.documents_api:app}
+      - UVICORN_PORT=${UVICORN_DOCS_PORT:-8002}
+      - LANGSEARCH_API_KEY=${LANGSEARCH_API_KEY}
+      - LANGSEARCH_API_KEY_BACKUP=${LANGSEARCH_API_KEY_BACKUP}
+    volumes:
+      - ./python-ai:/app
+      - chroma_data:/app/chroma_data
+    depends_on:
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    deploy:
+      resources:
+        limits:
+          memory: 4096M
+          cpus: '2.0'
+        reservations:
+          memory: 256M
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8002/api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+
   # Laravel Web App
   laravel:
     build:
@@ -123,6 +171,7 @@ services:
       - REDIS_HOST=redis
       - REDIS_PORT=6379
       - AI_SERVICE_URL=${AI_SERVICE_URL:-http://python-ai:8001}
+      - AI_DOCUMENT_SERVICE_URL=${AI_DOCUMENT_SERVICE_URL:-http://python-ai-docs:8002}
       - AI_SERVICE_TOKEN=${AI_SERVICE_TOKEN}
     volumes:
       - ./laravel:/var/www/html
@@ -133,6 +182,8 @@ services:
       redis:
         condition: service_healthy
       python-ai:
+        condition: service_healthy
+      python-ai-docs:
         condition: service_healthy
     deploy:
       resources:

@@ -10,6 +10,7 @@ class AIService
 {
     protected $client;
     protected $baseUrl;
+    protected $documentBaseUrl;
     protected $token;
     protected $maxRetries;
     protected $retryDelayMs;
@@ -18,6 +19,10 @@ class AIService
     {
         $this->baseUrl = rtrim(
             $this->normalizeStringConfig(config('services.ai_service.url'), 'http://127.0.0.1:8001'),
+            '/'
+        );
+        $this->documentBaseUrl = rtrim(
+            $this->normalizeStringConfig(config('services.ai_document_service.url'), $this->baseUrl),
             '/'
         );
         $this->token = $this->normalizeStringConfig(config('services.ai_service.token'));
@@ -139,7 +144,7 @@ class AIService
                 $payload['user_id'] = $user_id;
             }
 
-            $response = $this->client->post($this->baseUrl . '/api/documents/summarize', [
+            $response = $this->client->post($this->documentBaseUrl . '/api/documents/summarize', [
                 'headers' => [
                     'Authorization' => 'Bearer ' . $this->token,
                     'Accept' => 'application/json',

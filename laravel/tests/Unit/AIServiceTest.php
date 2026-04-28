@@ -10,6 +10,7 @@ class AIServiceTest extends TestCase
     public function test_ai_service_normalizes_quoted_runtime_config_values(): void
     {
         config()->set('services.ai_service.url', ' "http://python-ai:8001/" ');
+        config()->set('services.ai_document_service.url', " 'http://python-ai-docs:8002/' ");
         config()->set('services.ai_service.token', " 'internal-token' ");
         config()->set('services.ai_service.retries', ' "3" ');
         config()->set('services.ai_service.retry_delay_ms', " '450' ");
@@ -22,6 +23,8 @@ class AIServiceTest extends TestCase
 
         $baseUrl = $reflection->getProperty('baseUrl');
         $baseUrl->setAccessible(true);
+        $documentBaseUrl = $reflection->getProperty('documentBaseUrl');
+        $documentBaseUrl->setAccessible(true);
         $token = $reflection->getProperty('token');
         $token->setAccessible(true);
         $maxRetries = $reflection->getProperty('maxRetries');
@@ -32,6 +35,7 @@ class AIServiceTest extends TestCase
         $client->setAccessible(true);
 
         $this->assertSame('http://python-ai:8001', $baseUrl->getValue($service));
+        $this->assertSame('http://python-ai-docs:8002', $documentBaseUrl->getValue($service));
         $this->assertSame('internal-token', $token->getValue($service));
         $this->assertSame(3, $maxRetries->getValue($service));
         $this->assertSame(450, $retryDelayMs->getValue($service));

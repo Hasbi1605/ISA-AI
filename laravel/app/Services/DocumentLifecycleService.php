@@ -106,8 +106,9 @@ class DocumentLifecycleService
     public function deleteDocument(Document $document): bool
     {
         // 1. Notify Python Microservice to delete vectors
-        $pythonUrl = config('services.ai_service.url', 'http://127.0.0.1:8001') . '/api/documents/' . urlencode($document->original_name);
-        $token = config('services.ai_service.token');
+        $pythonUrl = rtrim((string) config('services.ai_document_service.url', config('services.ai_service.url', 'http://127.0.0.1:8001')), '/')
+            . '/api/documents/' . urlencode($document->original_name);
+        $token = config('services.ai_document_service.token', config('services.ai_service.token'));
 
         try {
             $response = Http::withHeaders([

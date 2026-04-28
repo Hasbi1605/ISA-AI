@@ -18,6 +18,8 @@ class ProcessDocumentTest extends TestCase
     public function test_job_updates_status_to_ready_on_success(): void
     {
         Storage::fake('local');
+        config()->set('services.ai_document_service.url', 'http://python-ai-docs:8002');
+        config()->set('services.ai_document_service.token', 'internal-token');
         $user = User::factory()->create();
 
         // Create dummy file
@@ -42,11 +44,16 @@ class ProcessDocumentTest extends TestCase
         $job->handle();
 
         $this->assertEquals('ready', $document->fresh()->status);
+        Http::assertSent(function ($request) {
+            return $request->url() === 'http://python-ai-docs:8002/api/documents/process'
+                && $request->hasHeader('Authorization', 'Bearer internal-token');
+        });
     }
 
     public function test_job_updates_status_to_error_on_http_failure(): void
     {
         Storage::fake('local');
+        config()->set('services.ai_document_service.url', 'http://python-ai-docs:8002');
         $user = User::factory()->create();
 
         $filePath = 'documents/' . $user->id . '/dummy2.pdf';
@@ -70,6 +77,7 @@ class ProcessDocumentTest extends TestCase
         $job->handle();
 
         $this->assertEquals('error', $document->fresh()->status);
+        Http::assertSent(fn ($request) => $request->url() === 'http://python-ai-docs:8002/api/documents/process');
     }
 
     public function test_job_updates_status_to_error_if_file_missing(): void

@@ -45,4 +45,12 @@ return [
         'retry_delay_ms' => env('AI_SERVICE_RETRY_DELAY_MS', 400),
     ],
 
+    'ai_document_service' => [
+        'url' => env('AI_DOCUMENT_SERVICE_URL', env('AI_SERVICE_URL', 'http://127.0.0.1:8001')),
+        'token' => env('AI_DOCUMENT_SERVICE_TOKEN', env('AI_SERVICE_TOKEN')),
+        'connect_timeout' => env('AI_DOCUMENT_SERVICE_CONNECT_TIMEOUT', env('AI_SERVICE_CONNECT_TIMEOUT', 10)),
+        'timeout' => env('AI_DOCUMENT_SERVICE_TIMEOUT', env('AI_SERVICE_TIMEOUT', 120)),
+        'read_timeout' => env('AI_DOCUMENT_SERVICE_READ_TIMEOUT', env('AI_SERVICE_READ_TIMEOUT', 120)),
+    ],
+
 ];

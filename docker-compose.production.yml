@@ -64,6 +64,8 @@ services:
     environment:
       PYTHONUNBUFFERED: "1"
       UVICORN_WORKERS: "1"
+      UVICORN_APP_MODULE: app.main:app
+      UVICORN_PORT: "8001"
     volumes:
       - chroma_data:/app/chroma_data
     healthcheck:
@@ -73,6 +75,27 @@ services:
       retries: 20
       start_period: 300s
 
+  python-ai-docs:
+    build:
+      context: ./python-ai
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    env_file:
+      - ./.env.droplet
+    environment:
+      PYTHONUNBUFFERED: "1"
+      UVICORN_WORKERS: "1"
+      UVICORN_APP_MODULE: app.documents_api:app
+      UVICORN_PORT: "8002"
+    volumes:
+      - chroma_data:/app/chroma_data
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8002/api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 20
+      start_period: 120s
+
   laravel:
     build:
       context: ./laravel
@@ -80,6 +103,8 @@ services:
     restart: unless-stopped
     env_file:
       - ./.env.droplet
+    environment:
+      AI_DOCUMENT_SERVICE_URL: http://python-ai-docs:8002
     command: ["php", "artisan", "serve", "--host=0.0.0.0", "--port=8000"]
     volumes:
       - laravel_storage:/var/www/html/storage
@@ -102,6 +127,8 @@ services:
     restart: unless-stopped
     env_file:
       - ./.env.droplet
+    environment:
+      AI_DOCUMENT_SERVICE_URL: http://python-ai-docs:8002
     command: ["php", "artisan", "horizon"]
     volumes:
       - laravel_storage:/var/www/html/storage
@@ -118,6 +145,8 @@ services:
     profiles: ["ops"]
     env_file:
       - ./.env.droplet
+    environment:
+      AI_DOCUMENT_SERVICE_URL: http://python-ai-docs:8002
     entrypoint: ["php", "artisan"]
     volumes:
       - laravel_storage:/var/www/html/storage

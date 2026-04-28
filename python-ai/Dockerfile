@@ -59,5 +59,7 @@ EXPOSE 8001
 # tanpa mengubah image yang sama untuk environment lain.
 # =====================================================================
 ENV UVICORN_WORKERS=1
+ENV UVICORN_APP_MODULE=app.main:app
+ENV UVICORN_PORT=8001
 
-CMD ["sh", "-c", "uvicorn app.main:app --host 0.0.0.0 --port 8001 --workers ${UVICORN_WORKERS:-1} --timeout-keep-alive 75"]
+CMD ["sh", "-c", "uvicorn ${UVICORN_APP_MODULE:-app.main:app} --host 0.0.0.0 --port ${UVICORN_PORT:-8001} --workers ${UVICORN_WORKERS:-1} --timeout-keep-alive 75"]

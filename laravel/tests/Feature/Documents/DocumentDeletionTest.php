@@ -19,6 +19,7 @@ class DocumentDeletionTest extends TestCase
     public function test_delete_from_document_index_cleans_up_storage_and_vector(): void
     {
         Storage::fake('local');
+        config()->set('services.ai_document_service.url', 'http://python-ai-docs:8002');
         $user = User::factory()->create();
 
         $filePath = 'documents/' . $user->id . '/delete.pdf';
@@ -45,13 +46,15 @@ class DocumentDeletionTest extends TestCase
         $this->assertSoftDeleted($document);
         Storage::disk('local')->assertMissing($filePath);
         Http::assertSent(function ($request) use ($document) {
-            return $request->method() === 'DELETE' && str_contains($request->url(), 'delete.pdf');
+            return $request->method() === 'DELETE'
+                && $request->url() === 'http://python-ai-docs:8002/api/documents/delete.pdf';
         });
     }
 
     public function test_delete_from_chat_cleans_up_storage_and_vector(): void
     {
         Storage::fake('local');
+        config()->set('services.ai_document_service.url', 'http://python-ai-docs:8002');
         $user = User::factory()->create();
 
         $filePath = 'documents/' . $user->id . '/delete_chat.pdf';
@@ -79,13 +82,15 @@ class DocumentDeletionTest extends TestCase
         Storage::disk('local')->assertMissing($filePath);
         $component->assertSee('Dokumen berhasil dihapus.');
         Http::assertSent(function ($request) use ($document) {
-            return $request->method() === 'DELETE' && str_contains($request->url(), 'delete_chat.pdf');
+            return $request->method() === 'DELETE'
+                && $request->url() === 'http://python-ai-docs:8002/api/documents/delete_chat.pdf';
         });
     }
 
     public function test_delete_selected_documents_cleans_up_storage_and_vector(): void
     {
         Storage::fake('local');
+        config()->set('services.ai_document_service.url', 'http://python-ai-docs:8002');
         $user = User::factory()->create();
 
         $doc1 = Document::create([

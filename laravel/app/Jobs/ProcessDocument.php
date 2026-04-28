@@ -56,8 +56,9 @@ class ProcessDocument implements ShouldQueue
             }
 
             // 3. Send to Python Microservice (with extended timeout for embedding)
-            $pythonUrl = config('services.ai_service.url', 'http://127.0.0.1:8001') . '/api/documents/process';
-            $token = config('services.ai_service.token');
+            $pythonUrl = rtrim((string) config('services.ai_document_service.url', config('services.ai_service.url', 'http://127.0.0.1:8001')), '/')
+                . '/api/documents/process';
+            $token = config('services.ai_document_service.token', config('services.ai_service.token'));
 
             $response = Http::timeout(900) // 15 minutes timeout for large documents
                 ->withHeaders([
