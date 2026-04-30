@@ -3,9 +3,15 @@
      x-ref="chatBox"
      data-chat-box
      x-on:message-streamed.window="scrollToBottom()"
-     x-on:message-send.window="optimisticUserMessage = $event.detail.text; scrollToBottom(true)">
+     x-on:message-send.window="optimisticUserMessage = $event.detail.text; isSwitchingConversation = false; scrollToBottom(true)"
+     x-on:conversation-loading.window="isSwitchingConversation = true; optimisticUserMessage = ''"
+     x-on:conversation-loaded.window="isSwitchingConversation = false; scrollToBottom()">
+    <div x-show="isSwitchingConversation" x-transition.opacity class="rounded-xl bg-white/80 backdrop-blur-sm dark:bg-gray-800 border border-stone-200/60 dark:border-gray-800 px-4 py-3 text-[13px] text-[#64748B] dark:text-[#94A3B8] flex items-center gap-2 max-w-3xl mx-auto" style="display: none;">
+        <span class="h-3.5 w-3.5 rounded-full border-2 border-current border-t-transparent animate-spin"></span>
+        <span>Membuka chat...</span>
+    </div>
     @if(empty($messages))
-        <div x-show="!optimisticUserMessage" x-transition.opacity class="h-full flex flex-col items-center justify-center text-center">
+        <div x-show="!optimisticUserMessage && !isSwitchingConversation" x-transition.opacity class="h-full flex flex-col items-center justify-center text-center">
             <div class="h-16 w-16 mb-6">
                 <img src="{{ asset('images/ista/logo.png') }}" alt="ISTA AI" class="h-full w-full object-contain" />
             </div>

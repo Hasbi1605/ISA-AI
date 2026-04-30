@@ -1,10 +1,21 @@
-<div x-data="chatComposer({ prompt: @js($prompt ?? ''), webSearchMode: $wire.entangle('webSearchMode') })"
+@php
+    $composerDocuments = $availableDocuments->map(fn ($doc) => [
+        'id' => (int) $doc->id,
+        'name' => (string) $doc->original_name,
+        'extension' => (string) ($doc->extension ?? strtolower(pathinfo($doc->original_name, PATHINFO_EXTENSION))),
+        'status' => (string) $doc->status,
+    ])->values();
+@endphp
+<div x-data="chatComposer({
+        prompt: @js($prompt ?? ''),
+        webSearchMode: $wire.entangle('webSearchMode'),
+        conversationDocuments: $wire.entangle('conversationDocuments'),
+        availableDocuments: @js($composerDocuments),
+    })"
      x-on:show-drop-error.window="sendError = $event.detail.message"
+     x-on:conversation-documents-preview.window="previewConversationDocuments($event)"
      class="chat-composer-safe shrink-0 px-3 sm:px-6 pt-2 bg-transparent w-full"
 >
-    @php
-        $chatDocuments = $availableDocuments->whereIn('id', $conversationDocuments)->values();
-    @endphp
     <input
         x-ref="chatAttachmentInput"
         type="file"
@@ -33,34 +44,32 @@
                     <span class="h-2 w-2 rounded-full bg-current animate-pulse"></span>
                 </div>
             @endif
-            @if($chatDocuments->count() > 0)
-                <div class="px-5 pt-5 pb-1 flex flex-wrap gap-3">
-                    @foreach($chatDocuments as $doc)
-                        @php
-                            $fileExt = $doc->extension ?? strtolower(pathinfo($doc->original_name, PATHINFO_EXTENSION));
-                        @endphp
-                        <span class="inline-flex items-center gap-2 bg-[#E2E8F0] dark:bg-gray-700 dark:border dark:border-gray-600 text-[#314158] dark:text-gray-100 rounded-2xl px-4 py-2 text-[14px]">
-                            @if($fileExt === 'pdf')
-                                <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 text-[#FF2056]" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M4 4a2 2 0 012-2h4.586A2 2 0 0112 2.586L15.414 6A2 2 0 0116 7.414V16a2 2 0 01-2 2H6a2 2 0 01-2-2V4zm2 6a1 1 0 011-1h6a1 1 0 110 2H7a1 1 0 01-1-1zm1 3a1 1 0 100 2h6a1 1 0 100-2H7z" clip-rule="evenodd"></path></svg>
-                            @elseif($fileExt === 'xlsx')
-                                <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="#32CD32"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M7 3h7l5 5v13a1 1 0 01-1 1H7a1 1 0 01-1-1V4a1 1 0 011-1zm7 1v4h4M8 13h8M8 17h8" /></svg>
-                            @elseif($fileExt === 'docx')
-                                <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 text-[#2B7FFF]" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M7 3h7l5 5v13a1 1 0 01-1 1H7a1 1 0 01-1-1V4a1 1 0 011-1zm7 1v4h4M8 13h8M8 17h6" /></svg>
-                            @else
-                                <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M7 3h7l5 5v13a1 1 0 01-1 1H7a1 1 0 01-1-1V4a1 1 0 011-1zm7 1v4h4" />
-                                </svg>
-                            @endif
-                            <span class="max-w-[180px] truncate">{{ $doc->original_name }}</span>
-                            <button type="button" wire:click="removeConversationDocument({{ $doc->id }})" class="text-[#7C8DA8] hover:text-[#314158] dark:text-gray-300 dark:hover:text-white" title="Lepas dokumen">
-                                <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
-                                </svg>
-                            </button>
-                        </span>
-                    @endforeach
-                </div>
-            @endif
+            <div x-show="chatDocuments().length > 0" class="px-5 pt-5 pb-1 flex flex-wrap gap-3" style="{{ count($conversationDocuments) > 0 ? '' : 'display: none;' }}">
+                <template x-for="doc in chatDocuments()" :key="doc.id">
+                    <span class="inline-flex items-center gap-2 bg-[#E2E8F0] dark:bg-gray-700 dark:border dark:border-gray-600 text-[#314158] dark:text-gray-100 rounded-2xl px-4 py-2 text-[14px]">
+                        <template x-if="documentIconType(doc) === 'pdf'">
+                            <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 text-[#FF2056]" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M4 4a2 2 0 012-2h4.586A2 2 0 0112 2.586L15.414 6A2 2 0 0116 7.414V16a2 2 0 01-2 2H6a2 2 0 01-2-2V4zm2 6a1 1 0 011-1h6a1 1 0 110 2H7a1 1 0 01-1-1zm1 3a1 1 0 100 2h6a1 1 0 100-2H7z" clip-rule="evenodd"></path></svg>
+                        </template>
+                        <template x-if="documentIconType(doc) === 'xlsx'">
+                            <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="#32CD32"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M7 3h7l5 5v13a1 1 0 01-1 1H7a1 1 0 01-1-1V4a1 1 0 011-1zm7 1v4h4M8 13h8M8 17h8" /></svg>
+                        </template>
+                        <template x-if="documentIconType(doc) === 'docx'">
+                            <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 text-[#2B7FFF]" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M7 3h7l5 5v13a1 1 0 01-1 1H7a1 1 0 01-1-1V4a1 1 0 011-1zm7 1v4h4M8 13h8M8 17h6" /></svg>
+                        </template>
+                        <template x-if="documentIconType(doc) === 'file'">
+                            <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M7 3h7l5 5v13a1 1 0 01-1 1H7a1 1 0 01-1-1V4a1 1 0 011-1zm7 1v4h4" />
+                            </svg>
+                        </template>
+                        <span class="max-w-[180px] truncate" x-text="doc.name"></span>
+                        <button type="button" @click="removeConversationDocument(doc.id)" class="text-[#7C8DA8] hover:text-[#314158] dark:text-gray-300 dark:hover:text-white" title="Lepas dokumen">
+                            <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+                            </svg>
+                        </button>
+                    </span>
+                </template>
+            </div>
             @if($isUploadingAttachment && $uploadingAttachmentName)
                 <div class="px-5 pt-3 pb-1 flex flex-wrap gap-3">
                     <span class="inline-flex items-center gap-2 bg-ista-primary/5 dark:bg-[#312E81]/30 text-ista-primary dark:text-[#C7D2FE] rounded-2xl px-4 py-2 text-[13px]">

@@ -1,9 +1,11 @@
 <aside
+    x-data="chatHistory({ activeConversationId: @js($currentConversationId ? (int) $currentConversationId : null), showOlderChats: $wire.entangle('showOlderChats') })"
     :class="[
         showLeftSidebar ? 'opacity-100 translate-x-0' : 'opacity-0 -translate-x-full pointer-events-none',
         isMobile ? 'fixed left-0 top-0 h-full w-[288px] shadow-2xl border-r border-stone-200/60 dark:border-[#1E293B]' : (showLeftSidebar ? 'relative w-[288px] border-r border-stone-200/60 dark:border-[#1E293B]' : 'relative w-0 border-r border-transparent')
     ]"
     @click.stop
+    x-on:chat-new-optimistic.window="activeConversationId = null; loadingConversationId = null"
     class="z-50 flex-shrink-0 overflow-hidden bg-white dark:bg-gray-900 flex flex-col transform-gpu will-change-[width,transform,opacity] transition-[width,transform,opacity,border-color] duration-500 ease-[cubic-bezier(0.22,1,0.36,1)]">
 
     <div class="flex items-center justify-between px-4 pb-2 pt-3">
@@ -21,7 +23,7 @@
     </div>
 
     <div class="p-4 pt-2 pb-5">
-        <button type="button" @click="$wire.startNewChat().then(() => { if(isMobile) showLeftSidebar = false; })" class="w-full flex items-center justify-start px-4 py-2.5 rounded-lg border border-stone-200/60 dark:border-[#334155] dark:bg-transparent bg-white hover:bg-gray-50 dark:hover:bg-white/5 font-medium text-[13px] text-gray-700 dark:text-gray-200 transition-all duration-200 shadow-sm">
+        <button type="button" @click="startNewChat(); if(isMobile) showLeftSidebar = false;" class="w-full flex items-center justify-start px-4 py-2.5 rounded-lg border border-stone-200/60 dark:border-[#334155] dark:bg-transparent bg-white hover:bg-gray-50 dark:hover:bg-white/5 font-medium text-[13px] text-gray-700 dark:text-gray-200 transition-all duration-200 shadow-sm">
             <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 mr-2 text-[#64748B] dark:text-gray-300" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M12 5v14m-7-7h14" />
             </svg>
@@ -40,11 +42,13 @@
 
                 @foreach($visibleChats as $conversation)
                     <li class="group relative">
-                        <button type="button" @click="$wire.loadConversation({{ $conversation->id }}).then(() => { if(isMobile) showLeftSidebar = false; })"
-                           class="w-full text-left px-3 py-2 rounded-md flex items-center transition-colors duration-200 {{ $currentConversationId == $conversation->id ? 'bg-white/80 shadow-sm border border-stone-200 text-stone-800 dark:bg-[#1E293B] dark:border-[#334155] dark:text-white font-medium' : 'hover:bg-black/5 dark:hover:bg-white/5 text-stone-700 dark:text-gray-300' }}">
+                        <button type="button" @click="loadConversation({{ $conversation->id }}); if(isMobile) showLeftSidebar = false;"
+                           :class="isActive({{ $conversation->id }}) ? 'bg-white/80 shadow-sm border border-stone-200 text-stone-800 dark:bg-[#1E293B] dark:border-[#334155] dark:text-white font-medium' : 'hover:bg-black/5 dark:hover:bg-white/5 text-stone-700 dark:text-gray-300'"
+                           class="w-full text-left px-3 py-2 rounded-md flex items-center transition-colors duration-200">
                             <img src="{{ $uiIcons['historyLight'] }}" alt="" class="h-4 w-4 mr-2.5 flex-shrink-0 dark:hidden" />
                             <img src="{{ $uiIcons['historyDark'] }}" alt="" class="h-4 w-4 mr-2.5 flex-shrink-0 hidden dark:block" />
                             <span class="truncate text-[13.2px]" title="{{ $conversation->title }}">{{ $conversation->title }}</span>
+                            <span x-show="isLoading({{ $conversation->id }})" class="ml-auto h-3 w-3 rounded-full border border-current border-t-transparent animate-spin" style="display: none;"></span>
                         </button>
                         <button type="button" wire:click="deleteConversation({{ $conversation->id }})"
                                 wire:confirm="Delete this chat?"
@@ -61,21 +65,22 @@
 
         @if($olderChats->count() > 0)
         <div class="mb-6">
-            <button type="button" wire:click="toggleOlderChats" class="flex items-center justify-between w-full text-left">
+            <button type="button" @click="showOlderChats = !showOlderChats" class="flex items-center justify-between w-full text-left">
                 <h3 class="text-[11.3px] font-bold text-[#64748B] dark:text-[#94A3B8] uppercase tracking-wider mb-2">Previous 7 Days</h3>
-                <svg xmlns="http://www.w3.org/2000/svg" class="h-3 w-3 text-[#64748B] dark:text-[#94A3B8] transition-transform duration-200 {{ $showOlderChats ? 'rotate-180' : '' }}" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <svg xmlns="http://www.w3.org/2000/svg" :class="showOlderChats ? 'rotate-180' : ''" class="h-3 w-3 text-[#64748B] dark:text-[#94A3B8] transition-transform duration-200" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" />
                 </svg>
             </button>
-            @if($showOlderChats)
-                <ul class="mt-1 space-y-1">
+                <ul x-show="showOlderChats" class="mt-1 space-y-1" style="{{ $showOlderChats ? '' : 'display: none;' }}">
                     @foreach($olderChats as $conversation)
                         <li class="group relative">
-                            <button type="button" @click="$wire.loadConversation({{ $conversation->id }}).then(() => { if(isMobile) showLeftSidebar = false; })"
-                               class="w-full text-left px-3 py-2 rounded-md flex items-center transition-colors duration-200 {{ $currentConversationId == $conversation->id ? 'bg-white/80 shadow-sm border border-stone-200 text-stone-800 dark:bg-[#1E293B] dark:border-[#334155] dark:text-white font-medium' : 'hover:bg-black/5 dark:hover:bg-white/5 text-stone-700 dark:text-gray-300' }}">
+                            <button type="button" @click="loadConversation({{ $conversation->id }}); if(isMobile) showLeftSidebar = false;"
+                               :class="isActive({{ $conversation->id }}) ? 'bg-white/80 shadow-sm border border-stone-200 text-stone-800 dark:bg-[#1E293B] dark:border-[#334155] dark:text-white font-medium' : 'hover:bg-black/5 dark:hover:bg-white/5 text-stone-700 dark:text-gray-300'"
+                               class="w-full text-left px-3 py-2 rounded-md flex items-center transition-colors duration-200">
                                 <img src="{{ $uiIcons['historyLight'] }}" alt="" class="h-4 w-4 mr-2.5 flex-shrink-0 dark:hidden" />
                                 <img src="{{ $uiIcons['historyDark'] }}" alt="" class="h-4 w-4 mr-2.5 flex-shrink-0 hidden dark:block" />
                                 <span class="truncate text-[13.2px]" title="{{ $conversation->title }}">{{ $conversation->title }}</span>
+                                <span x-show="isLoading({{ $conversation->id }})" class="ml-auto h-3 w-3 rounded-full border border-current border-t-transparent animate-spin" style="display: none;"></span>
                             </button>
                             <button type="button" wire:click="deleteConversation({{ $conversation->id }})"
                                     wire:confirm="Delete this chat?"
@@ -87,7 +92,6 @@
                         </li>
                     @endforeach
                 </ul>
-            @endif
         </div>
         @endif
     </div>

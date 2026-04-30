@@ -41,11 +41,17 @@
           <div class="mb-4">
               @php
                  $readyDocumentIds = $availableDocuments->where('status', 'ready')->pluck('id')->map(fn ($id) => (int) $id)->toArray();
+                 $documentSelectorItems = $availableDocuments->map(fn ($doc) => [
+                     'id' => (int) $doc->id,
+                     'name' => (string) $doc->original_name,
+                     'extension' => (string) ($doc->extension ?? strtolower(pathinfo($doc->original_name, PATHINFO_EXTENSION))),
+                     'status' => (string) $doc->status,
+                 ])->values();
                  $selectedIds = array_map('intval', $selectedDocuments);
                  $selectedInAvailableCount = count(array_intersect($selectedIds, $readyDocumentIds));
                  $allDocumentsSelected = count($readyDocumentIds) > 0 && $selectedInAvailableCount === count($readyDocumentIds);
               @endphp
-              <div x-data="chatDocumentSelector({ selectedDocuments: $wire.entangle('selectedDocuments'), readyDocumentIds: @js($readyDocumentIds) })">
+              <div x-data="chatDocumentSelector({ selectedDocuments: $wire.entangle('selectedDocuments'), readyDocumentIds: @js($readyDocumentIds), availableDocuments: @js($documentSelectorItems) })">
               <div class="flex items-center flex-nowrap gap-0.5 mb-4 px-1 pb-3 border-b border-stone-200/60/70 dark:border-gray-800/70">
                   <button type="button" @click="toggleSelectAllDocuments()" :aria-pressed="allDocumentsSelected() ? 'true' : 'false'" class="inline-flex items-center gap-1.5 text-[#62748E] dark:text-[#90A1B9] hover:text-[#314158] dark:hover:text-white text-[11px] leading-[1.1] font-semibold px-1.5 py-1 rounded-md hover:bg-[#F1F5F9] dark:hover:bg-gray-800 transition-colors whitespace-nowrap">
                       <span x-show="allDocumentsSelected()" class="inline-flex items-center gap-1.5" style="{{ $allDocumentsSelected ? '' : 'display: none;' }}">
@@ -124,7 +130,7 @@
 
                               @if($isReady)
                                   <button type="button"
-                                      wire:click.prevent="$dispatch('open-document-preview', { documentId: {{ $doc->id }} })"
+                                      @click.prevent="$dispatch('open-document-preview', { documentId: {{ $doc->id }} })"
                                       class="h-7 w-7 rounded-md text-[#94A3B8] hover:text-ista-primary dark:hover:text-[#A5B4FC] hover:bg-stone-100 dark:hover:bg-gray-700 transition-colors flex items-center justify-center"
                                       title="Baca dokumen"
                                       aria-label="Baca dokumen">

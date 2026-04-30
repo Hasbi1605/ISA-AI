@@ -19,7 +19,9 @@ class ChatUiTest extends TestCase
         $response
             ->assertOk()
             ->assertSee('x-on:keydown.enter="handleEnterKey($event)"', false)
-            ->assertSee('x-show="!optimisticUserMessage"', false)
-            ->assertSee('Menghapus dokumen...', false);
+            ->assertSee('x-show="!optimisticUserMessage && !isSwitchingConversation"', false)
+            ->assertSee('Menghapus dokumen...', false)
+            ->assertSee('conversation-documents-preview', false)
+            ->assertSee('Membuka chat...', false);
     }
 }

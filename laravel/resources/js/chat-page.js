@@ -118,6 +118,7 @@ const registerChatPageData = (Alpine) => {
 
     Alpine.data('chatMessages', () => ({
         optimisticUserMessage: '',
+        isSwitchingConversation: false,
 
         init() {
             this.$el.dataset.chatMessagesReady = 'true';
@@ -153,9 +154,55 @@ const registerChatPageData = (Alpine) => {
         },
     }));
 
+    Alpine.data('chatHistory', (config = {}) => ({
+        activeConversationId: config.activeConversationId ? Number(config.activeConversationId) : null,
+        showOlderChats: config.showOlderChats || false,
+        loadingConversationId: null,
+
+        isActive(id) {
+            return this.activeConversationId === Number(id);
+        },
+
+        isLoading(id) {
+            return this.loadingConversationId === Number(id);
+        },
+
+        loadConversation(id) {
+            const conversationId = Number(id);
+            this.activeConversationId = conversationId;
+            this.loadingConversationId = conversationId;
+            this.$dispatch('conversation-loading');
+
+            return this.$wire.loadConversation(conversationId)
+                .finally(() => {
+                    if (this.loadingConversationId === conversationId) {
+                        this.loadingConversationId = null;
+                    }
+
+                    this.$dispatch('conversation-loaded');
+                });
+        },
+
+        startNewChat() {
+            this.activeConversationId = null;
+            this.loadingConversationId = null;
+            this.$dispatch('chat-new-optimistic');
+            this.$dispatch('conversation-loading');
+
+            return this.$wire.startNewChat()
+                .finally(() => this.$dispatch('conversation-loaded'));
+        },
+    }));
+
     Alpine.data('chatDocumentSelector', (config = {}) => ({
         selectedDocuments: config.selectedDocuments || [],
         readyDocumentIds: (config.readyDocumentIds || []).map((id) => Number(id)),
+        availableDocuments: (config.availableDocuments || []).map((document) => ({
+            id: Number(document.id),
+            name: document.name,
+            extension: document.extension,
+            status: document.status,
+        })),
 
         normalizedSelectedDocuments() {
             const ready = new Set(this.readyDocumentIds);
@@ -191,6 +238,13 @@ const registerChatPageData = (Alpine) => {
 
         addSelectedDocumentsToChat() {
             this.syncSelectedDocuments();
+            const selected = new Set(this.selectedDocuments.map((id) => Number(id)));
+            const documents = this.availableDocuments.filter((document) => selected.has(document.id));
+
+            this.$dispatch('conversation-documents-preview', {
+                ids: this.selectedDocuments,
+                documents,
+            });
 
             return this.$wire.addSelectedDocumentsToChat();
         },
@@ -209,6 +263,13 @@ const registerChatPageData = (Alpine) => {
     Alpine.data('chatComposer', (config = {}) => ({
         promptDraft: config.prompt || '',
         webSearchMode: config.webSearchMode || false,
+        conversationDocuments: config.conversationDocuments || [],
+        availableDocuments: (config.availableDocuments || []).map((document) => ({
+            id: Number(document.id),
+            name: document.name,
+            extension: document.extension,
+            status: document.status,
+        })),
         isSendingMessage: false,
         sendError: '',
         messageAcked: false,
@@ -222,6 +283,68 @@ const registerChatPageData = (Alpine) => {
                 this.messageAcked = true;
                 this.stabilizeChatScroll();
             });
+        },
+
+        previewConversationDocuments(event) {
+            const ids = event.detail?.ids || [];
+            const documents = event.detail?.documents || [];
+
+            this.conversationDocuments = this.normalizedDocumentIds(ids);
+            this.mergeAvailableDocuments(documents);
+        },
+
+        normalizedDocumentIds(ids = this.conversationDocuments) {
+            return [...new Set((ids || []).map((id) => Number(id)).filter(Boolean))];
+        },
+
+        mergeAvailableDocuments(documents = []) {
+            const existing = new Map(this.availableDocuments.map((document) => [Number(document.id), document]));
+
+            documents.forEach((document) => {
+                existing.set(Number(document.id), {
+                    id: Number(document.id),
+                    name: document.name,
+                    extension: document.extension,
+                    status: document.status,
+                });
+            });
+
+            this.availableDocuments = Array.from(existing.values());
+        },
+
+        chatDocuments() {
+            const byId = new Map(this.availableDocuments.map((document) => [Number(document.id), document]));
+
+            return this.normalizedDocumentIds()
+                .map((id) => byId.get(id))
+                .filter(Boolean);
+        },
+
+        documentIconType(document) {
+            const extension = (document.extension || '').toLowerCase();
+
+            if (extension === 'pdf') {
+                return 'pdf';
+            }
+
+            if (extension === 'xlsx') {
+                return 'xlsx';
+            }
+
+            if (extension === 'docx') {
+                return 'docx';
+            }
+
+            return 'file';
+        },
+
+        removeConversationDocument(id) {
+            const documentId = Number(id);
+            this.conversationDocuments = this.normalizedDocumentIds()
+                .filter((currentId) => currentId !== documentId);
+            this.$wire.conversationDocuments = this.conversationDocuments;
+
+            return this.$wire.removeConversationDocument(documentId);
         },
 
         schedulePendingPromptSubmission(attempt = 0) {
@@ -272,6 +395,7 @@ const registerChatPageData = (Alpine) => {
             this.promptDraft = '';
             this.autoResizeTextarea(this.$refs.chatInput);
             this.$wire.webSearchMode = Boolean(this.webSearchMode);
+            this.$wire.conversationDocuments = this.normalizedDocumentIds();
 
             this.$wire.sendMessage(text)
                 .catch(() => {
