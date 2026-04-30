@@ -4,6 +4,7 @@ namespace Tests\Feature\Chat;
 
 use App\Livewire\Chat\ChatIndex;
 use App\Models\Conversation;
+use App\Models\Message;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Livewire\Livewire;
@@ -51,5 +52,32 @@ class ChatUiTest extends TestCase
             ->call('loadConversation', $conversation->id)
             ->assertSet('currentConversationId', $conversation->id)
             ->assertDispatched('conversation-activated', id: $conversation->id);
+    }
+
+    public function test_chat_answers_render_copy_share_and_export_actions(): void
+    {
+        $user = User::factory()->create();
+        $conversation = Conversation::create([
+            'user_id' => $user->id,
+            'title' => 'Answer toolbar test',
+        ]);
+
+        $message = Message::create([
+            'conversation_id' => $conversation->id,
+            'role' => 'assistant',
+            'content' => "Ini jawaban contoh.\n\n- Poin pertama\n- Poin kedua",
+        ]);
+
+        Livewire::actingAs($user)
+            ->test(ChatIndex::class)
+            ->set('messages', [$message->toArray()])
+            ->assertSee('data-answer-actions', false)
+            ->assertSee('Salin', false)
+            ->assertSee('Bagikan', false)
+            ->assertSee('Ekspor', false)
+            ->assertSee('PDF', false)
+            ->assertSee('DOCX', false)
+            ->assertSee('XLSX', false)
+            ->assertSee('CSV', false);
     }
 }

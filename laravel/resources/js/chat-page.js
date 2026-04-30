@@ -240,6 +240,146 @@ const registerChatPageData = (Alpine) => {
         },
     }));
 
+    Alpine.data('chatAnswerActions', (config = {}) => ({
+        html: config.html || '',
+        exportUrl: config.exportUrl || '',
+        exportFileName: config.exportFileName || 'ista-ai-export',
+        exportMenuOpen: false,
+        copied: false,
+        exportLoading: false,
+        exportError: '',
+
+        plainText() {
+            const wrapper = document.createElement('div');
+            wrapper.innerHTML = this.html || '';
+
+            return (wrapper.innerText || wrapper.textContent || '')
+                .replace(/\u00a0/g, ' ')
+                .replace(/\n{3,}/g, '\n\n')
+                .trim();
+        },
+
+        copyStatusLabel() {
+            return this.copied ? 'Tersalin' : 'Salin';
+        },
+
+        toggleExportMenu() {
+            if (this.exportLoading) {
+                return;
+            }
+
+            this.exportMenuOpen = !this.exportMenuOpen;
+        },
+
+        async copyToClipboard() {
+            const text = this.plainText();
+
+            if (!text) {
+                return;
+            }
+
+            try {
+                if (navigator.clipboard?.writeText) {
+                    await navigator.clipboard.writeText(text);
+                } else {
+                    const helper = document.createElement('textarea');
+                    helper.value = text;
+                    helper.setAttribute('readonly', 'true');
+                    helper.style.position = 'fixed';
+                    helper.style.left = '-9999px';
+                    document.body.appendChild(helper);
+                    helper.select();
+                    document.execCommand('copy');
+                    document.body.removeChild(helper);
+                }
+
+                this.copied = true;
+                window.setTimeout(() => {
+                    this.copied = false;
+                }, 1800);
+            } catch (error) {
+                console.error('Gagal menyalin jawaban AI', error);
+            }
+        },
+
+        shareToWhatsApp() {
+            const text = this.plainText();
+
+            if (!text) {
+                return;
+            }
+
+            const shareUrl = `https://wa.me/?text=${encodeURIComponent(text)}`;
+            window.open(shareUrl, '_blank', 'noopener,noreferrer');
+        },
+
+        getCsrfToken() {
+            return document.querySelector('meta[name="csrf-token"]')?.content || '';
+        },
+
+        downloadBlob(blob, fileName) {
+            const downloadUrl = window.URL.createObjectURL(blob);
+            const anchor = document.createElement('a');
+            anchor.href = downloadUrl;
+            anchor.download = fileName;
+            document.body.appendChild(anchor);
+            anchor.click();
+            anchor.remove();
+            window.URL.revokeObjectURL(downloadUrl);
+        },
+
+        filenameFromResponse(response, format) {
+            const disposition = response.headers.get('Content-Disposition') || '';
+            const fileNameMatch = disposition.match(/filename="?([^"]+)"?/i);
+
+            if (fileNameMatch?.[1]) {
+                return fileNameMatch[1];
+            }
+
+            return `${this.exportFileName}.${format}`;
+        },
+
+        async exportAs(format) {
+            if (!this.exportUrl || this.exportLoading) {
+                return;
+            }
+
+            this.exportMenuOpen = false;
+            this.exportLoading = true;
+            this.exportError = '';
+
+            try {
+                const response = await fetch(this.exportUrl, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Accept': '*/*',
+                        'X-CSRF-TOKEN': this.getCsrfToken(),
+                    },
+                    body: JSON.stringify({
+                        content_html: this.html,
+                        target_format: format,
+                        file_name: this.exportFileName,
+                    }),
+                });
+
+                if (!response.ok) {
+                    const errorText = await response.text();
+                    throw new Error(errorText || 'Export gagal');
+                }
+
+                const blob = await response.blob();
+                const fileName = this.filenameFromResponse(response, format);
+                this.downloadBlob(blob, fileName);
+            } catch (error) {
+                console.error('Gagal mengekspor jawaban AI', error);
+                this.exportError = 'Ekspor gagal. Coba lagi.';
+            } finally {
+                this.exportLoading = false;
+            }
+        },
+    }));
+
     Alpine.data('chatDocumentSelector', (config = {}) => ({
         selectedDocuments: config.selectedDocuments || [],
         readyDocumentIds: (config.readyDocumentIds || []).map((id) => Number(id)),

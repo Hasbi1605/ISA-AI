@@ -14,3 +14,7 @@ def test_runtime_import_dependencies_are_listed_in_requirements():
 
     assert "langchain-community" in normalized_requirements
     assert "langchain-text-splitters" in normalized_requirements
+    assert "pdfplumber" in normalized_requirements
+    assert "python-docx" in normalized_requirements
+    assert "openpyxl" in normalized_requirements
+    assert "weasyprint" in normalized_requirements

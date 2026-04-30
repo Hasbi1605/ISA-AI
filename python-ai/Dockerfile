@@ -34,8 +34,15 @@ WORKDIR /app
 # - curl: untuk health check
 RUN apt-get update && apt-get install -y --no-install-recommends \
     libmagic1 \
+    libcairo2 \
+    libgdk-pixbuf-2.0-0 \
+    libharfbuzz0b \
+    libpango-1.0-0 \
+    libpangoft2-1.0-0 \
     poppler-utils \
+    shared-mime-info \
     tesseract-ocr \
+    fonts-dejavu-core \
     curl \
     && rm -rf /var/lib/apt/lists/*
 

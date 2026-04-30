@@ -7,12 +7,13 @@ Mentor meminta ISTA AI bisa menerima dokumen dalam satu format (mis. PDF) dan me
 - User bisa mengekstrak tabel dari PDF/DOCX yang sudah di-upload dan men-download hasilnya sebagai XLSX, CSV, atau DOCX.
 - AI bisa menghasilkan output terstruktur (tabel, list, paragraf) yang bisa langsung di-export ke format yang dipilih user.
 - Pipeline export reusable: nantinya dipakai juga oleh Canvas Memo Editor (Fase 3) untuk export memo ke DOCX/PDF.
+- Di halaman chat, setiap jawaban AI memiliki toolbar aksi di bawah output untuk `salin`, `bagikan ke WhatsApp`, dan `ekspor`.
 
 ## Ruang Lingkup
 - Tambah endpoint Python `POST /api/documents/extract-tables`: input file id → output JSON list of tables (header + rows).
 - Tambah endpoint Python `POST /api/documents/export`: input `{content_html, target_format: docx|pdf|xlsx|csv}` → return binary file.
 - Tambah service Laravel `DocumentExportService` yang membungkus panggilan ke Python dan stream hasil ke browser sebagai download.
-- UI: tombol "Export" pada document viewer (Fase 1) dan pada hasil chat yang berisi tabel.
+- UI: toolbar aksi di bawah jawaban AI pada halaman chat dengan tombol `salin`, `bagikan`, dan `ekspor`; export action dipakai juga untuk tabel yang dihasilkan dari dokumen.
 
 ## Di Luar Scope
 - OCR untuk PDF hasil scan (perlu tambah pipeline pytesseract/paddleocr — bisa fase lanjut).
@@ -28,8 +29,8 @@ Mentor meminta ISTA AI bisa menerima dokumen dalam satu format (mis. PDF) dan me
 - `laravel/app/Services/AIService.php` atau service baru `DocumentExportService.php`
 - `laravel/app/Http/Controllers/DocumentExportController.php` (baru)
 - `laravel/routes/web.php`
-- `laravel/resources/views/livewire/documents/document-viewer.blade.php` (Fase 1) — tambah tombol export
-- `laravel/resources/views/livewire/chat/partials/chat-messages.blade.php` — tambah tombol export pada bubble jawaban yang berisi tabel terdeteksi
+- `laravel/resources/views/livewire/chat/partials/chat-messages.blade.php` — tambah toolbar aksi di bawah bubble jawaban AI
+- `laravel/resources/js/chat-page.js` — perilaku copy/share/export untuk jawaban AI
 
 ## Risiko
 - Akurasi ekstraksi tabel bervariasi: PDF dengan border jelas akurat; PDF tanpa border atau scan menghasilkan output kurang rapi. Mitigasi: tampilkan hasil ekstraksi sebagai preview terlebih dahulu sebelum download, dan beri label confidence/peringatan.
@@ -51,7 +52,9 @@ Mentor meminta ISTA AI bisa menerima dokumen dalam satu format (mis. PDF) dan me
    - `POST /api/documents/export` → body `{content, target_format}` → return file stream + Content-Disposition.
 5. Tambah `DocumentExportService` di Laravel yang panggil endpoint Python via Guzzle (reuse pola `AIService.php`).
 6. Tambah `DocumentExportController` dengan action `extractTables(Document $d)` dan `export(Request $r)`. Wajib policy ownership.
-7. Tambah tombol "Export" + dropdown target format di document viewer dan di bubble chat berisi tabel.
+7. Tambah toolbar aksi di bawah bubble jawaban AI untuk salin, bagikan via WhatsApp, dan ekspor.
+   - Export dari bubble chat memakai payload HTML jawaban AI.
+   - Export dari tabel dokumen memakai payload tabel hasil ekstraksi.
 8. Tambah test:
    - Python: unit test ekstraksi tabel dari fixture PDF/DOCX kecil.
    - Python: unit test export ke 4 target format dengan input HTML/JSON sederhana.

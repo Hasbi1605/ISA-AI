@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Controllers\Documents\DocumentExportController;
 use App\Http\Controllers\Documents\DocumentPreviewController;
 use App\Livewire\Chat\ChatIndex;
 use Illuminate\Support\Facades\Route;
@@ -22,6 +23,14 @@ Route::view('profile', 'profile')
 Route::get('chat', ChatIndex::class)
     ->middleware(['auth', 'verified'])
     ->name('chat');
+
+Route::middleware(['auth', 'verified'])
+    ->prefix('documents')
+    ->name('documents.')
+    ->group(function () {
+        Route::get('/{document}/extract-tables', [DocumentExportController::class, 'extractTables'])->name('extract-tables');
+        Route::post('/export', [DocumentExportController::class, 'export'])->name('export');
+    });
 
 Route::middleware(['auth', 'verified'])
     ->prefix('documents/{document}/preview')

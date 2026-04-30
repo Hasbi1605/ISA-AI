@@ -3,6 +3,7 @@ import shutil
 import uuid
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
+from fastapi.responses import Response
 from pydantic import BaseModel
 
 from app.api_shared import verify_token
@@ -12,6 +13,8 @@ from app.config_loader import (
     get_summarize_single_prompt,
 )
 from app.document_runner import run_document_process
+from app.services.document_export import export_content
+from app.services.table_extraction import extract_tables_from_file
 
 router = APIRouter(prefix="/api/documents", tags=["Documents"])
 
@@ -84,6 +87,12 @@ class SummarizeRequest(BaseModel):
     user_id: str
 
 
+class ExportRequest(BaseModel):
+    content_html: str
+    target_format: str
+    file_name: str | None = None
+
+
 def _render_prompt(template: str, **kwargs) -> str:
     rendered = template.format(**kwargs)
     if not rendered.strip():
@@ -96,6 +105,52 @@ def _render_prompt_or_http_exception(template: str, **kwargs) -> str:
         return _render_prompt(template, **kwargs)
     except (RuntimeError, KeyError, IndexError) as exc:
         raise HTTPException(status_code=500, detail=f"Gagal merender prompt: {exc}") from exc
+
+
+@router.post("/extract-tables", dependencies=[Depends(verify_token)])
+async def extract_tables_endpoint(file: UploadFile = File(...)):
+    temp_dir = "temp_files"
+    os.makedirs(temp_dir, exist_ok=True)
+
+    file_id = str(uuid.uuid4())
+    temp_file_path = os.path.join(temp_dir, f"{file_id}_{file.filename}")
+
+    try:
+        with open(temp_file_path, "wb") as buffer:
+            shutil.copyfileobj(file.file, buffer)
+
+        tables = extract_tables_from_file(temp_file_path)
+
+        return {
+            "status": "success",
+            "filename": file.filename,
+            "tables": tables,
+        }
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    finally:
+        if os.path.exists(temp_file_path):
+            os.remove(temp_file_path)
+
+
+@router.post("/export", dependencies=[Depends(verify_token)])
+async def export_document_endpoint(request: ExportRequest):
+    try:
+        artifact = export_content(
+            request.content_html,
+            request.target_format,
+            file_name=request.file_name,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    headers = {
+        "Content-Disposition": f'attachment; filename="{artifact.filename}"',
+        "X-Content-Type-Options": "nosniff",
+        "Cache-Control": "no-store",
+    }
+
+    return Response(content=artifact.content, media_type=artifact.mime_type, headers=headers)
 
 
 @router.post("/summarize", dependencies=[Depends(verify_token)])

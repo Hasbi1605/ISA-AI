@@ -26,4 +26,6 @@ def test_document_app_only_exposes_document_routes():
     assert "/api/health" in paths
     assert "/api/documents/process" in paths
     assert "/api/documents/summarize" in paths
+    assert "/api/documents/extract-tables" in paths
+    assert "/api/documents/export" in paths
     assert "/api/chat" not in paths
