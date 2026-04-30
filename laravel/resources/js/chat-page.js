@@ -14,6 +14,7 @@ const registerChatPageData = (Alpine) => {
         isMobile: window.matchMedia('(max-width: 1023px)').matches,
         showLeftSidebar: !window.matchMedia('(max-width: 1023px)').matches,
         showRightSidebar: !window.matchMedia('(max-width: 1023px)').matches,
+        isSwitchingConversation: false,
         isDraggingFile: false,
         dragDepth: 0,
         dropError: '',
@@ -158,6 +159,7 @@ const registerChatPageData = (Alpine) => {
         activeConversationId: config.activeConversationId ? Number(config.activeConversationId) : null,
         showOlderChats: config.showOlderChats || false,
         loadingConversationId: null,
+        isNavigating: false,
 
         isActive(id) {
             return this.activeConversationId === Number(id);
@@ -169,28 +171,46 @@ const registerChatPageData = (Alpine) => {
 
         loadConversation(id) {
             const conversationId = Number(id);
+            if (this.isNavigating || this.activeConversationId === conversationId) {
+                return Promise.resolve();
+            }
+
+            const previousConversationId = this.activeConversationId;
             this.activeConversationId = conversationId;
             this.loadingConversationId = conversationId;
+            this.isNavigating = true;
             this.$dispatch('conversation-loading');
 
             return this.$wire.loadConversation(conversationId)
+                .catch(() => {
+                    this.activeConversationId = previousConversationId;
+                })
                 .finally(() => {
                     if (this.loadingConversationId === conversationId) {
                         this.loadingConversationId = null;
                     }
 
+                    this.isNavigating = false;
                     this.$dispatch('conversation-loaded');
                 });
         },
 
         startNewChat() {
+            if (this.isNavigating) {
+                return Promise.resolve();
+            }
+
             this.activeConversationId = null;
             this.loadingConversationId = null;
+            this.isNavigating = true;
             this.$dispatch('chat-new-optimistic');
             this.$dispatch('conversation-loading');
 
             return this.$wire.startNewChat()
-                .finally(() => this.$dispatch('conversation-loaded'));
+                .finally(() => {
+                    this.isNavigating = false;
+                    this.$dispatch('conversation-loaded');
+                });
         },
     }));
 

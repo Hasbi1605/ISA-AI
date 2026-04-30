@@ -23,7 +23,7 @@
     </div>
 
     <div class="p-4 pt-2 pb-5">
-        <button type="button" @click="startNewChat(); if(isMobile) showLeftSidebar = false;" class="w-full flex items-center justify-start px-4 py-2.5 rounded-lg border border-stone-200/60 dark:border-[#334155] dark:bg-transparent bg-white hover:bg-gray-50 dark:hover:bg-white/5 font-medium text-[13px] text-gray-700 dark:text-gray-200 transition-all duration-200 shadow-sm">
+        <button type="button" @click="startNewChat(); if(isMobile) showLeftSidebar = false;" :disabled="isNavigating" class="w-full flex items-center justify-start px-4 py-2.5 rounded-lg border border-stone-200/60 dark:border-[#334155] dark:bg-transparent bg-white hover:bg-gray-50 dark:hover:bg-white/5 font-medium text-[13px] text-gray-700 dark:text-gray-200 transition-all duration-200 shadow-sm disabled:cursor-wait disabled:opacity-70">
             <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 mr-2 text-[#64748B] dark:text-gray-300" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M12 5v14m-7-7h14" />
             </svg>
@@ -41,10 +41,11 @@
                 @endphp
 
                 @foreach($visibleChats as $conversation)
-                    <li class="group relative">
+                    <li class="group relative" wire:key="chat-history-visible-{{ $conversation->id }}">
                         <button type="button" @click="loadConversation({{ $conversation->id }}); if(isMobile) showLeftSidebar = false;"
+                           :disabled="isNavigating"
                            :class="isActive({{ $conversation->id }}) ? 'bg-white/80 shadow-sm border border-stone-200 text-stone-800 dark:bg-[#1E293B] dark:border-[#334155] dark:text-white font-medium' : 'hover:bg-black/5 dark:hover:bg-white/5 text-stone-700 dark:text-gray-300'"
-                           class="w-full text-left px-3 py-2 rounded-md flex items-center transition-colors duration-200">
+                           class="w-full text-left px-3 py-2 rounded-md flex items-center transition-colors duration-200 disabled:cursor-wait">
                             <img src="{{ $uiIcons['historyLight'] }}" alt="" class="h-4 w-4 mr-2.5 flex-shrink-0 dark:hidden" />
                             <img src="{{ $uiIcons['historyDark'] }}" alt="" class="h-4 w-4 mr-2.5 flex-shrink-0 hidden dark:block" />
                             <span class="truncate text-[13.2px]" title="{{ $conversation->title }}">{{ $conversation->title }}</span>
@@ -73,10 +74,11 @@
             </button>
                 <ul x-show="showOlderChats" class="mt-1 space-y-1" style="{{ $showOlderChats ? '' : 'display: none;' }}">
                     @foreach($olderChats as $conversation)
-                        <li class="group relative">
+                        <li class="group relative" wire:key="chat-history-older-{{ $conversation->id }}">
                             <button type="button" @click="loadConversation({{ $conversation->id }}); if(isMobile) showLeftSidebar = false;"
+                               :disabled="isNavigating"
                                :class="isActive({{ $conversation->id }}) ? 'bg-white/80 shadow-sm border border-stone-200 text-stone-800 dark:bg-[#1E293B] dark:border-[#334155] dark:text-white font-medium' : 'hover:bg-black/5 dark:hover:bg-white/5 text-stone-700 dark:text-gray-300'"
-                               class="w-full text-left px-3 py-2 rounded-md flex items-center transition-colors duration-200">
+                               class="w-full text-left px-3 py-2 rounded-md flex items-center transition-colors duration-200 disabled:cursor-wait">
                                 <img src="{{ $uiIcons['historyLight'] }}" alt="" class="h-4 w-4 mr-2.5 flex-shrink-0 dark:hidden" />
                                 <img src="{{ $uiIcons['historyDark'] }}" alt="" class="h-4 w-4 mr-2.5 flex-shrink-0 hidden dark:block" />
                                 <span class="truncate text-[13.2px]" title="{{ $conversation->title }}">{{ $conversation->title }}</span>

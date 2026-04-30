@@ -4,6 +4,8 @@
      x-on:dragleave.window.prevent="onDragLeave($event)"
      x-on:drop.window.prevent="onDropFile($event)"
      x-on:open-sidebar-right.window="showRightSidebar = true"
+     x-on:conversation-loading.window="isSwitchingConversation = true"
+     x-on:conversation-loaded.window="isSwitchingConversation = false"
      class="chat-viewport flex w-full overflow-hidden text-stone-800 dark:text-gray-100 font-sans transition-colors duration-300 relative ista-display-sans bg-stone-50/50 dark:bg-gray-900" style="background-image: url('{{ asset('images/ista/dashboard-grid.png') }}'); background-size: 8px 8px;"
 >
     @php
@@ -58,6 +60,16 @@
                         <img src="{{ $uiIcons['collapseRightLight'] }}" alt="" class="h-5 w-5 dark:hidden transition-transform duration-300 ease-in-out" :class="showRightSidebar ? 'rotate-0' : 'rotate-180'" />
                         <img src="{{ $uiIcons['collapseRightDark'] }}" alt="" class="h-5 w-5 hidden dark:block transition-transform duration-300 ease-in-out" :class="showRightSidebar ? 'rotate-0' : 'rotate-180'" />
                     </button>
+                </div>
+            </div>
+
+            <div x-show="isSwitchingConversation"
+                 x-transition.opacity
+                 class="pointer-events-none absolute left-0 right-0 top-[77px] z-30 px-3 sm:px-6"
+                 style="display: none;">
+                <div class="mx-auto flex max-w-3xl items-center gap-2 rounded-xl border border-stone-200/60 bg-white/95 px-4 py-3 text-[13px] text-[#64748B] shadow-sm backdrop-blur-sm dark:border-gray-800 dark:bg-gray-800/95 dark:text-[#94A3B8]">
+                    <span class="h-3.5 w-3.5 rounded-full border-2 border-current border-t-transparent animate-spin"></span>
+                    <span>Membuka chat...</span>
                 </div>
             </div>
 
