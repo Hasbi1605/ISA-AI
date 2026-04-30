@@ -72,6 +72,7 @@ class DocumentPreviewController extends Controller
 
         return response($html, Response::HTTP_OK, [
             'Content-Type' => 'text/html; charset=UTF-8',
+            'Content-Security-Policy' => 'sandbox',
             'Cache-Control' => 'private, max-age=300',
             'X-Content-Type-Options' => 'nosniff',
         ]);

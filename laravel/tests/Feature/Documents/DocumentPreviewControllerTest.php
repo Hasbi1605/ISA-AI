@@ -85,6 +85,8 @@ class DocumentPreviewControllerTest extends TestCase
         $response->assertOk();
         $this->assertStringContainsString('text/html', (string) $response->headers->get('Content-Type'));
         $this->assertStringContainsString('Preview content', $response->getContent());
+        $response->assertHeader('Content-Security-Policy', 'sandbox');
+        $response->assertHeader('X-Content-Type-Options', 'nosniff');
     }
 
     public function test_html_returns_404_when_preview_not_ready(): void
