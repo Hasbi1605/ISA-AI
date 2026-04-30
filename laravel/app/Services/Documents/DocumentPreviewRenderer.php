@@ -106,7 +106,6 @@ class DocumentPreviewRenderer
         $writer = new SpreadsheetHtmlWriter($spreadsheet);
         $writer->setPreCalculateFormulas(false);
         $writer->writeAllSheets();
-        $writer->setSheetIndex(0);
 
         ob_start();
         $writer->save('php://output');

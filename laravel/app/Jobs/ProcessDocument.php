@@ -78,7 +78,10 @@ class ProcessDocument implements ShouldQueue
                 $this->document->update(['status' => 'ready']);
 
                 // 5. Dispatch preview rendering job (async, non-blocking)
-                RenderDocumentPreview::dispatch($this->document->fresh());
+                $freshDocument = $this->document->fresh();
+                if ($freshDocument !== null) {
+                    RenderDocumentPreview::dispatch($freshDocument);
+                }
             } else {
                 throw new Exception("Microservice error: " . $response->body());
             }

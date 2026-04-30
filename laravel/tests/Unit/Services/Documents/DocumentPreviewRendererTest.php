@@ -117,6 +117,45 @@ class DocumentPreviewRendererTest extends TestCase
         $this->assertStringContainsString('1500', $html);
     }
 
+    public function test_render_xlsx_includes_all_sheets(): void
+    {
+        Storage::fake('local');
+        $user = User::factory()->create();
+
+        $relativePath = 'documents/'.$user->id.'/multi.xlsx';
+        $absolutePath = Storage::disk('local')->path($relativePath);
+        @mkdir(dirname($absolutePath), 0777, true);
+
+        $spreadsheet = new Spreadsheet;
+        $first = $spreadsheet->getActiveSheet();
+        $first->setTitle('Pendapatan');
+        $first->setCellValue('A1', 'PENDAPATAN_SHEET_MARKER');
+
+        $second = $spreadsheet->createSheet();
+        $second->setTitle('Belanja');
+        $second->setCellValue('A1', 'BELANJA_SHEET_MARKER');
+
+        (new Xlsx($spreadsheet))->save($absolutePath);
+
+        $document = Document::create([
+            'user_id' => $user->id,
+            'filename' => 'multi.xlsx',
+            'original_name' => 'multi.xlsx',
+            'file_path' => $relativePath,
+            'mime_type' => 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+            'file_size_bytes' => filesize($absolutePath),
+            'status' => 'ready',
+            'preview_status' => Document::PREVIEW_STATUS_PENDING,
+        ]);
+
+        app(DocumentPreviewRenderer::class)->render($document->refresh());
+
+        $document->refresh();
+        $html = Storage::disk('local')->get($document->preview_html_path);
+        $this->assertStringContainsString('PENDAPATAN_SHEET_MARKER', $html);
+        $this->assertStringContainsString('BELANJA_SHEET_MARKER', $html);
+    }
+
     public function test_render_marks_failed_when_source_missing(): void
     {
         Storage::fake('local');

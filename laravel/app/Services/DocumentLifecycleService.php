@@ -4,6 +4,7 @@ namespace App\Services;
 
 use App\Jobs\ProcessDocument;
 use App\Models\Document;
+use App\Services\Documents\DocumentPreviewRenderer;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Storage;
@@ -167,6 +168,16 @@ class DocumentLifecycleService
     {
         $this->deleteDocumentVectors($document);
         $this->deleteDocumentFile($document);
+        $this->deleteDocumentPreview($document);
+    }
+
+    private function deleteDocumentPreview(Document $document): void
+    {
+        try {
+            app(DocumentPreviewRenderer::class)->deletePreview($document);
+        } catch (\Throwable $e) {
+            logger()->warning("Preview cleanup failed for document {$document->id}, proceeding anyway: " . $e->getMessage());
+        }
     }
 
     private function deleteDocumentVectors(Document $document): void
