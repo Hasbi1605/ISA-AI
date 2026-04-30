@@ -22,7 +22,7 @@
         @php
             $isUserMessage = $message['role'] == 'user';
         @endphp
-        <div class="flex {{ $isUserMessage ? 'justify-end' : 'justify-start' }}">
+        <div wire:key="chat-message-{{ $message['id'] }}" class="flex {{ $isUserMessage ? 'justify-end' : 'justify-start' }}">
             <div class="w-full sm:max-w-3xl flex items-start gap-2 sm:gap-4 px-0 sm:px-8 {{ $isUserMessage ? 'flex-row-reverse' : '' }}">
                 <div class="shrink-0 h-8 w-8 rounded-full flex items-center justify-center {{ $message['role'] == 'user' ? 'bg-[#E2E8F0] dark:bg-white text-[#62748E] dark:text-black' : 'bg-white border border-stone-200 shadow-sm p-1' }}">
                     @if($message['role'] == 'user')
@@ -56,6 +56,8 @@
                             $exportFileName = 'ista-ai-jawaban-' . $message['id'];
                         @endphp
                         <div
+                            wire:key="chat-answer-actions-{{ $message['id'] }}"
+                            data-answer-message-id="{{ $message['id'] }}"
                             x-data="chatAnswerActions({
                                 html: @js((string) $assistantHtml),
                                 exportUrl: @js(route('documents.export')),

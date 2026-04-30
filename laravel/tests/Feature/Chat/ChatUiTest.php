@@ -83,6 +83,37 @@ class ChatUiTest extends TestCase
             ->assertSee('CSV', false);
     }
 
+    public function test_multiple_chat_answers_render_distinct_action_scopes(): void
+    {
+        $user = User::factory()->create();
+        $conversation = Conversation::create([
+            'user_id' => $user->id,
+            'title' => 'Multiple answer toolbar test',
+        ]);
+
+        $firstMessage = Message::create([
+            'conversation_id' => $conversation->id,
+            'role' => 'assistant',
+            'content' => 'Jawaban pertama untuk dibagikan.',
+        ]);
+
+        $secondMessage = Message::create([
+            'conversation_id' => $conversation->id,
+            'role' => 'assistant',
+            'content' => 'Jawaban kedua harus punya tombol sendiri.',
+        ]);
+
+        Livewire::actingAs($user)
+            ->test(ChatIndex::class)
+            ->set('messages', [$firstMessage->toArray(), $secondMessage->toArray()])
+            ->assertSee('wire:key="chat-message-' . $firstMessage->id . '"', false)
+            ->assertSee('wire:key="chat-message-' . $secondMessage->id . '"', false)
+            ->assertSee('wire:key="chat-answer-actions-' . $firstMessage->id . '"', false)
+            ->assertSee('wire:key="chat-answer-actions-' . $secondMessage->id . '"', false)
+            ->assertSee('data-answer-message-id="' . $firstMessage->id . '"', false)
+            ->assertSee('data-answer-message-id="' . $secondMessage->id . '"', false);
+    }
+
     public function test_latest_chat_answer_still_renders_actions(): void
     {
         $user = User::factory()->create();
