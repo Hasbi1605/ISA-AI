@@ -4,7 +4,7 @@ from io import BytesIO
 
 from docx import Document as DocxDocument
 from fastapi.testclient import TestClient
-from openpyxl import load_workbook
+from openpyxl import Workbook, load_workbook
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
@@ -162,3 +162,105 @@ def test_documents_extract_content_route_supports_csv_for_file_conversion():
     )
     assert "Nama" in table_text
     assert "10" in table_text
+
+
+def test_documents_convert_route_converts_csv_to_xlsx():
+    response = client.post(
+        "/api/documents/convert",
+        headers=AUTH_HEADERS,
+        data={"target_format": "xlsx", "file_name": "biaya"},
+        files={"file": ("biaya.csv", b"Nama,Nilai\nA,10\n", "text/csv")},
+    )
+
+    assert response.status_code == 200
+    assert response.headers["content-type"].startswith(
+        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    )
+    workbook = load_workbook(BytesIO(response.content))
+    sheet = workbook.active
+    assert sheet["A1"].value == "Nama"
+    assert sheet["B2"].value == "10"
+
+
+def test_documents_convert_route_converts_xlsx_to_docx():
+    workbook = Workbook()
+    sheet = workbook.active
+    sheet.title = "Biaya"
+    sheet["A1"] = "Nama"
+    sheet["B1"] = "Nilai"
+    sheet["A2"] = "A"
+    sheet["B2"] = "10"
+
+    buffer = BytesIO()
+    workbook.save(buffer)
+    buffer.seek(0)
+
+    response = client.post(
+        "/api/documents/convert",
+        headers=AUTH_HEADERS,
+        data={"target_format": "docx", "file_name": "biaya"},
+        files={
+            "file": (
+                "biaya.xlsx",
+                buffer.getvalue(),
+                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            ),
+        },
+    )
+
+    assert response.status_code == 200
+    docx_document = DocxDocument(BytesIO(response.content))
+    table_text = "\n".join(
+        cell.text
+        for table in docx_document.tables
+        for row in table.rows
+        for cell in row.cells
+    )
+    assert "Nama" in table_text
+    assert "10" in table_text
+
+
+def test_documents_convert_route_converts_docx_to_pdf():
+    document = DocxDocument()
+    document.add_heading("Dokumen Word", level=1)
+    document.add_paragraph("Konten ini harus menjadi PDF.")
+
+    buffer = BytesIO()
+    document.save(buffer)
+    buffer.seek(0)
+
+    response = client.post(
+        "/api/documents/convert",
+        headers=AUTH_HEADERS,
+        data={"target_format": "pdf", "file_name": "dokumen-word"},
+        files={
+            "file": (
+                "dokumen-word.docx",
+                buffer.getvalue(),
+                "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            ),
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.headers["content-type"].startswith("application/pdf")
+    assert response.content.startswith(b"%PDF")
+
+
+def test_documents_convert_route_converts_pdf_to_docx():
+    pdf_artifact = export_content("<p>Isi PDF untuk Word.</p>", "pdf", "dokumen-pdf")
+
+    response = client.post(
+        "/api/documents/convert",
+        headers=AUTH_HEADERS,
+        data={"target_format": "docx", "file_name": "dokumen-pdf"},
+        files={"file": ("dokumen-pdf.pdf", pdf_artifact.content, "application/pdf")},
+    )
+
+    assert response.status_code == 200
+    assert response.headers["content-type"].startswith(
+        "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+    )
+    docx_document = DocxDocument(BytesIO(response.content))
+    text = "\n".join(paragraph.text for paragraph in docx_document.paragraphs)
+    assert "PDF" in text or docx_document.tables

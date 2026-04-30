@@ -29,4 +29,5 @@ def test_document_app_only_exposes_document_routes():
     assert "/api/documents/extract-content" in paths
     assert "/api/documents/extract-tables" in paths
     assert "/api/documents/export" in paths
+    assert "/api/documents/convert" in paths
     assert "/api/chat" not in paths

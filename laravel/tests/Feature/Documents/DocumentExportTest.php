@@ -100,6 +100,37 @@ class DocumentExportTest extends TestCase
             ->assertJsonPath('content_html', '<article><p>Isi lengkap dokumen.</p></article>');
     }
 
+    public function test_convert_route_streams_download_for_authorized_user(): void
+    {
+        Storage::fake('local');
+        $user = User::factory()->create(['email_verified_at' => now()]);
+        $document = $this->createDocument($user, 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', 'sample.docx');
+
+        Storage::disk('local')->put($document->file_path, 'fake-docx');
+
+        $service = Mockery::mock(DocumentExportService::class);
+        $service->shouldReceive('convertDocument')
+            ->once()
+            ->with(Mockery::on(fn (Document $value) => $value->is($document)), 'pdf', 'sample')
+            ->andReturn([
+                'body' => '%PDF converted',
+                'content_type' => 'application/pdf',
+                'file_name' => 'sample.pdf',
+            ]);
+
+        $this->app->instance(DocumentExportService::class, $service);
+
+        $response = $this->actingAs($user)->post(route('documents.convert', $document), [
+            'target_format' => 'pdf',
+            'file_name' => 'sample',
+        ]);
+
+        $response->assertOk();
+        $response->assertHeader('Content-Type', 'application/pdf');
+        $this->assertStringContainsString('attachment; filename="sample.pdf"', (string) $response->headers->get('Content-Disposition'));
+        $this->assertSame('%PDF converted', $response->getContent());
+    }
+
     public function test_extract_tables_route_forbids_non_owner(): void
     {
         Storage::fake('local');
@@ -134,6 +165,25 @@ class DocumentExportTest extends TestCase
             ->assertForbidden();
     }
 
+    public function test_convert_route_forbids_non_owner(): void
+    {
+        Storage::fake('local');
+        $owner = User::factory()->create(['email_verified_at' => now()]);
+        $other = User::factory()->create(['email_verified_at' => now()]);
+        $document = $this->createDocument($owner, 'application/pdf', 'sample.pdf');
+
+        $service = Mockery::mock(DocumentExportService::class);
+        $service->shouldNotReceive('convertDocument');
+
+        $this->app->instance(DocumentExportService::class, $service);
+
+        $this->actingAs($other)
+            ->post(route('documents.convert', $document), [
+                'target_format' => 'docx',
+            ])
+            ->assertForbidden();
+    }
+
     public function test_export_and_extract_routes_require_authentication(): void
     {
         Storage::fake('local');
@@ -147,6 +197,9 @@ class DocumentExportTest extends TestCase
 
         $this->get(route('documents.content-html', $document))->assertRedirect();
         $this->get(route('documents.extract-tables', $document))->assertRedirect();
+        $this->post(route('documents.convert', $document), [
+            'target_format' => 'pdf',
+        ])->assertRedirect();
     }
 
     private function createDocument(User $user, string $mime, string $name): Document

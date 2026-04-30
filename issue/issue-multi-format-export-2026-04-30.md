@@ -80,3 +80,10 @@ Mentor meminta ISTA AI bisa menerima dokumen dalam satu format (mis. PDF) dan me
 - Sumber PDF/DOCX tetap boleh memakai jalur `extract-tables` khusus saat target XLSX/CSV agar tabel lebih terstruktur.
 - Sumber XLSX/CSV harus memakai jalur `content-html` penuh untuk semua target (`pdf`, `docx`, `xlsx`, `csv`) supaya bisa konversi spreadsheet/CSV ke PDF, DOCX, XLSX, atau CSV tanpa kehilangan isi.
 - CSV ikut didukung sebagai format upload/preview/export agar workflow seperti CSV -> XLSX dan CSV -> PDF/DOCX tersedia.
+
+## Follow-up 2026-05-01: Jalur Konversi File Asli
+- Export viewer dokumen tidak boleh bergantung pada HTML ekstraksi jika user meminta konversi file, karena layout PDF/Word/Excel bisa rusak.
+- Tambahkan endpoint konversi file asli yang menerima dokumen tersimpan dan target format.
+- Gunakan LibreOffice headless untuk DOCX/XLSX/CSV -> PDF agar layout, page setup, font, dan tabel lebih terjaga.
+- Gunakan `pdf2docx` untuk PDF -> DOCX sebelum fallback ke ekstraksi teks.
+- Gunakan pembentuk DOCX khusus spreadsheet untuk XLSX/CSV -> DOCX agar tabel tetap terbaca dan tidak berubah menjadi paragraf acak.

@@ -41,6 +41,7 @@
                                     contentUrl: @js(route('documents.content-html', $document)),
                                     extractUrl: @js($usesTableExtraction ? route('documents.extract-tables', $document) : null),
                                     exportUrl: @js(route('documents.export')),
+                                    convertUrl: @js(route('documents.convert', $document)),
                                     fileName: @js($exportBaseName),
                                     preferTableExtraction: @js($usesTableExtraction),
                                 })"

@@ -781,6 +781,7 @@ const registerChatPageData = (Alpine) => {
         contentUrl: config.contentUrl || '',
         extractUrl: config.extractUrl || '',
         exportUrl: config.exportUrl || '',
+        convertUrl: config.convertUrl || '',
         fileName: config.fileName || 'ista-ai-tabel-dokumen',
         preferTableExtraction: Boolean(config.preferTableExtraction),
         exportMenuOpen: false,
@@ -808,6 +809,12 @@ const registerChatPageData = (Alpine) => {
             this.error = '';
 
             try {
+                if (this.convertUrl) {
+                    await this.convertOriginalAs(format);
+
+                    return;
+                }
+
                 const isTableFormat = ['xlsx', 'csv'].includes(format);
                 const contentHtml = isTableFormat && this.preferTableExtraction
                     ? await this.tableExportHtml()
@@ -840,6 +847,29 @@ const registerChatPageData = (Alpine) => {
             } finally {
                 this.loading = false;
             }
+        },
+
+        async convertOriginalAs(format) {
+            const response = await fetch(this.convertUrl, {
+                method: 'POST',
+                credentials: 'same-origin',
+                headers: {
+                    'Accept': '*/*',
+                    'Content-Type': 'application/json',
+                    'X-CSRF-TOKEN': this.getCsrfToken(),
+                },
+                body: JSON.stringify({
+                    target_format: format,
+                    file_name: this.fileName,
+                }),
+            });
+
+            if (!response.ok) {
+                throw new Error(await response.text() || 'Gagal mengonversi dokumen.');
+            }
+
+            const blob = await response.blob();
+            this.downloadBlob(blob, this.filenameFromResponse(response, format));
         },
 
         async fullContentHtml() {

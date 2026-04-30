@@ -126,6 +126,46 @@ class DocumentExportService
         return $response->json() ?: [];
     }
 
+    /**
+     * Convert the original stored document to the requested target format.
+     *
+     * @return array{body: string, content_type: string, file_name: string}
+     */
+    public function convertDocument(Document $document, string $targetFormat, ?string $fileName = null): array
+    {
+        $resolvedPath = $this->resolveDocumentPath($document);
+
+        if ($resolvedPath === null) {
+            throw new RuntimeException('File dokumen tidak ditemukan.');
+        }
+
+        $contents = file_get_contents($resolvedPath);
+
+        if ($contents === false) {
+            throw new RuntimeException('Gagal membaca file dokumen.');
+        }
+
+        $response = Http::withToken($this->token ?: '')
+            ->accept('*/*')
+            ->connectTimeout($this->connectTimeout)
+            ->timeout($this->timeout)
+            ->attach('file', $contents, $document->original_name)
+            ->post($this->baseUrl.'/api/documents/convert', [
+                'target_format' => $targetFormat,
+                'file_name' => $fileName ?: pathinfo($document->original_name ?: $document->filename, PATHINFO_FILENAME),
+            ]);
+
+        if (! $response->successful()) {
+            throw new RuntimeException($response->body() ?: 'Gagal mengonversi dokumen.');
+        }
+
+        return [
+            'body' => (string) $response->body(),
+            'content_type' => $response->header('Content-Type') ?: $this->mimeTypeForFormat($targetFormat),
+            'file_name' => $this->fileNameFromResponse($response->header('Content-Disposition'), $fileName, $targetFormat),
+        ];
+    }
+
     protected function resolveDocumentPath(Document $document): ?string
     {
         $candidates = [
@@ -171,6 +211,19 @@ class DocumentExportService
         }
 
         return $base.'.'.strtolower(trim($targetFormat));
+    }
+
+    protected function fileNameFromResponse(?string $disposition, ?string $fileName, string $targetFormat): string
+    {
+        if ($disposition && preg_match('/filename="([^"]+)"/i', $disposition, $matches) === 1) {
+            return $matches[1];
+        }
+
+        if ($disposition && preg_match('/filename=([^;]+)/i', $disposition, $matches) === 1) {
+            return trim($matches[1], " \t\n\r\0\x0B\"");
+        }
+
+        return $this->buildFileName($fileName, $targetFormat);
     }
 
     private function normalizeStringConfig(mixed $value, string $default = ''): string

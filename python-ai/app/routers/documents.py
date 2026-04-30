@@ -13,6 +13,7 @@ from app.config_loader import (
     get_summarize_single_prompt,
 )
 from app.document_runner import run_document_process
+from app.services.document_conversion import convert_document_file
 from app.services.document_content import extract_document_content_html
 from app.services.document_export import export_content
 from app.services.table_extraction import extract_tables_from_file
@@ -170,6 +171,45 @@ async def export_document_endpoint(request: ExportRequest):
         )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    headers = {
+        "Content-Disposition": f'attachment; filename="{artifact.filename}"',
+        "X-Content-Type-Options": "nosniff",
+        "Cache-Control": "no-store",
+    }
+
+    return Response(content=artifact.content, media_type=artifact.mime_type, headers=headers)
+
+
+@router.post("/convert", dependencies=[Depends(verify_token)])
+async def convert_document_endpoint(
+    file: UploadFile = File(...),
+    target_format: str = Form(...),
+    file_name: str | None = Form(None),
+):
+    temp_dir = "temp_files"
+    os.makedirs(temp_dir, exist_ok=True)
+
+    file_id = str(uuid.uuid4())
+    temp_file_path = os.path.join(temp_dir, f"{file_id}_{file.filename}")
+
+    try:
+        with open(temp_file_path, "wb") as buffer:
+            shutil.copyfileobj(file.file, buffer)
+
+        artifact = convert_document_file(
+            temp_file_path,
+            target_format,
+            filename=file.filename,
+            file_name=file_name,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+    finally:
+        if os.path.exists(temp_file_path):
+            os.remove(temp_file_path)
 
     headers = {
         "Content-Disposition": f'attachment; filename="{artifact.filename}"',

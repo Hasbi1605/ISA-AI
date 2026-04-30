@@ -31,6 +31,7 @@ WORKDIR /app
 # - libmagic1: untuk python-magic (deteksi tipe file)
 # - poppler-utils: untuk pdf2image (konversi PDF ke gambar)
 # - tesseract-ocr: untuk OCR dokumen
+# - libreoffice-writer/calc: untuk konversi file asli DOCX/XLSX/CSV ke PDF yang lebih presisi
 # - curl: untuk health check
 RUN apt-get update && apt-get install -y --no-install-recommends \
     libmagic1 \
@@ -43,6 +44,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     shared-mime-info \
     tesseract-ocr \
     fonts-dejavu-core \
+    fonts-liberation \
+    fontconfig \
+    libreoffice-calc \
+    libreoffice-writer \
     curl \
     && rm -rf /var/lib/apt/lists/*
 
