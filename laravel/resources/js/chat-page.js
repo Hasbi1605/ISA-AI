@@ -778,12 +778,14 @@ const registerChatPageData = (Alpine) => {
     }));
 
     Alpine.data('documentViewerExport', (config = {}) => ({
+        contentUrl: config.contentUrl || '',
         extractUrl: config.extractUrl || '',
         exportUrl: config.exportUrl || '',
         fileName: config.fileName || 'ista-ai-tabel-dokumen',
         exportMenuOpen: false,
         loading: false,
         error: '',
+        contentHtml: '',
         tables: null,
 
         toggleMenu() {
@@ -796,7 +798,7 @@ const registerChatPageData = (Alpine) => {
         },
 
         async exportTablesAs(format) {
-            if (!this.extractUrl || !this.exportUrl || this.loading) {
+            if (!this.exportUrl || this.loading) {
                 return;
             }
 
@@ -805,12 +807,10 @@ const registerChatPageData = (Alpine) => {
             this.error = '';
 
             try {
-                const tables = await this.extractTables();
-
-                if (tables.length === 0) {
-                    this.error = 'Tidak ada tabel yang bisa diekspor.';
-                    return;
-                }
+                const isTableFormat = ['xlsx', 'csv'].includes(format);
+                const contentHtml = isTableFormat
+                    ? await this.tableExportHtml()
+                    : await this.fullContentHtml();
 
                 const response = await fetch(this.exportUrl, {
                     method: 'POST',
@@ -821,29 +821,80 @@ const registerChatPageData = (Alpine) => {
                         'X-CSRF-TOKEN': this.getCsrfToken(),
                     },
                     body: JSON.stringify({
-                        content_html: this.tablesToHtml(tables),
+                        content_html: contentHtml,
                         target_format: format,
                         file_name: this.fileName,
                     }),
                 });
 
                 if (!response.ok) {
-                    throw new Error(await response.text() || 'Gagal mengekspor tabel.');
+                    throw new Error(await response.text() || 'Gagal mengekspor dokumen.');
                 }
 
                 const blob = await response.blob();
                 this.downloadBlob(blob, this.filenameFromResponse(response, format));
             } catch (error) {
-                console.error('Gagal mengekspor tabel dokumen', error);
-                this.error = error?.message || 'Gagal mengekspor tabel.';
+                console.error('Gagal mengekspor dokumen', error);
+                this.error = error?.message || 'Gagal mengekspor dokumen.';
             } finally {
                 this.loading = false;
             }
         },
 
+        async fullContentHtml() {
+            if (this.contentHtml) {
+                return this.contentHtml;
+            }
+
+            if (!this.contentUrl) {
+                throw new Error('Konten dokumen belum tersedia untuk diekspor.');
+            }
+
+            const response = await fetch(this.contentUrl, {
+                credentials: 'same-origin',
+                headers: {
+                    'Accept': 'application/json',
+                },
+            });
+
+            let payload = null;
+
+            try {
+                payload = await response.json();
+            } catch (error) {
+                payload = null;
+            }
+
+            if (!response.ok) {
+                throw new Error(payload?.message || payload?.detail || 'Gagal mengekstrak isi dokumen.');
+            }
+
+            this.contentHtml = String(payload?.content_html || '').trim();
+
+            if (!this.contentHtml) {
+                throw new Error('Isi dokumen kosong atau tidak bisa diekstrak.');
+            }
+
+            return this.contentHtml;
+        },
+
+        async tableExportHtml() {
+            const tables = await this.extractTables();
+
+            if (tables.length === 0) {
+                throw new Error('Tidak ada tabel yang bisa diekspor.');
+            }
+
+            return this.tablesToHtml(tables);
+        },
+
         async extractTables() {
             if (Array.isArray(this.tables)) {
                 return this.tables;
+            }
+
+            if (!this.extractUrl) {
+                throw new Error('Ekstraksi tabel tidak tersedia untuk dokumen ini.');
             }
 
             const response = await fetch(this.extractUrl, {

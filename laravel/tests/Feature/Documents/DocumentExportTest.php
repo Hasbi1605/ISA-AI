@@ -74,6 +74,32 @@ class DocumentExportTest extends TestCase
             ->assertJsonPath('tables.0.rows.0.1', '10');
     }
 
+    public function test_extract_content_route_returns_document_html_for_owner(): void
+    {
+        Storage::fake('local');
+        $user = User::factory()->create(['email_verified_at' => now()]);
+        $document = $this->createDocument($user, 'application/pdf', 'sample.pdf');
+
+        Storage::disk('local')->put($document->file_path, '%PDF-1.4 fake');
+
+        $service = Mockery::mock(DocumentExportService::class);
+        $service->shouldReceive('extractContent')
+            ->once()
+            ->with(Mockery::on(fn (Document $value) => $value->is($document)))
+            ->andReturn([
+                'status' => 'success',
+                'filename' => 'sample.pdf',
+                'content_html' => '<article><p>Isi lengkap dokumen.</p></article>',
+            ]);
+
+        $this->app->instance(DocumentExportService::class, $service);
+
+        $this->actingAs($user)
+            ->get(route('documents.content-html', $document))
+            ->assertOk()
+            ->assertJsonPath('content_html', '<article><p>Isi lengkap dokumen.</p></article>');
+    }
+
     public function test_extract_tables_route_forbids_non_owner(): void
     {
         Storage::fake('local');
@@ -91,6 +117,23 @@ class DocumentExportTest extends TestCase
             ->assertForbidden();
     }
 
+    public function test_extract_content_route_forbids_non_owner(): void
+    {
+        Storage::fake('local');
+        $owner = User::factory()->create(['email_verified_at' => now()]);
+        $other = User::factory()->create(['email_verified_at' => now()]);
+        $document = $this->createDocument($owner, 'application/pdf', 'sample.pdf');
+
+        $service = Mockery::mock(DocumentExportService::class);
+        $service->shouldNotReceive('extractContent');
+
+        $this->app->instance(DocumentExportService::class, $service);
+
+        $this->actingAs($other)
+            ->get(route('documents.content-html', $document))
+            ->assertForbidden();
+    }
+
     public function test_export_and_extract_routes_require_authentication(): void
     {
         Storage::fake('local');
@@ -102,6 +145,7 @@ class DocumentExportTest extends TestCase
             'target_format' => 'pdf',
         ])->assertRedirect();
 
+        $this->get(route('documents.content-html', $document))->assertRedirect();
         $this->get(route('documents.extract-tables', $document))->assertRedirect();
     }
 

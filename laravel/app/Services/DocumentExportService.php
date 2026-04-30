@@ -93,6 +93,39 @@ class DocumentExportService
         return $response->json() ?: [];
     }
 
+    /**
+     * Extract complete document content as HTML for DOCX/PDF exports.
+     *
+     * @return array<string, mixed>
+     */
+    public function extractContent(Document $document): array
+    {
+        $resolvedPath = $this->resolveDocumentPath($document);
+
+        if ($resolvedPath === null) {
+            throw new RuntimeException('File dokumen tidak ditemukan.');
+        }
+
+        $contents = file_get_contents($resolvedPath);
+
+        if ($contents === false) {
+            throw new RuntimeException('Gagal membaca file dokumen.');
+        }
+
+        $response = Http::withToken($this->token ?: '')
+            ->acceptJson()
+            ->connectTimeout($this->connectTimeout)
+            ->timeout($this->timeout)
+            ->attach('file', $contents, $document->original_name)
+            ->post($this->baseUrl.'/api/documents/extract-content');
+
+        if (! $response->successful()) {
+            throw new RuntimeException($response->body() ?: 'Gagal mengekstrak isi dokumen.');
+        }
+
+        return $response->json() ?: [];
+    }
+
     protected function resolveDocumentPath(Document $document): ?string
     {
         $candidates = [

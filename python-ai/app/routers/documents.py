@@ -13,6 +13,7 @@ from app.config_loader import (
     get_summarize_single_prompt,
 )
 from app.document_runner import run_document_process
+from app.services.document_content import extract_document_content_html
 from app.services.document_export import export_content
 from app.services.table_extraction import extract_tables_from_file
 
@@ -125,6 +126,32 @@ async def extract_tables_endpoint(file: UploadFile = File(...)):
             "status": "success",
             "filename": file.filename,
             "tables": tables,
+        }
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    finally:
+        if os.path.exists(temp_file_path):
+            os.remove(temp_file_path)
+
+
+@router.post("/extract-content", dependencies=[Depends(verify_token)])
+async def extract_content_endpoint(file: UploadFile = File(...)):
+    temp_dir = "temp_files"
+    os.makedirs(temp_dir, exist_ok=True)
+
+    file_id = str(uuid.uuid4())
+    temp_file_path = os.path.join(temp_dir, f"{file_id}_{file.filename}")
+
+    try:
+        with open(temp_file_path, "wb") as buffer:
+            shutil.copyfileobj(file.file, buffer)
+
+        content_html = extract_document_content_html(temp_file_path, filename=file.filename)
+
+        return {
+            "status": "success",
+            "filename": file.filename,
+            "content_html": content_html,
         }
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc

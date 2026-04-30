@@ -37,9 +37,10 @@
                             <div
                                 wire:key="document-export-actions-{{ $document->id }}"
                                 x-data="documentViewerExport({
+                                    contentUrl: @js(route('documents.content-html', $document)),
                                     extractUrl: @js(route('documents.extract-tables', $document)),
                                     exportUrl: @js(route('documents.export')),
-                                    fileName: @js('tabel-' . $exportBaseName),
+                                    fileName: @js($exportBaseName),
                                 })"
                                 data-document-export-actions
                                 class="relative"

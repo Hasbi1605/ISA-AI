@@ -28,6 +28,7 @@ Route::middleware(['auth', 'verified'])
     ->prefix('documents')
     ->name('documents.')
     ->group(function () {
+        Route::get('/{document}/content-html', [DocumentExportController::class, 'extractContent'])->name('content-html');
         Route::get('/{document}/extract-tables', [DocumentExportController::class, 'extractTables'])->name('extract-tables');
         Route::post('/export', [DocumentExportController::class, 'export'])->name('export');
     });

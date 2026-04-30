@@ -42,6 +42,15 @@ class DocumentExportController extends Controller
         return response()->json($result);
     }
 
+    public function extractContent(Request $request, Document $document, DocumentExportService $exportService): JsonResponse
+    {
+        $this->authorizeView($request, $document);
+
+        $result = $exportService->extractContent($document);
+
+        return response()->json($result);
+    }
+
     protected function authorizeView(Request $request, Document $document): void
     {
         $user = $request->user();

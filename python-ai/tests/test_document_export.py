@@ -93,3 +93,36 @@ def test_documents_extract_tables_route_reads_upload():
     first_table = payload["tables"][0]
     assert first_table["header"] == ["Nama", "Nilai"]
     assert first_table["rows"][0] == ["A", "10"]
+
+
+def test_documents_extract_content_route_returns_full_docx_html():
+    document = DocxDocument()
+    document.add_paragraph("Paragraf awal dokumen lengkap.")
+    table = document.add_table(rows=2, cols=2)
+    table.cell(0, 0).text = "Nama"
+    table.cell(0, 1).text = "Nilai"
+    table.cell(1, 0).text = "A"
+    table.cell(1, 1).text = "10"
+
+    buffer = BytesIO()
+    document.save(buffer)
+    buffer.seek(0)
+
+    response = client.post(
+        "/api/documents/extract-content",
+        headers=AUTH_HEADERS,
+        files={
+            "file": (
+                "dokumen-lengkap.docx",
+                buffer.getvalue(),
+                "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            ),
+        },
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["status"] == "success"
+    assert "Paragraf awal dokumen lengkap." in payload["content_html"]
+    assert "<table>" in payload["content_html"]
+    assert "Nama" in payload["content_html"]
