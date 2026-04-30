@@ -122,6 +122,19 @@
                                   <p class="text-[11.4px] text-[#64748B] dark:text-[#94A3B8]">{{ $size }} @if($isLoading) • Processing... @endif</p>
                               </div>
 
+                              @if($isReady)
+                                  <button type="button"
+                                      wire:click.prevent="$dispatch('open-document-preview', { documentId: {{ $doc->id }} })"
+                                      class="h-7 w-7 rounded-md text-[#94A3B8] hover:text-ista-primary dark:hover:text-[#A5B4FC] hover:bg-stone-100 dark:hover:bg-gray-700 transition-colors flex items-center justify-center"
+                                      title="Baca dokumen"
+                                      aria-label="Baca dokumen">
+                                      <svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+                                          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                                      </svg>
+                                  </button>
+                              @endif
+
                               <button type="button" wire:click.prevent="deleteDocument({{ $doc->id }})" wire:confirm="Delete this file from your documents?" wire:loading.attr="disabled" wire:target="deleteDocument({{ $doc->id }})" class="h-7 w-7 rounded-md text-[#94A3B8] hover:text-red-500 dark:hover:text-red-400 hover:bg-red-50 dark:hover:bg-red-500/10 transition-colors flex items-center justify-center disabled:opacity-60" title="Remove">
                                   <svg wire:loading.remove wire:target="deleteDocument({{ $doc->id }})" xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                                       <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />

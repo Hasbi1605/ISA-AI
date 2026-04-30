@@ -17,9 +17,29 @@ class Document extends Model
         'filename',
         'original_name',
         'file_path',
+        'preview_html_path',
+        'preview_status',
         'mime_type',
         'file_size_bytes',
         'status',
+    ];
+
+    public const PREVIEW_STATUS_PENDING = 'pending';
+
+    public const PREVIEW_STATUS_READY = 'ready';
+
+    public const PREVIEW_STATUS_FAILED = 'failed';
+
+    public const PDF_MIME_TYPES = [
+        'application/pdf',
+    ];
+
+    public const DOCX_MIME_TYPES = [
+        'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+    ];
+
+    public const XLSX_MIME_TYPES = [
+        'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
     ];
 
     protected function casts(): array
