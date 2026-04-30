@@ -129,6 +129,19 @@
                                     </svg>
                                     <span class="sr-only" x-text="copyStatusLabel()">Salin</span>
                                 </button>
+                                <span
+                                    x-show="copied"
+                                    x-transition.opacity.duration.150ms
+                                    class="inline-flex h-7 items-center gap-1 rounded-full border border-emerald-200 bg-emerald-50 px-2 text-[11px] font-medium text-emerald-700 shadow-sm dark:border-emerald-500/30 dark:bg-emerald-500/10 dark:text-emerald-200"
+                                    style="display: none;"
+                                    role="status"
+                                    aria-live="polite"
+                                >
+                                    <svg class="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" aria-hidden="true">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.2" d="m5 12 4 4L19 6" />
+                                    </svg>
+                                    Tersalin
+                                </span>
 
                                 <button
                                     type="button"

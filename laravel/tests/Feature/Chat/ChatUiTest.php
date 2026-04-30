@@ -73,6 +73,8 @@ class ChatUiTest extends TestCase
             ->set('messages', [$message->toArray()])
             ->assertSee('data-answer-actions', false)
             ->assertSee('Salin', false)
+            ->assertSee('role="status"', false)
+            ->assertSee('Tersalin', false)
             ->assertSee('Bagikan', false)
             ->assertSee('Ekspor', false)
             ->assertSee('PDF', false)
