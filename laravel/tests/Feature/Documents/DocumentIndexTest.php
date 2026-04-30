@@ -17,6 +17,15 @@ class DocumentIndexTest extends TestCase
 {
     use RefreshDatabase;
 
+    public function test_documents_page_route_is_not_registered(): void
+    {
+        $user = User::factory()->create(['email_verified_at' => now()]);
+
+        $this->actingAs($user)
+            ->get('/documents')
+            ->assertNotFound();
+    }
+
     public function test_user_can_upload_document_via_document_index(): void
     {
         Queue::fake();
@@ -47,7 +56,7 @@ class DocumentIndexTest extends TestCase
             'user_id' => $user->id,
             'filename' => 'pending.pdf',
             'original_name' => 'pending.pdf',
-            'file_path' => 'documents/' . $user->id . '/pending.pdf',
+            'file_path' => 'documents/'.$user->id.'/pending.pdf',
             'mime_type' => 'application/pdf',
             'file_size_bytes' => 120,
             'status' => 'pending',

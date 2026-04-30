@@ -46,5 +46,7 @@
         <main class="app-main-viewport w-full flex">
             {{ $slot }}
         </main>
+        <livewire:documents.document-viewer />
+
     </body>
 </html>

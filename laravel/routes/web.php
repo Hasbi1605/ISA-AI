@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Controllers\Documents\DocumentPreviewController;
 use App\Livewire\Chat\ChatIndex;
 use Illuminate\Support\Facades\Route;
 
@@ -21,5 +22,14 @@ Route::view('profile', 'profile')
 Route::get('chat', ChatIndex::class)
     ->middleware(['auth', 'verified'])
     ->name('chat');
+
+Route::middleware(['auth', 'verified'])
+    ->prefix('documents/{document}/preview')
+    ->name('documents.preview.')
+    ->group(function () {
+        Route::get('/status', [DocumentPreviewController::class, 'status'])->name('status');
+        Route::get('/stream', [DocumentPreviewController::class, 'stream'])->name('stream');
+        Route::get('/html', [DocumentPreviewController::class, 'html'])->name('html');
+    });
 
 require __DIR__ . '/auth.php';
