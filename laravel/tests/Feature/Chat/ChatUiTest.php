@@ -2,9 +2,11 @@
 
 namespace Tests\Feature\Chat;
 
+use App\Livewire\Chat\ChatIndex;
 use App\Models\Conversation;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Livewire\Livewire;
 use Tests\TestCase;
 
 class ChatUiTest extends TestCase
@@ -29,7 +31,25 @@ class ChatUiTest extends TestCase
             ->assertSee('conversation-documents-preview', false)
             ->assertSee('Membuka chat...', false)
             ->assertSee('x-on:conversation-loading.window="isSwitchingConversation = true"', false)
+            ->assertSee('x-on:conversation-activated.window="setActiveConversation($event.detail.id)"', false)
             ->assertSee(':disabled="isNavigating"', false)
+            ->assertSee('data-chat-history-id=', false)
+            ->assertSee('chat-history-item', false)
             ->assertSee('wire:key="chat-history-visible-', false);
+    }
+
+    public function test_loading_conversation_dispatches_active_history_event(): void
+    {
+        $user = User::factory()->create();
+        $conversation = Conversation::create([
+            'user_id' => $user->id,
+            'title' => 'Selected history',
+        ]);
+
+        Livewire::actingAs($user)
+            ->test(ChatIndex::class)
+            ->call('loadConversation', $conversation->id)
+            ->assertSet('currentConversationId', $conversation->id)
+            ->assertDispatched('conversation-activated', id: $conversation->id);
     }
 }

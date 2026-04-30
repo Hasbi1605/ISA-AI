@@ -95,4 +95,16 @@
     .ista-primary-cta {
         @apply absolute bottom-2 right-2 top-2 rounded-xl bg-ista-primary px-8 text-[11px] font-bold text-ista-gold transition-all hover:bg-stone-800;
     }
+
+    .chat-history-item {
+        @apply w-full text-left px-3 py-2 rounded-md flex items-center border border-transparent text-stone-700 transition-colors duration-150 disabled:cursor-wait dark:text-gray-300;
+    }
+
+    .chat-history-item:not(.is-active) {
+        @apply hover:bg-black/5 dark:hover:bg-white/5;
+    }
+
+    .chat-history-item.is-active {
+        @apply bg-white/80 shadow-sm border-stone-200 text-stone-800 font-medium dark:bg-[#1E293B] dark:border-[#334155] dark:text-white;
+    }
 }

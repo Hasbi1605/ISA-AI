@@ -161,6 +161,11 @@ const registerChatPageData = (Alpine) => {
         loadingConversationId: null,
         isNavigating: false,
 
+        init() {
+            this.$nextTick(() => this.syncActiveHistoryItem());
+            this.$watch('activeConversationId', () => this.syncActiveHistoryItem());
+        },
+
         isActive(id) {
             return this.activeConversationId === Number(id);
         },
@@ -169,21 +174,42 @@ const registerChatPageData = (Alpine) => {
             return this.loadingConversationId === Number(id);
         },
 
+        setActiveConversation(id) {
+            const conversationId = id ? Number(id) : null;
+            this.activeConversationId = Number.isFinite(conversationId) ? conversationId : null;
+            this.syncActiveHistoryItem();
+            this.$nextTick(() => this.syncActiveHistoryItem());
+        },
+
+        syncActiveHistoryItem() {
+            if (!this.$root) {
+                return;
+            }
+
+            this.$root.querySelectorAll('[data-chat-history-id]').forEach((button) => {
+                const isActive = Number(button.dataset.chatHistoryId) === this.activeConversationId;
+                button.classList.toggle('is-active', isActive);
+                button.setAttribute('aria-current', isActive ? 'page' : 'false');
+            });
+        },
+
         loadConversation(id) {
             const conversationId = Number(id);
-            if (this.isNavigating || this.activeConversationId === conversationId) {
+            const previousConversationId = this.activeConversationId;
+
+            this.setActiveConversation(conversationId);
+
+            if (this.isNavigating || previousConversationId === conversationId) {
                 return Promise.resolve();
             }
 
-            const previousConversationId = this.activeConversationId;
-            this.activeConversationId = conversationId;
             this.loadingConversationId = conversationId;
             this.isNavigating = true;
             this.$dispatch('conversation-loading');
 
             return this.$wire.loadConversation(conversationId)
                 .catch(() => {
-                    this.activeConversationId = previousConversationId;
+                    this.setActiveConversation(previousConversationId);
                 })
                 .finally(() => {
                     if (this.loadingConversationId === conversationId) {
@@ -200,7 +226,7 @@ const registerChatPageData = (Alpine) => {
                 return Promise.resolve();
             }
 
-            this.activeConversationId = null;
+            this.setActiveConversation(null);
             this.loadingConversationId = null;
             this.isNavigating = true;
             this.$dispatch('chat-new-optimistic');

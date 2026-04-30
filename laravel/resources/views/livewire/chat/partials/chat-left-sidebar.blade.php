@@ -5,7 +5,8 @@
         isMobile ? 'fixed left-0 top-0 h-full w-[288px] shadow-2xl border-r border-stone-200/60 dark:border-[#1E293B]' : (showLeftSidebar ? 'relative w-[288px] border-r border-stone-200/60 dark:border-[#1E293B]' : 'relative w-0 border-r border-transparent')
     ]"
     @click.stop
-    x-on:chat-new-optimistic.window="activeConversationId = null; loadingConversationId = null"
+    x-on:chat-new-optimistic.window="setActiveConversation(null); loadingConversationId = null"
+    x-on:conversation-activated.window="setActiveConversation($event.detail.id)"
     class="z-50 flex-shrink-0 overflow-hidden bg-white dark:bg-gray-900 flex flex-col transform-gpu will-change-[width,transform,opacity] transition-[width,transform,opacity,border-color] duration-500 ease-[cubic-bezier(0.22,1,0.36,1)]">
 
     <div class="flex items-center justify-between px-4 pb-2 pt-3">
@@ -43,9 +44,10 @@
                 @foreach($visibleChats as $conversation)
                     <li class="group relative" wire:key="chat-history-visible-{{ $conversation->id }}">
                         <button type="button" @click="loadConversation({{ $conversation->id }}); if(isMobile) showLeftSidebar = false;"
+                           data-chat-history-id="{{ $conversation->id }}"
                            :disabled="isNavigating"
-                           :class="isActive({{ $conversation->id }}) ? 'bg-white/80 shadow-sm border border-stone-200 text-stone-800 dark:bg-[#1E293B] dark:border-[#334155] dark:text-white font-medium' : 'hover:bg-black/5 dark:hover:bg-white/5 text-stone-700 dark:text-gray-300'"
-                           class="w-full text-left px-3 py-2 rounded-md flex items-center transition-colors duration-200 disabled:cursor-wait">
+                           :class="{ 'is-active': isActive({{ $conversation->id }}) }"
+                           class="chat-history-item {{ (int) $currentConversationId === (int) $conversation->id ? 'is-active' : '' }}">
                             <img src="{{ $uiIcons['historyLight'] }}" alt="" class="h-4 w-4 mr-2.5 flex-shrink-0 dark:hidden" />
                             <img src="{{ $uiIcons['historyDark'] }}" alt="" class="h-4 w-4 mr-2.5 flex-shrink-0 hidden dark:block" />
                             <span class="truncate text-[13.2px]" title="{{ $conversation->title }}">{{ $conversation->title }}</span>
@@ -76,9 +78,10 @@
                     @foreach($olderChats as $conversation)
                         <li class="group relative" wire:key="chat-history-older-{{ $conversation->id }}">
                             <button type="button" @click="loadConversation({{ $conversation->id }}); if(isMobile) showLeftSidebar = false;"
+                               data-chat-history-id="{{ $conversation->id }}"
                                :disabled="isNavigating"
-                               :class="isActive({{ $conversation->id }}) ? 'bg-white/80 shadow-sm border border-stone-200 text-stone-800 dark:bg-[#1E293B] dark:border-[#334155] dark:text-white font-medium' : 'hover:bg-black/5 dark:hover:bg-white/5 text-stone-700 dark:text-gray-300'"
-                               class="w-full text-left px-3 py-2 rounded-md flex items-center transition-colors duration-200 disabled:cursor-wait">
+                               :class="{ 'is-active': isActive({{ $conversation->id }}) }"
+                               class="chat-history-item {{ (int) $currentConversationId === (int) $conversation->id ? 'is-active' : '' }}">
                                 <img src="{{ $uiIcons['historyLight'] }}" alt="" class="h-4 w-4 mr-2.5 flex-shrink-0 dark:hidden" />
                                 <img src="{{ $uiIcons['historyDark'] }}" alt="" class="h-4 w-4 mr-2.5 flex-shrink-0 hidden dark:block" />
                                 <span class="truncate text-[13.2px]" title="{{ $conversation->title }}">{{ $conversation->title }}</span>

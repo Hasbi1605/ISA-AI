@@ -118,6 +118,7 @@ class ChatIndex extends Component
 
         $this->currentConversationId = $conversation->id;
         $this->messages = $conversation->messages->toArray();
+        $this->dispatch('conversation-activated', id: $conversation->id);
     }
 
     public function startNewChat()
@@ -131,6 +132,7 @@ class ChatIndex extends Component
         $this->attachmentUploadStatus = null;
         $this->attachmentUploadMessage = '';
         $this->uploadingAttachmentName = null;
+        $this->dispatch('conversation-activated', id: null);
     }
 
     public function toggleDocumentSelector()
