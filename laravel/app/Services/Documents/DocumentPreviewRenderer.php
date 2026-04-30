@@ -94,8 +94,11 @@ class DocumentPreviewRenderer
         $writer = WordIOFactory::createWriter($phpWord, 'HTML');
 
         ob_start();
-        $writer->save('php://output');
-        $raw = (string) ob_get_clean();
+        try {
+            $writer->save('php://output');
+        } finally {
+            $raw = (string) ob_get_clean();
+        }
 
         return $this->extractBody($raw);
     }
@@ -108,8 +111,11 @@ class DocumentPreviewRenderer
         $writer->writeAllSheets();
 
         ob_start();
-        $writer->save('php://output');
-        $raw = (string) ob_get_clean();
+        try {
+            $writer->save('php://output');
+        } finally {
+            $raw = (string) ob_get_clean();
+        }
 
         return $this->extractBody($raw);
     }
