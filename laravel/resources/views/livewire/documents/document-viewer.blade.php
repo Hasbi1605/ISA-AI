@@ -29,18 +29,20 @@
                         @endif
                     </div>
                     <div class="flex shrink-0 items-center gap-2">
-                        @if ($document && in_array($kind, ['pdf', 'docx'], true))
+                        @if ($document && in_array($kind, ['pdf', 'docx', 'xlsx', 'csv'], true))
                             @php
                                 $exportBaseName = pathinfo($document->original_name ?: $document->filename, PATHINFO_FILENAME);
                                 $exportBaseName = $exportBaseName !== '' ? $exportBaseName : 'dokumen';
+                                $usesTableExtraction = in_array($kind, ['pdf', 'docx'], true);
                             @endphp
                             <div
                                 wire:key="document-export-actions-{{ $document->id }}"
                                 x-data="documentViewerExport({
                                     contentUrl: @js(route('documents.content-html', $document)),
-                                    extractUrl: @js(route('documents.extract-tables', $document)),
+                                    extractUrl: @js($usesTableExtraction ? route('documents.extract-tables', $document) : null),
                                     exportUrl: @js(route('documents.export')),
                                     fileName: @js($exportBaseName),
+                                    preferTableExtraction: @js($usesTableExtraction),
                                 })"
                                 data-document-export-actions
                                 class="relative"
@@ -120,7 +122,7 @@
                         <iframe src="{{ $streamUrl }}"
                                 class="w-full h-[70vh] bg-white"
                                 title="Preview {{ $document->original_name }}"></iframe>
-                    @elseif (in_array($kind, ['docx', 'xlsx'], true))
+                    @elseif (in_array($kind, ['docx', 'xlsx', 'csv'], true))
                         @if ($previewStatus === \App\Models\Document::PREVIEW_STATUS_READY)
                             <div wire:poll.30s.keep-alive
                                  class="bg-white dark:bg-gray-900 px-6 py-5"

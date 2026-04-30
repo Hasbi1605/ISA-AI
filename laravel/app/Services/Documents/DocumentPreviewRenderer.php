@@ -17,7 +17,7 @@ class DocumentPreviewRenderer
 
     public function supports(Document $document): bool
     {
-        return $this->isPdf($document) || $this->isDocx($document) || $this->isXlsx($document);
+        return $this->isPdf($document) || $this->isDocx($document) || $this->isXlsx($document) || $this->isCsv($document);
     }
 
     public function isPdf(Document $document): bool
@@ -33,6 +33,12 @@ class DocumentPreviewRenderer
     public function isXlsx(Document $document): bool
     {
         return in_array($document->mime_type, Document::XLSX_MIME_TYPES, true);
+    }
+
+    public function isCsv(Document $document): bool
+    {
+        return in_array($document->mime_type, Document::CSV_MIME_TYPES, true)
+            && strtolower((string) pathinfo((string) $document->original_name, PATHINFO_EXTENSION)) === 'csv';
     }
 
     /**
@@ -67,7 +73,7 @@ class DocumentPreviewRenderer
 
             $html = $this->isDocx($document)
                 ? $this->renderDocx($absolutePath)
-                : $this->renderXlsx($absolutePath);
+                : $this->renderSpreadsheet($absolutePath);
 
             $previewPath = $this->buildPreviewPath($document);
             Storage::disk(self::DISK)->put($previewPath, $html);
@@ -103,7 +109,7 @@ class DocumentPreviewRenderer
         return $this->extractBody($raw);
     }
 
-    protected function renderXlsx(string $absolutePath): string
+    protected function renderSpreadsheet(string $absolutePath): string
     {
         $spreadsheet = SpreadsheetIOFactory::load($absolutePath);
         $writer = new SpreadsheetHtmlWriter($spreadsheet);

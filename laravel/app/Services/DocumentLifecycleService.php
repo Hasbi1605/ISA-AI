@@ -22,6 +22,10 @@ class DocumentLifecycleService
         'application/pdf',
         'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
         'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        'text/csv',
+        'text/plain',
+        'application/csv',
+        'application/vnd.ms-excel',
     ];
 
     /**
@@ -46,7 +50,7 @@ class DocumentLifecycleService
 
         if (! in_array($detectedMimeType, self::ALLOWED_ATTACHMENT_MIME_TYPES, true)) {
             throw ValidationException::withMessages([
-                'file' => 'Tipe MIME file tidak valid. Gunakan PDF, DOCX, atau XLSX.',
+                'file' => 'Tipe MIME file tidak valid. Gunakan PDF, DOCX, XLSX, atau CSV.',
             ]);
         }
 

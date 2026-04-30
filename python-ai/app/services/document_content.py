@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import csv
 import re
 from html import escape
 from pathlib import Path
@@ -132,6 +133,31 @@ def _extract_xlsx_content_html(file_path: str, title: str) -> str:
     return _wrap_document(title, sections)
 
 
+def _extract_csv_content_html(file_path: str, title: str) -> str:
+    rows: list[list[str]] = []
+
+    for encoding in ("utf-8-sig", "utf-8", "latin-1"):
+        try:
+            with open(file_path, newline="", encoding=encoding) as handle:
+                sample = handle.read(4096)
+                handle.seek(0)
+
+                try:
+                    dialect = csv.Sniffer().sniff(sample)
+                except csv.Error:
+                    dialect = csv.excel
+
+                rows = [row for row in csv.reader(handle, dialect)]
+            break
+        except UnicodeDecodeError:
+            continue
+
+    table_html = _table_html(rows)
+    sections = [f"<section><h2>{escape(title)}</h2>{table_html}</section>"] if table_html else []
+
+    return _wrap_document(title, sections)
+
+
 def extract_document_content_html(file_path: str, filename: str | None = None) -> str:
     suffix = Path(file_path).suffix.lower()
     title = filename or Path(file_path).name
@@ -144,5 +170,8 @@ def extract_document_content_html(file_path: str, filename: str | None = None) -
 
     if suffix == ".xlsx":
         return _extract_xlsx_content_html(file_path, title)
+
+    if suffix == ".csv":
+        return _extract_csv_content_html(file_path, title)
 
     raise ValueError(f"Unsupported file type for content extraction: {suffix or 'unknown'}")

@@ -42,6 +42,13 @@ class Document extends Model
         'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
     ];
 
+    public const CSV_MIME_TYPES = [
+        'text/csv',
+        'text/plain',
+        'application/csv',
+        'application/vnd.ms-excel',
+    ];
+
     protected function casts(): array
     {
         return [

@@ -575,7 +575,7 @@ const registerChatPageData = (Alpine) => {
                 return 'pdf';
             }
 
-            if (extension === 'xlsx') {
+            if (['xlsx', 'csv'].includes(extension)) {
                 return 'xlsx';
             }
 
@@ -782,6 +782,7 @@ const registerChatPageData = (Alpine) => {
         extractUrl: config.extractUrl || '',
         exportUrl: config.exportUrl || '',
         fileName: config.fileName || 'ista-ai-tabel-dokumen',
+        preferTableExtraction: Boolean(config.preferTableExtraction),
         exportMenuOpen: false,
         loading: false,
         error: '',
@@ -808,7 +809,7 @@ const registerChatPageData = (Alpine) => {
 
             try {
                 const isTableFormat = ['xlsx', 'csv'].includes(format);
-                const contentHtml = isTableFormat
+                const contentHtml = isTableFormat && this.preferTableExtraction
                     ? await this.tableExportHtml()
                     : await this.fullContentHtml();
 

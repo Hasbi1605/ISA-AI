@@ -40,4 +40,24 @@ class DocumentLifecycleServiceTest extends TestCase
 
         Queue::assertPushed(ProcessDocument::class, 1);
     }
+
+    public function test_upload_document_accepts_csv_for_conversion_workflows(): void
+    {
+        Storage::fake('local');
+        Queue::fake();
+
+        $user = User::factory()->create();
+
+        $service = app(DocumentLifecycleService::class);
+        $document = $service->uploadDocument(
+            UploadedFile::fake()->create('biaya.csv', 8, 'text/csv'),
+            $user->id,
+        );
+
+        $this->assertSame('biaya.csv', $document->original_name);
+        $this->assertSame('text/csv', $document->mime_type);
+        $this->assertSame('pending', $document->status);
+
+        Queue::assertPushed(ProcessDocument::class, 1);
+    }
 }

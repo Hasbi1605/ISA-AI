@@ -51,6 +51,10 @@ class ChatIndex extends Component
         'application/pdf',
         'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
         'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        'text/csv',
+        'text/plain',
+        'application/csv',
+        'application/vnd.ms-excel',
     ];
 
     public function mount($id = null)
@@ -299,7 +303,7 @@ class ChatIndex extends Component
                 'chatAttachment' => [
                     'required',
                     'file',
-                    'mimes:pdf,docx,xlsx',
+                    'mimes:pdf,docx,xlsx,csv',
                     'mimetypes:' . implode(',', self::ALLOWED_ATTACHMENT_MIME_TYPES),
                     'max:51200',
                 ],

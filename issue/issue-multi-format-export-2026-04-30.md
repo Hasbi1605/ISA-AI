@@ -74,3 +74,9 @@ Mentor meminta ISTA AI bisa menerima dokumen dalam satu format (mis. PDF) dan me
 - Akses kontrol terjaga (test coverage).
 - Test Python dan Laravel hijau.
 - Tidak ada regresi di pipeline upload/RAG.
+
+## Follow-up 2026-05-01: Konversi Viewer untuk Spreadsheet/CSV
+- Viewer export harus berfungsi sebagai konversi antar-format dokumen umum, bukan hanya output AI atau ekstraksi tabel PDF/DOCX.
+- Sumber PDF/DOCX tetap boleh memakai jalur `extract-tables` khusus saat target XLSX/CSV agar tabel lebih terstruktur.
+- Sumber XLSX/CSV harus memakai jalur `content-html` penuh untuk semua target (`pdf`, `docx`, `xlsx`, `csv`) supaya bisa konversi spreadsheet/CSV ke PDF, DOCX, XLSX, atau CSV tanpa kehilangan isi.
+- CSV ikut didukung sebagai format upload/preview/export agar workflow seperti CSV -> XLSX dan CSV -> PDF/DOCX tersedia.

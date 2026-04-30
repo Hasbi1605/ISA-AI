@@ -42,7 +42,7 @@
                             class="relative border-2 border-dashed rounded-xl p-8 transition-all duration-200 text-center"
                             :class="isDragging ? 'border-indigo-500 bg-indigo-50 dark:bg-indigo-900/20' : 'border-gray-300 dark:border-gray-600 hover:border-gray-400 dark:hover:border-gray-500'"
                         >
-                            <input type="file" wire:model="file" class="absolute inset-0 w-full h-full opacity-0 cursor-pointer" accept=".pdf,.docx,.xlsx">
+                            <input type="file" wire:model="file" class="absolute inset-0 w-full h-full opacity-0 cursor-pointer" accept=".pdf,.docx,.xlsx,.csv">
                             
                             <div class="space-y-2">
                                 <svg class="mx-auto h-12 w-12 text-gray-400" stroke="currentColor" fill="none" viewBox="0 0 48 48" aria-hidden="true">

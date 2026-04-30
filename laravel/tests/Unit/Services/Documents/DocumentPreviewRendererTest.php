@@ -157,6 +157,35 @@ class DocumentPreviewRendererTest extends TestCase
         $this->assertStringContainsString('BELANJA_SHEET_MARKER', $html);
     }
 
+    public function test_render_csv_writes_html_preview(): void
+    {
+        Storage::fake('local');
+        $user = User::factory()->create();
+
+        $relativePath = 'documents/'.$user->id.'/sample.csv';
+        Storage::disk('local')->put($relativePath, "Nama,Nilai\nA,10\n");
+
+        $document = Document::create([
+            'user_id' => $user->id,
+            'filename' => 'sample.csv',
+            'original_name' => 'sample.csv',
+            'file_path' => $relativePath,
+            'mime_type' => 'text/csv',
+            'file_size_bytes' => strlen("Nama,Nilai\nA,10\n"),
+            'status' => 'ready',
+            'preview_status' => Document::PREVIEW_STATUS_PENDING,
+        ]);
+
+        app(DocumentPreviewRenderer::class)->render($document->refresh());
+
+        $document->refresh();
+        $this->assertSame(Document::PREVIEW_STATUS_READY, $document->preview_status);
+        $this->assertNotNull($document->preview_html_path);
+        $html = Storage::disk('local')->get($document->preview_html_path);
+        $this->assertStringContainsString('Nama', $html);
+        $this->assertStringContainsString('10', $html);
+    }
+
     public function test_render_marks_failed_when_source_missing(): void
     {
         Storage::fake('local');

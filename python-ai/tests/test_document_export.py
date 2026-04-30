@@ -126,3 +126,39 @@ def test_documents_extract_content_route_returns_full_docx_html():
     assert "Paragraf awal dokumen lengkap." in payload["content_html"]
     assert "<table>" in payload["content_html"]
     assert "Nama" in payload["content_html"]
+
+
+def test_documents_extract_content_route_supports_csv_for_file_conversion():
+    response = client.post(
+        "/api/documents/extract-content",
+        headers=AUTH_HEADERS,
+        files={
+            "file": (
+                "biaya.csv",
+                b"Nama,Nilai\nA,10\n",
+                "text/csv",
+            ),
+        },
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["status"] == "success"
+    assert "<table>" in payload["content_html"]
+    assert "Nama" in payload["content_html"]
+    assert "10" in payload["content_html"]
+
+    pdf = export_content(payload["content_html"], "pdf", "biaya")
+    assert pdf.filename == "biaya.pdf"
+    assert pdf.content.startswith(b"%PDF")
+
+    docx = export_content(payload["content_html"], "docx", "biaya")
+    docx_document = DocxDocument(BytesIO(docx.content))
+    table_text = "\n".join(
+        cell.text
+        for table in docx_document.tables
+        for row in table.rows
+        for cell in row.cells
+    )
+    assert "Nama" in table_text
+    assert "10" in table_text

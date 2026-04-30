@@ -23,6 +23,10 @@ class DocumentIndex extends Component
         'application/pdf',
         'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
         'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        'text/csv',
+        'text/plain',
+        'application/csv',
+        'application/vnd.ms-excel',
     ];
 
     public $file;
@@ -35,8 +39,8 @@ class DocumentIndex extends Component
         'file' => [
             'required',
             'file',
-            'mimes:pdf,docx,xlsx',
-            'mimetypes:application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+            'mimes:pdf,docx,xlsx,csv',
+            'mimetypes:application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,text/csv,text/plain,application/csv,application/vnd.ms-excel',
             'max:51200',
         ],
     ];

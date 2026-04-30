@@ -46,12 +46,13 @@ class DocumentViewer extends Component
                     $renderer->isPdf($document) => 'pdf',
                     $renderer->isDocx($document) => 'docx',
                     $renderer->isXlsx($document) => 'xlsx',
+                    $renderer->isCsv($document) => 'csv',
                     default => 'unknown',
                 };
 
                 if ($kind === 'pdf') {
                     $streamUrl = route('documents.preview.stream', $document);
-                } elseif (in_array($kind, ['docx', 'xlsx'], true)) {
+                } elseif (in_array($kind, ['docx', 'xlsx', 'csv'], true)) {
                     $htmlUrl = route('documents.preview.html', $document);
                 }
             }

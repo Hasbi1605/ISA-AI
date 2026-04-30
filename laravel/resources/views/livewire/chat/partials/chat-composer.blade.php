@@ -20,7 +20,7 @@
         x-ref="chatAttachmentInput"
         type="file"
         wire:model.live="chatAttachment"
-        accept=".pdf,.docx,.xlsx"
+        accept=".pdf,.docx,.xlsx,.csv"
         class="hidden"
     >
     <form x-on:submit.prevent="submitPrompt($event)" class="chat-form max-w-3xl mx-auto relative rounded-xl shadow-sm bg-white dark:bg-gray-800 border border-stone-200/60 dark:border-gray-700 transition-colors">

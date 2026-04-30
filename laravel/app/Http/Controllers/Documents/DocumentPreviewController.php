@@ -26,7 +26,7 @@ class DocumentPreviewController extends Controller
             'preview_status' => $document->preview_status,
             'kind' => $this->resolveKind($document),
             'is_streamable' => $this->renderer->isPdf($document),
-            'is_html_preview' => $this->renderer->isDocx($document) || $this->renderer->isXlsx($document),
+            'is_html_preview' => $this->renderer->isDocx($document) || $this->renderer->isXlsx($document) || $this->renderer->isCsv($document),
         ]);
     }
 
@@ -56,7 +56,7 @@ class DocumentPreviewController extends Controller
     {
         $this->authorizeView($request, $document);
 
-        if (! ($this->renderer->isDocx($document) || $this->renderer->isXlsx($document))) {
+        if (! ($this->renderer->isDocx($document) || $this->renderer->isXlsx($document) || $this->renderer->isCsv($document))) {
             abort(Response::HTTP_NOT_FOUND);
         }
 
@@ -118,6 +118,7 @@ class DocumentPreviewController extends Controller
             $this->renderer->isPdf($document) => 'pdf',
             $this->renderer->isDocx($document) => 'docx',
             $this->renderer->isXlsx($document) => 'xlsx',
+            $this->renderer->isCsv($document) => 'csv',
             default => 'unknown',
         };
     }
