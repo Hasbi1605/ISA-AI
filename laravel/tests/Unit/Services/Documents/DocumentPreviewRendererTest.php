@@ -115,6 +115,7 @@ class DocumentPreviewRendererTest extends TestCase
         $html = Storage::disk('local')->get($document->preview_html_path);
         $this->assertStringContainsString('Bulan', $html);
         $this->assertStringContainsString('1500', $html);
+        $this->assertStringContainsString('<style', $html, 'extractBody should preserve writer CSS styles');
     }
 
     public function test_render_xlsx_includes_all_sheets(): void

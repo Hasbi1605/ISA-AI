@@ -122,8 +122,13 @@ class DocumentPreviewRenderer
 
     protected function extractBody(string $html): string
     {
+        $styles = '';
+        if (preg_match_all('#<style[^>]*>.*?</style>#is', $html, $styleMatches) > 0) {
+            $styles = implode("\n", $styleMatches[0])."\n";
+        }
+
         if (preg_match('#<body[^>]*>(.*?)</body>#is', $html, $matches) === 1) {
-            return trim($matches[1]);
+            return trim($styles.$matches[1]);
         }
 
         return trim($html);
