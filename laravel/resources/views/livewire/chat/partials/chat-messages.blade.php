@@ -113,89 +113,90 @@
                                 >
                                 </div>
 
-                                <div data-answer-actions class="mt-2 flex flex-wrap items-center gap-2 text-[12px]">
+                            @endif
+
+                            <div data-answer-actions class="mt-2 flex flex-wrap items-center gap-2 text-[12px]">
+                                <button
+                                    type="button"
+                                    @click="copyToClipboard()"
+                                    class="inline-flex items-center gap-1.5 rounded-full border border-stone-200 bg-white/90 px-3 py-2 text-stone-700 shadow-sm transition hover:bg-stone-50 hover:text-stone-900 dark:border-gray-700 dark:bg-gray-800/90 dark:text-gray-100 dark:hover:bg-gray-700/90"
+                                    >
+                                    <svg class="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M9 9h6v6H9z" />
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M7 7h10v10H7z" />
+                                    </svg>
+                                    <span x-text="copyStatusLabel()">Salin</span>
+                                </button>
+
+                                <button
+                                    type="button"
+                                    @click="shareToWhatsApp()"
+                                    class="inline-flex items-center gap-1.5 rounded-full border border-stone-200 bg-white/90 px-3 py-2 text-stone-700 shadow-sm transition hover:bg-stone-50 hover:text-stone-900 dark:border-gray-700 dark:bg-gray-800/90 dark:text-gray-100 dark:hover:bg-gray-700/90"
+                                >
+                                    <svg class="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M4.5 19.5l1.3-4.3a7.5 7.5 0 1 1 2.8 2.8l-4.1 1.5z" />
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M9.5 10.5c.2.6.7 1.8 2 3s2.4 1.8 3 2c.3.1.6 0 .8-.2l.9-1.1c.2-.2.5-.3.8-.2l1.7.6" />
+                                    </svg>
+                                    <span>Bagikan</span>
+                                </button>
+
+                                <div class="relative" x-on:click.outside="exportMenuOpen = false">
                                     <button
                                         type="button"
-                                        @click="copyToClipboard()"
-                                        class="inline-flex items-center gap-1.5 rounded-full border border-stone-200 bg-white/90 px-3 py-2 text-stone-700 shadow-sm transition hover:bg-stone-50 hover:text-stone-900 dark:border-gray-700 dark:bg-gray-800/90 dark:text-gray-100 dark:hover:bg-gray-700/90"
+                                        @click="toggleExportMenu()"
+                                        :disabled="exportLoading"
+                                        class="inline-flex items-center gap-1.5 rounded-full border border-stone-200 bg-white/90 px-3 py-2 text-stone-700 shadow-sm transition hover:bg-stone-50 hover:text-stone-900 disabled:cursor-wait disabled:opacity-70 dark:border-gray-700 dark:bg-gray-800/90 dark:text-gray-100 dark:hover:bg-gray-700/90"
                                         >
                                         <svg class="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor">
-                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M9 9h6v6H9z" />
-                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M7 7h10v10H7z" />
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M12 4v10m0 0l-4-4m4 4l4-4" />
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M5 20h14" />
                                         </svg>
-                                        <span x-text="copyStatusLabel()">Salin</span>
+                                        <span x-text="exportLoading ? 'Menyiapkan...' : 'Ekspor'">Ekspor</span>
                                     </button>
 
-                                    <button
-                                        type="button"
-                                        @click="shareToWhatsApp()"
-                                        class="inline-flex items-center gap-1.5 rounded-full border border-stone-200 bg-white/90 px-3 py-2 text-stone-700 shadow-sm transition hover:bg-stone-50 hover:text-stone-900 dark:border-gray-700 dark:bg-gray-800/90 dark:text-gray-100 dark:hover:bg-gray-700/90"
+                                    <div
+                                        x-show="exportMenuOpen"
+                                        x-transition.opacity
+                                        class="absolute left-0 z-20 mt-2 w-44 overflow-hidden rounded-xl border border-stone-200 bg-white shadow-xl dark:border-gray-700 dark:bg-gray-800"
+                                        style="display: none;"
                                     >
-                                        <svg class="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor">
-                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M4.5 19.5l1.3-4.3a7.5 7.5 0 1 1 2.8 2.8l-4.1 1.5z" />
-                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M9.5 10.5c.2.6.7 1.8 2 3s2.4 1.8 3 2c.3.1.6 0 .8-.2l.9-1.1c.2-.2.5-.3.8-.2l1.7.6" />
-                                        </svg>
-                                        <span>Bagikan</span>
-                                    </button>
-
-                                    <div class="relative" x-on:click.outside="exportMenuOpen = false">
                                         <button
                                             type="button"
-                                            @click="toggleExportMenu()"
-                                            :disabled="exportLoading"
-                                            class="inline-flex items-center gap-1.5 rounded-full border border-stone-200 bg-white/90 px-3 py-2 text-stone-700 shadow-sm transition hover:bg-stone-50 hover:text-stone-900 disabled:cursor-wait disabled:opacity-70 dark:border-gray-700 dark:bg-gray-800/90 dark:text-gray-100 dark:hover:bg-gray-700/90"
-                                            >
-                                            <svg class="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor">
-                                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M12 4v10m0 0l-4-4m4 4l4-4" />
-                                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M5 20h14" />
-                                            </svg>
-                                            <span x-text="exportLoading ? 'Menyiapkan...' : 'Ekspor'">Ekspor</span>
-                                        </button>
-
-                                        <div
-                                            x-show="exportMenuOpen"
-                                            x-transition.opacity
-                                            class="absolute left-0 z-20 mt-2 w-44 overflow-hidden rounded-xl border border-stone-200 bg-white shadow-xl dark:border-gray-700 dark:bg-gray-800"
-                                            style="display: none;"
+                                            @click="exportAs('pdf')"
+                                            class="flex w-full items-center justify-between px-4 py-2.5 text-left text-[12px] text-stone-700 transition hover:bg-stone-50 dark:text-gray-100 dark:hover:bg-gray-700/80"
                                         >
-                                            <button
-                                                type="button"
-                                                @click="exportAs('pdf')"
-                                                class="flex w-full items-center justify-between px-4 py-2.5 text-left text-[12px] text-stone-700 transition hover:bg-stone-50 dark:text-gray-100 dark:hover:bg-gray-700/80"
-                                            >
-                                                <span>PDF</span>
-                                                <span class="text-[10px] text-[#64748B] dark:text-[#94A3B8]">Laporan</span>
-                                            </button>
-                                            <button
-                                                type="button"
-                                                @click="exportAs('docx')"
-                                                class="flex w-full items-center justify-between px-4 py-2.5 text-left text-[12px] text-stone-700 transition hover:bg-stone-50 dark:text-gray-100 dark:hover:bg-gray-700/80"
-                                            >
-                                                <span>DOCX</span>
-                                                <span class="text-[10px] text-[#64748B] dark:text-[#94A3B8]">Word</span>
-                                            </button>
-                                            <button
-                                                type="button"
-                                                @click="exportAs('xlsx')"
-                                                class="flex w-full items-center justify-between px-4 py-2.5 text-left text-[12px] text-stone-700 transition hover:bg-stone-50 dark:text-gray-100 dark:hover:bg-gray-700/80"
-                                            >
-                                                <span>XLSX</span>
-                                                <span class="text-[10px] text-[#64748B] dark:text-[#94A3B8]">Sheet</span>
-                                            </button>
-                                            <button
-                                                type="button"
-                                                @click="exportAs('csv')"
-                                                class="flex w-full items-center justify-between px-4 py-2.5 text-left text-[12px] text-stone-700 transition hover:bg-stone-50 dark:text-gray-100 dark:hover:bg-gray-700/80"
-                                            >
-                                                <span>CSV</span>
-                                                <span class="text-[10px] text-[#64748B] dark:text-[#94A3B8]">Tabel</span>
-                                            </button>
-                                        </div>
+                                            <span>PDF</span>
+                                            <span class="text-[10px] text-[#64748B] dark:text-[#94A3B8]">Laporan</span>
+                                        </button>
+                                        <button
+                                            type="button"
+                                            @click="exportAs('docx')"
+                                            class="flex w-full items-center justify-between px-4 py-2.5 text-left text-[12px] text-stone-700 transition hover:bg-stone-50 dark:text-gray-100 dark:hover:bg-gray-700/80"
+                                        >
+                                            <span>DOCX</span>
+                                            <span class="text-[10px] text-[#64748B] dark:text-[#94A3B8]">Word</span>
+                                        </button>
+                                        <button
+                                            type="button"
+                                            @click="exportAs('xlsx')"
+                                            class="flex w-full items-center justify-between px-4 py-2.5 text-left text-[12px] text-stone-700 transition hover:bg-stone-50 dark:text-gray-100 dark:hover:bg-gray-700/80"
+                                        >
+                                            <span>XLSX</span>
+                                            <span class="text-[10px] text-[#64748B] dark:text-[#94A3B8]">Sheet</span>
+                                        </button>
+                                        <button
+                                            type="button"
+                                            @click="exportAs('csv')"
+                                            class="flex w-full items-center justify-between px-4 py-2.5 text-left text-[12px] text-stone-700 transition hover:bg-stone-50 dark:text-gray-100 dark:hover:bg-gray-700/80"
+                                        >
+                                            <span>CSV</span>
+                                            <span class="text-[10px] text-[#64748B] dark:text-[#94A3B8]">Tabel</span>
+                                        </button>
                                     </div>
                                 </div>
+                            </div>
 
-                                <p x-show="exportError" x-transition.opacity class="mt-1 text-[11px] text-rose-500" x-text="exportError"></p>
-                            @endif
+                            <p x-show="exportError" x-transition.opacity class="mt-1 text-[11px] text-rose-500" x-text="exportError"></p>
                         </div>
                     @else
                         <div class="text-[14.5px] leading-relaxed text-stone-700 dark:text-gray-100 w-full max-w-[656px] min-w-0">

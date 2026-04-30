@@ -118,6 +118,7 @@ class ChatIndex extends Component
 
         $this->currentConversationId = $conversation->id;
         $this->messages = $conversation->messages->toArray();
+        $this->newMessageId = null;
         $this->dispatch('conversation-activated', id: $conversation->id);
     }
 
@@ -129,6 +130,7 @@ class ChatIndex extends Component
         $this->selectedDocuments = [];
         $this->conversationDocuments = [];
         $this->sources = [];
+        $this->newMessageId = null;
         $this->attachmentUploadStatus = null;
         $this->attachmentUploadMessage = '';
         $this->uploadingAttachmentName = null;

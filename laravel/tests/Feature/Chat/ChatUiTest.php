@@ -80,4 +80,49 @@ class ChatUiTest extends TestCase
             ->assertSee('XLSX', false)
             ->assertSee('CSV', false);
     }
+
+    public function test_latest_chat_answer_still_renders_actions(): void
+    {
+        $user = User::factory()->create();
+        $conversation = Conversation::create([
+            'user_id' => $user->id,
+            'title' => 'Latest answer toolbar test',
+        ]);
+
+        $message = Message::create([
+            'conversation_id' => $conversation->id,
+            'role' => 'assistant',
+            'content' => 'Jawaban terbaru juga punya toolbar.',
+        ]);
+
+        Livewire::actingAs($user)
+            ->test(ChatIndex::class)
+            ->set('messages', [$message->toArray()])
+            ->set('newMessageId', $message->id)
+            ->assertSee('data-answer-actions', false)
+            ->assertSee('Salin', false)
+            ->assertSee('Bagikan', false)
+            ->assertSee('Ekspor', false);
+    }
+
+    public function test_loading_conversation_clears_latest_message_marker(): void
+    {
+        $user = User::factory()->create();
+        $conversation = Conversation::create([
+            'user_id' => $user->id,
+            'title' => 'Clear latest marker test',
+        ]);
+
+        $message = Message::create([
+            'conversation_id' => $conversation->id,
+            'role' => 'assistant',
+            'content' => 'Pesan dari history.',
+        ]);
+
+        Livewire::actingAs($user)
+            ->test(ChatIndex::class)
+            ->set('newMessageId', $message->id)
+            ->call('loadConversation', $conversation->id)
+            ->assertSet('newMessageId', null);
+    }
 }
