@@ -115,29 +115,33 @@
 
                             @endif
 
-                            <div data-answer-actions class="mt-2 flex flex-wrap items-center gap-2 text-[12px]">
+                            <div data-answer-actions class="mt-2 flex flex-wrap items-center gap-1 text-[12px] text-[#64748B] dark:text-[#94A3B8]">
                                 <button
                                     type="button"
                                     @click="copyToClipboard()"
-                                    class="inline-flex items-center gap-1.5 rounded-full border border-stone-200 bg-white/90 px-3 py-2 text-stone-700 shadow-sm transition hover:bg-stone-50 hover:text-stone-900 dark:border-gray-700 dark:bg-gray-800/90 dark:text-gray-100 dark:hover:bg-gray-700/90"
+                                    :title="copyStatusLabel()"
+                                    :aria-label="copyStatusLabel()"
+                                    class="inline-flex h-8 w-8 items-center justify-center rounded-lg transition hover:bg-white/80 hover:text-stone-900 dark:hover:bg-gray-800/80 dark:hover:text-gray-100"
                                     >
-                                    <svg class="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor">
+                                    <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor">
                                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M9 9h6v6H9z" />
                                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M7 7h10v10H7z" />
                                     </svg>
-                                    <span x-text="copyStatusLabel()">Salin</span>
+                                    <span class="sr-only" x-text="copyStatusLabel()">Salin</span>
                                 </button>
 
                                 <button
                                     type="button"
                                     @click="shareToWhatsApp()"
-                                    class="inline-flex items-center gap-1.5 rounded-full border border-stone-200 bg-white/90 px-3 py-2 text-stone-700 shadow-sm transition hover:bg-stone-50 hover:text-stone-900 dark:border-gray-700 dark:bg-gray-800/90 dark:text-gray-100 dark:hover:bg-gray-700/90"
+                                    title="Bagikan"
+                                    aria-label="Bagikan"
+                                    class="inline-flex h-8 w-8 items-center justify-center rounded-lg transition hover:bg-white/80 hover:text-stone-900 dark:hover:bg-gray-800/80 dark:hover:text-gray-100"
                                 >
-                                    <svg class="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor">
+                                    <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor">
                                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M4.5 19.5l1.3-4.3a7.5 7.5 0 1 1 2.8 2.8l-4.1 1.5z" />
                                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M9.5 10.5c.2.6.7 1.8 2 3s2.4 1.8 3 2c.3.1.6 0 .8-.2l.9-1.1c.2-.2.5-.3.8-.2l1.7.6" />
                                     </svg>
-                                    <span>Bagikan</span>
+                                    <span class="sr-only">Bagikan</span>
                                 </button>
 
                                 <div class="relative" x-on:click.outside="exportMenuOpen = false">
@@ -145,13 +149,15 @@
                                         type="button"
                                         @click="toggleExportMenu()"
                                         :disabled="exportLoading"
-                                        class="inline-flex items-center gap-1.5 rounded-full border border-stone-200 bg-white/90 px-3 py-2 text-stone-700 shadow-sm transition hover:bg-stone-50 hover:text-stone-900 disabled:cursor-wait disabled:opacity-70 dark:border-gray-700 dark:bg-gray-800/90 dark:text-gray-100 dark:hover:bg-gray-700/90"
+                                        :title="exportLoading ? 'Menyiapkan ekspor' : 'Ekspor'"
+                                        :aria-label="exportLoading ? 'Menyiapkan ekspor' : 'Ekspor'"
+                                        class="inline-flex h-8 w-8 items-center justify-center rounded-lg transition hover:bg-white/80 hover:text-stone-900 disabled:cursor-wait disabled:opacity-70 dark:hover:bg-gray-800/80 dark:hover:text-gray-100"
                                         >
-                                        <svg class="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor">
+                                        <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor">
                                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M12 4v10m0 0l-4-4m4 4l4-4" />
                                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M5 20h14" />
                                         </svg>
-                                        <span x-text="exportLoading ? 'Menyiapkan...' : 'Ekspor'">Ekspor</span>
+                                        <span class="sr-only" x-text="exportLoading ? 'Menyiapkan ekspor' : 'Ekspor'">Ekspor</span>
                                     </button>
 
                                     <div

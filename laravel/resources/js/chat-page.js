@@ -253,9 +253,71 @@ const registerChatPageData = (Alpine) => {
             const wrapper = document.createElement('div');
             wrapper.innerHTML = this.html || '';
 
-            return (wrapper.innerText || wrapper.textContent || '')
+            return this.normalizePlainText(this.nodeToPlainText(wrapper));
+        },
+
+        nodeToPlainText(node) {
+            const blockTags = new Set([
+                'address', 'article', 'aside', 'blockquote', 'div', 'dl', 'fieldset',
+                'figcaption', 'figure', 'footer', 'form', 'h1', 'h2', 'h3', 'h4', 'h5',
+                'h6', 'header', 'main', 'nav', 'ol', 'p', 'pre', 'section', 'ul',
+            ]);
+
+            if (node.nodeType === Node.TEXT_NODE) {
+                return node.nodeValue || '';
+            }
+
+            if (node.nodeType !== Node.ELEMENT_NODE && node.nodeType !== Node.DOCUMENT_FRAGMENT_NODE) {
+                return '';
+            }
+
+            const tagName = node.tagName?.toLowerCase();
+
+            if (tagName === 'br') {
+                return '\n';
+            }
+
+            if (tagName === 'hr') {
+                return '\n\n';
+            }
+
+            if (tagName === 'li') {
+                const itemText = Array.from(node.childNodes)
+                    .map((child) => this.nodeToPlainText(child))
+                    .join('');
+
+                return `\n- ${this.normalizePlainText(itemText)}\n`;
+            }
+
+            if (tagName === 'tr') {
+                const cells = Array.from(node.children)
+                    .filter((child) => ['th', 'td'].includes(child.tagName?.toLowerCase()))
+                    .map((cell) => this.normalizePlainText(this.nodeToPlainText(cell)).replace(/\n+/g, ' '));
+
+                return cells.length > 0 ? `${cells.join('\t')}\n` : '';
+            }
+
+            const childrenText = Array.from(node.childNodes)
+                .map((child) => this.nodeToPlainText(child))
+                .join('');
+
+            if (tagName === 'table') {
+                return `\n${childrenText}\n`;
+            }
+
+            return blockTags.has(tagName) ? `\n${childrenText}\n` : childrenText;
+        },
+
+        normalizePlainText(text) {
+            return (text || '')
                 .replace(/\u00a0/g, ' ')
+                .replace(/[ \t]+\n/g, '\n')
+                .replace(/\n[ \t]+/g, '\n')
+                .replace(/[ \t]{2,}/g, ' ')
                 .replace(/\n{3,}/g, '\n\n')
+                .split('\n')
+                .map((line) => line.trim())
+                .join('\n')
                 .trim();
         },
 
