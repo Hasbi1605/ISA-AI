@@ -77,10 +77,16 @@ class ProcessDocument implements ShouldQueue
                 // 4. Update status to ready
                 $this->document->update(['status' => 'ready']);
 
-                // 5. Dispatch preview rendering job (async, non-blocking)
-                $freshDocument = $this->document->fresh();
-                if ($freshDocument !== null) {
-                    RenderDocumentPreview::dispatch($freshDocument);
+                // 5. Dispatch preview rendering job (async, non-blocking).
+                // Isolated in its own try/catch so a queue/dispatch failure
+                // here cannot revert the document status back to 'error'.
+                try {
+                    $freshDocument = $this->document->fresh();
+                    if ($freshDocument !== null) {
+                        RenderDocumentPreview::dispatch($freshDocument);
+                    }
+                } catch (\Throwable $e) {
+                    logger()->warning("Preview dispatch failed for document {$this->document->id}, proceeding: " . $e->getMessage());
                 }
             } else {
                 throw new Exception("Microservice error: " . $response->body());
