@@ -39,7 +39,7 @@ class DocumentViewerLivewireTest extends TestCase
 
         Livewire::actingAs($user)
             ->test(DocumentViewer::class)
-            ->dispatch('open-document-preview', documentId: $document->id)
+            ->call('open', $document->id)
             ->assertSet('isOpen', true)
             ->assertSet('documentId', $document->id)
             ->assertSee($document->original_name);
@@ -61,7 +61,7 @@ class DocumentViewerLivewireTest extends TestCase
 
         Livewire::actingAs($user)
             ->test(DocumentViewer::class)
-            ->dispatch('open-document-preview', documentId: $document->id)
+            ->call('open', $document->id)
             ->assertSeeHtml('<iframe')
             ->assertDontSeeHtml('sandbox=');
     }
@@ -83,7 +83,7 @@ class DocumentViewerLivewireTest extends TestCase
 
         Livewire::actingAs($other)
             ->test(DocumentViewer::class)
-            ->dispatch('open-document-preview', documentId: $document->id)
+            ->call('open', $document->id)
             ->assertSet('isOpen', true)
             ->assertDontSee('private.pdf')
             ->assertSee('Dokumen tidak ditemukan');
@@ -100,5 +100,17 @@ class DocumentViewerLivewireTest extends TestCase
             ->call('close')
             ->assertSet('isOpen', false)
             ->assertSet('documentId', null);
+    }
+
+    public function test_viewer_has_optimistic_open_and_close_hooks(): void
+    {
+        $user = User::factory()->create();
+
+        Livewire::actingAs($user)
+            ->test(DocumentViewer::class)
+            ->assertSee('x-on:open-document-preview.window="open($event.detail.documentId)"', false)
+            ->assertSee('x-show="isVisible"', false)
+            ->assertSee('@click="close()"', false)
+            ->assertSee('Membuka dokumen...', false);
     }
 }

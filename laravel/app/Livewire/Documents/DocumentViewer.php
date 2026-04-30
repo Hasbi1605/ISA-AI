@@ -5,7 +5,6 @@ namespace App\Livewire\Documents;
 use App\Models\Document;
 use App\Services\Documents\DocumentPreviewRenderer;
 use Illuminate\Support\Facades\Auth;
-use Livewire\Attributes\On;
 use Livewire\Component;
 
 class DocumentViewer extends Component
@@ -14,7 +13,6 @@ class DocumentViewer extends Component
 
     public bool $isOpen = false;
 
-    #[On('open-document-preview')]
     public function open(int $documentId): void
     {
         $this->documentId = $documentId;

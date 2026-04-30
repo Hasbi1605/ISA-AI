@@ -535,6 +535,45 @@ const registerChatPageData = (Alpine) => {
             element.style.overflowY = element.scrollHeight > 200 ? 'auto' : 'hidden';
         },
     }));
+
+    Alpine.data('documentViewer', (config = {}) => ({
+        isVisible: Boolean(config.isOpen),
+        isLoading: false,
+        requestToken: 0,
+
+        open(id) {
+            const documentId = Number(id);
+
+            if (!Number.isFinite(documentId)) {
+                return Promise.resolve();
+            }
+
+            const token = this.requestToken + 1;
+            this.requestToken = token;
+            this.isVisible = true;
+            this.isLoading = true;
+
+            return this.$wire.open(documentId)
+                .catch(() => {
+                    if (this.requestToken === token) {
+                        this.isVisible = false;
+                    }
+                })
+                .finally(() => {
+                    if (this.requestToken === token) {
+                        this.isLoading = false;
+                    }
+                });
+        },
+
+        close() {
+            this.requestToken += 1;
+            this.isVisible = false;
+            this.isLoading = false;
+
+            return this.$wire.close();
+        },
+    }));
 };
 
 document.addEventListener('alpine:init', () => {
