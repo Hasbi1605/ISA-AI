@@ -85,7 +85,7 @@ class DocumentViewerLivewireTest extends TestCase
             ->call('open', $document->id)
             ->assertSee('wire:key="document-export-actions-' . $document->id . '"', false)
             ->assertSee('data-document-export-actions', false)
-            ->assertSee('Ekspor tabel', false)
+            ->assertSee('Ekspor', false)
             ->assertSee('data-document-export-format="xlsx"', false)
             ->assertSee('data-document-export-format="csv"', false)
             ->assertSee('data-document-export-format="docx"', false)

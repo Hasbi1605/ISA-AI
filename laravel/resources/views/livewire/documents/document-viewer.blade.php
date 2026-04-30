@@ -50,14 +50,16 @@
                                     @click="toggleMenu()"
                                     :disabled="loading"
                                     class="inline-flex h-9 items-center gap-2 rounded-md border border-ista-primary/20 bg-ista-primary px-3 text-[12px] font-semibold text-white shadow-sm transition hover:bg-ista-dark disabled:cursor-wait disabled:opacity-75"
-                                    :aria-label="loading ? 'Menyiapkan tabel dokumen' : 'Ekspor tabel dokumen'"
-                                    :title="loading ? 'Menyiapkan tabel dokumen' : 'Ekspor tabel dokumen'"
+                                    :aria-label="loading ? 'Menyiapkan ekspor' : 'Ekspor'"
+                                    :title="loading ? 'Menyiapkan ekspor' : 'Ekspor'"
                                 >
                                     <span x-show="loading" class="h-3.5 w-3.5 rounded-full border-2 border-white/70 border-t-transparent animate-spin" aria-hidden="true"></span>
                                     <svg x-show="!loading" class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" aria-hidden="true">
-                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M3 6h18M3 12h18M3 18h18M8 6v12M16 6v12" />
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.9" d="M12 15V3" />
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.9" d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.9" d="m7 10 5 5 5-5" />
                                     </svg>
-                                    <span class="hidden sm:inline" x-text="loading ? 'Menyiapkan...' : 'Ekspor tabel'">Ekspor tabel</span>
+                                    <span class="hidden sm:inline" x-text="loading ? 'Menyiapkan...' : 'Ekspor'">Ekspor</span>
                                 </button>
 
                                 <div
