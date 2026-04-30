@@ -153,8 +153,62 @@ const registerChatPageData = (Alpine) => {
         },
     }));
 
+    Alpine.data('chatDocumentSelector', (config = {}) => ({
+        selectedDocuments: config.selectedDocuments || [],
+        readyDocumentIds: (config.readyDocumentIds || []).map((id) => Number(id)),
+
+        normalizedSelectedDocuments() {
+            const ready = new Set(this.readyDocumentIds);
+
+            return [...new Set((this.selectedDocuments || [])
+                .map((id) => Number(id))
+                .filter((id) => ready.has(id)))];
+        },
+
+        isSelected(id) {
+            return this.normalizedSelectedDocuments().includes(Number(id));
+        },
+
+        selectedInAvailableCount() {
+            return this.normalizedSelectedDocuments().length;
+        },
+
+        allDocumentsSelected() {
+            return this.readyDocumentIds.length > 0
+                && this.selectedInAvailableCount() === this.readyDocumentIds.length;
+        },
+
+        toggleSelectAllDocuments() {
+            this.selectedDocuments = this.allDocumentsSelected()
+                ? []
+                : [...this.readyDocumentIds];
+        },
+
+        syncSelectedDocuments() {
+            this.selectedDocuments = this.normalizedSelectedDocuments();
+            this.$wire.selectedDocuments = this.selectedDocuments;
+        },
+
+        addSelectedDocumentsToChat() {
+            this.syncSelectedDocuments();
+
+            return this.$wire.addSelectedDocumentsToChat();
+        },
+
+        deleteSelectedDocuments() {
+            if (!window.confirm('Delete selected files from your documents?')) {
+                return Promise.resolve();
+            }
+
+            this.syncSelectedDocuments();
+
+            return this.$wire.deleteSelectedDocuments();
+        },
+    }));
+
     Alpine.data('chatComposer', (config = {}) => ({
         promptDraft: config.prompt || '',
+        webSearchMode: config.webSearchMode || false,
         isSendingMessage: false,
         sendError: '',
         messageAcked: false,
@@ -217,6 +271,7 @@ const registerChatPageData = (Alpine) => {
 
             this.promptDraft = '';
             this.autoResizeTextarea(this.$refs.chatInput);
+            this.$wire.webSearchMode = Boolean(this.webSearchMode);
 
             this.$wire.sendMessage(text)
                 .catch(() => {

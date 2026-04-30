@@ -1,4 +1,4 @@
-<div x-data="chatComposer({ prompt: @js($prompt ?? '') })" 
+<div x-data="chatComposer({ prompt: @js($prompt ?? ''), webSearchMode: $wire.entangle('webSearchMode') })"
      x-on:show-drop-error.window="sendError = $event.detail.message"
      class="chat-composer-safe shrink-0 px-3 sm:px-6 pt-2 bg-transparent w-full"
 >
@@ -82,7 +82,11 @@
                 ></textarea>
 
                 <div class="flex items-center justify-between mt-2">
-                    <button type="button" wire:click="toggleWebSearch" class="h-[30px] px-[13px] rounded-full text-[11.4px] font-normal flex items-center gap-[6px] transition-all duration-300 {{ $webSearchMode ? 'bg-blue-50 dark:bg-blue-500/10 border border-blue-400 dark:border-blue-500 text-blue-600 dark:text-blue-400' : 'bg-transparent border border-stone-200 dark:border-[#334155] text-[#62748E] dark:text-[#94A3B8]' }}">
+                    <button type="button"
+                            @click="webSearchMode = !webSearchMode"
+                            :aria-pressed="webSearchMode ? 'true' : 'false'"
+                            :class="webSearchMode ? 'bg-blue-50 dark:bg-blue-500/10 border border-blue-400 dark:border-blue-500 text-blue-600 dark:text-blue-400' : 'bg-transparent border border-stone-200 dark:border-[#334155] text-[#62748E] dark:text-[#94A3B8]'"
+                            class="h-[30px] px-[13px] rounded-full text-[11.4px] font-normal flex items-center gap-[6px] transition-all duration-300">
                         <svg class="w-[14px] h-[14px] text-current" viewBox="0 0 14 14" fill="none" xmlns="http://www.w3.org/2000/svg">
                             <path d="M7 12.8333C10.2217 12.8333 12.8333 10.2217 12.8333 7C12.8333 3.77834 10.2217 1.16667 7 1.16667C3.77834 1.16667 1.16667 3.77834 1.16667 7C1.16667 10.2217 3.77834 12.8333 7 12.8333Z" stroke="currentColor" stroke-width="1.16667" stroke-linecap="round" stroke-linejoin="round"/>
                             <path d="M7 1.16667C5.50214 2.73942 4.66667 4.8281 4.66667 7C4.66667 9.1719 5.50214 11.2606 7 12.8333C8.49786 11.2606 9.33333 9.1719 9.33333 7C9.33333 4.8281 8.49786 2.73942 7 1.16667Z" stroke="currentColor" stroke-width="1.16667" stroke-linecap="round" stroke-linejoin="round"/>
