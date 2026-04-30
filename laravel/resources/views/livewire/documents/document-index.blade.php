@@ -158,18 +158,6 @@
                                         </td>
                                         <td class="px-6 py-4 whitespace-nowrap text-center">
                                             @if($document->status === 'ready')
-                                                <button
-                                                    type="button"
-                                                    wire:click="$dispatch('open-document-preview', { documentId: {{ $document->id }} })"
-                                                    class="inline-flex text-stone-700 hover:text-stone-900 dark:text-stone-300 dark:hover:text-white bg-stone-50 hover:bg-stone-100 dark:bg-stone-800/40 dark:hover:bg-stone-800/70 border border-stone-200 dark:border-stone-700 px-3 py-2 rounded-lg transition-all duration-150 group mr-2"
-                                                    title="Baca dokumen"
-                                                    aria-label="Baca dokumen"
-                                                >
-                                                    <svg class="h-5 w-5 group-hover:scale-110 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
-                                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-                                                    </svg>
-                                                </button>
                                                 <button 
                                                     wire:click="summarize({{ $document->id }})"
                                                     wire:loading.attr="disabled"

@@ -16,7 +16,7 @@ Mentor meminta sidebar berfungsi sebagai "tempat dokumen user" yang interaktif: 
 - Menambah service Laravel atau task Python untuk render DOCX/XLSX → HTML pas pipeline ingest selesai.
 - Menambah endpoint Laravel untuk stream PDF inline dan serve HTML preview untuk DOCX/XLSX.
 - Menambah komponen Livewire viewer (modal/panel) yang dipanggil dari sidebar.
-- Menambah tombol "Baca" / "Preview" per item di `chat-right-sidebar.blade.php` dan `document-index.blade.php`.
+- Menambah tombol "Baca" / "Preview" per item di `chat-right-sidebar.blade.php`.
 
 ## Di Luar Scope
 - Edit dokumen di dalam viewer (untuk edit, gunakan Canvas Memo Editor — Fase 3).
@@ -24,15 +24,14 @@ Mentor meminta sidebar berfungsi sebagai "tempat dokumen user" yang interaktif: 
 - Konversi format antar dokumen (itu Fase 2 — Multi-Format Export).
 - Preview file dari Google Drive (itu Fase 4).
 - Anotasi/komentar pada dokumen.
+- Mengaktifkan kembali halaman `/documents` atau menambah UI baru di sana; pengelolaan dokumen difokuskan di halaman `/chat`.
 
 ## Area / File Terkait
 - `laravel/app/Models/Document.php`
 - `laravel/database/migrations/` (migration baru: `add_preview_columns_to_documents_table`)
 - `laravel/app/Services/DocumentLifecycleService.php`
 - `laravel/app/Livewire/Chat/ChatIndex.php`
-- `laravel/app/Livewire/Documents/DocumentIndex.php`
 - `laravel/resources/views/livewire/chat/partials/chat-right-sidebar.blade.php`
-- `laravel/resources/views/livewire/documents/document-index.blade.php`
 - File baru: `laravel/app/Livewire/Documents/DocumentViewer.php`
 - File baru: `laravel/app/Http/Controllers/DocumentPreviewController.php`
 - `python-ai/app/routers/documents.py` (opsional, kalau render dilakukan di Python pas ingest)
@@ -56,7 +55,7 @@ Mentor meminta sidebar berfungsi sebagai "tempat dokumen user" yang interaktif: 
    - `html(Document $document)`: return file HTML preview dari `preview_html_path`. Wajib check ownership.
 5. Daftarkan route dengan middleware `auth` + policy `view`. Tambah `DocumentPolicy` jika belum ada.
 6. Buat komponen Livewire `DocumentViewer` (modal full-screen / side-panel) yang load preview by document id dan render di iframe untuk PDF / dalam div untuk HTML.
-7. Tambah tombol "Baca" pada item dokumen di `chat-right-sidebar.blade.php` dan `document-index.blade.php`. Klik → emit event Livewire ke `DocumentViewer`.
+7. Tambah tombol "Baca" pada item dokumen di `chat-right-sidebar.blade.php`. Klik → emit event Livewire ke `DocumentViewer`.
 8. Tambah test Laravel:
    - Feature test akses kontrol (user A tidak bisa preview dokumen user B).
    - Feature test stream PDF inline.
