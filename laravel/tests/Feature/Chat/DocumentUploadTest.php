@@ -3,6 +3,7 @@
 namespace Tests\Feature\Chat;
 
 use App\Jobs\ProcessDocument;
+use App\Jobs\RenderDocumentPreview;
 use App\Livewire\Chat\ChatIndex;
 use App\Models\Document;
 use App\Models\User;
@@ -37,6 +38,9 @@ class DocumentUploadTest extends TestCase
         $this->assertNotNull($document->file_size_bytes);
         $this->assertSame('pending', $document->status);
 
+        Queue::assertPushed(RenderDocumentPreview::class, function ($job) {
+            return $job->queue === 'document-previews';
+        });
         Queue::assertPushed(ProcessDocument::class, 1);
     }
 
@@ -132,9 +136,9 @@ class DocumentUploadTest extends TestCase
     {
         return Document::create(array_merge([
             'user_id' => $user->id,
-            'filename' => uniqid('doc_', true) . '.pdf',
-            'original_name' => uniqid('file_', true) . '.pdf',
-            'file_path' => 'documents/' . $user->id . '/' . uniqid('path_', true) . '.pdf',
+            'filename' => uniqid('doc_', true).'.pdf',
+            'original_name' => uniqid('file_', true).'.pdf',
+            'file_path' => 'documents/'.$user->id.'/'.uniqid('path_', true).'.pdf',
             'mime_type' => 'application/pdf',
             'file_size_bytes' => 120 * 1024,
             'status' => 'ready',

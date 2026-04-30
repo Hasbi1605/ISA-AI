@@ -99,6 +99,7 @@ return [
     'waits' => [
         'redis:mail' => 60,
         'redis:default' => 60,
+        'redis:document-previews' => 60,
     ],
 
     /*
@@ -221,12 +222,36 @@ return [
                 'balanceMaxShift' => 1,
                 'balanceCooldown' => 3,
             ],
+            'supervisor-document-previews' => [
+                'connection' => 'redis',
+                'queue' => ['document-previews'],
+                'balance' => 'simple',
+                'maxProcesses' => 1,
+                'maxTime' => 0,
+                'maxJobs' => 0,
+                'memory' => 256,
+                'tries' => 2,
+                'timeout' => 300,
+                'nice' => 0,
+            ],
         ],
 
         'local' => [
             'supervisor-1' => [
                 'queue' => ['mail', 'default'],
                 'maxProcesses' => 3,
+            ],
+            'supervisor-document-previews' => [
+                'connection' => 'redis',
+                'queue' => ['document-previews'],
+                'balance' => 'simple',
+                'maxProcesses' => 1,
+                'maxTime' => 0,
+                'maxJobs' => 0,
+                'memory' => 256,
+                'tries' => 2,
+                'timeout' => 300,
+                'nice' => 0,
             ],
         ],
     ],

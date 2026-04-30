@@ -45,6 +45,27 @@ class DocumentViewerLivewireTest extends TestCase
             ->assertSee($document->original_name);
     }
 
+    public function test_pdf_preview_is_rendered_without_sandbox(): void
+    {
+        $user = User::factory()->create();
+        $document = Document::create([
+            'user_id' => $user->id,
+            'filename' => 'sample.pdf',
+            'original_name' => 'sample.pdf',
+            'file_path' => 'documents/'.$user->id.'/sample.pdf',
+            'mime_type' => 'application/pdf',
+            'file_size_bytes' => 100,
+            'status' => 'ready',
+            'preview_status' => Document::PREVIEW_STATUS_READY,
+        ]);
+
+        Livewire::actingAs($user)
+            ->test(DocumentViewer::class)
+            ->dispatch('open-document-preview', documentId: $document->id)
+            ->assertSeeHtml('<iframe')
+            ->assertDontSeeHtml('sandbox=');
+    }
+
     public function test_viewer_does_not_render_other_users_document(): void
     {
         $owner = User::factory()->create();

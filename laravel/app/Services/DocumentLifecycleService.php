@@ -3,6 +3,7 @@
 namespace App\Services;
 
 use App\Jobs\ProcessDocument;
+use App\Jobs\RenderDocumentPreview;
 use App\Models\Document;
 use App\Services\Documents\DocumentPreviewRenderer;
 use Illuminate\Http\UploadedFile;
@@ -14,8 +15,9 @@ use InvalidArgumentException;
 class DocumentLifecycleService
 {
     public const MAX_DOCUMENTS_PER_USER = 10;
+
     public const SOFT_DELETE_RETENTION_DAYS = 7;
-    
+
     public const ALLOWED_ATTACHMENT_MIME_TYPES = [
         'application/pdf',
         'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
@@ -25,9 +27,6 @@ class DocumentLifecycleService
     /**
      * Upload and initiate document processing
      *
-     * @param UploadedFile $file
-     * @param int $userId
-     * @return Document
      * @throws ValidationException
      * @throws \Exception
      */
@@ -45,7 +44,7 @@ class DocumentLifecycleService
         $originalName = $file->getClientOriginalName();
         $detectedMimeType = (string) $file->getMimeType();
 
-        if (!in_array($detectedMimeType, self::ALLOWED_ATTACHMENT_MIME_TYPES, true)) {
+        if (! in_array($detectedMimeType, self::ALLOWED_ATTACHMENT_MIME_TYPES, true)) {
             throw ValidationException::withMessages([
                 'file' => 'Tipe MIME file tidak valid. Gunakan PDF, DOCX, atau XLSX.',
             ]);
@@ -63,11 +62,11 @@ class DocumentLifecycleService
         }
 
         // 4. Store file
-        $filename = time() . '_' . $file->hashName();
-        $filePath = $file->storeAs('documents/' . $userId, $filename);
+        $filename = time().'_'.$file->hashName();
+        $filePath = $file->storeAs('documents/'.$userId, $filename);
 
-        if (!$filePath) {
-            throw new \Exception("Gagal menyimpan file ke storage.");
+        if (! $filePath) {
+            throw new \Exception('Gagal menyimpan file ke storage.');
         }
 
         // 5. Create Database Record
@@ -81,7 +80,12 @@ class DocumentLifecycleService
             'status' => 'pending',
         ]);
 
-        // 6. Dispatch Processing Job
+        // 6. Dispatch preview and processing jobs on separate queues.
+        try {
+            $this->dispatchPreviewRendering($document);
+        } catch (\Throwable $e) {
+            logger()->warning("Preview dispatch failed for document {$document->id}, proceeding: ".$e->getMessage());
+        }
         $this->dispatchProcessing($document);
 
         return $document;
@@ -89,9 +93,6 @@ class DocumentLifecycleService
 
     /**
      * Dispatch the job to process a document
-     *
-     * @param Document $document
-     * @return void
      */
     public function dispatchProcessing(Document $document): void
     {
@@ -99,10 +100,16 @@ class DocumentLifecycleService
     }
 
     /**
+     * Dispatch the job to render a document preview.
+     */
+    public function dispatchPreviewRendering(Document $document): void
+    {
+        RenderDocumentPreview::dispatch($document);
+    }
+
+    /**
      * Delete document and perform cleanup (Vector DB, Storage, Database)
      *
-     * @param Document $document
-     * @return bool
      * @throws \Exception
      */
     public function deleteDocument(Document $document): bool
@@ -112,12 +119,11 @@ class DocumentLifecycleService
         // 3. Delete database record (Soft Delete)
         return $document->delete();
     }
-    
+
     /**
      * Delete multiple documents
-     * 
-     * @param iterable<Document> $documents
-     * @return void
+     *
+     * @param  iterable<Document>  $documents
      */
     public function deleteDocuments(iterable $documents): void
     {
@@ -149,9 +155,6 @@ class DocumentLifecycleService
     /**
      * Summarize a document, with readiness guard
      *
-     * @param Document $document
-     * @param AIService $aiService
-     * @return array
      * @throws InvalidArgumentException
      * @throws \Exception
      */
@@ -176,14 +179,14 @@ class DocumentLifecycleService
         try {
             app(DocumentPreviewRenderer::class)->deletePreview($document);
         } catch (\Throwable $e) {
-            logger()->warning("Preview cleanup failed for document {$document->id}, proceeding anyway: " . $e->getMessage());
+            logger()->warning("Preview cleanup failed for document {$document->id}, proceeding anyway: ".$e->getMessage());
         }
     }
 
     private function deleteDocumentVectors(Document $document): void
     {
         $pythonUrl = rtrim((string) config('services.ai_document_service.url', config('services.ai_service.url', 'http://127.0.0.1:8001')), '/')
-            . '/api/documents/' . urlencode($document->original_name);
+            .'/api/documents/'.urlencode($document->original_name);
         $token = config('services.ai_document_service.token', config('services.ai_service.token'));
 
         try {
@@ -191,11 +194,11 @@ class DocumentLifecycleService
                 'Authorization' => "Bearer {$token}",
             ])->delete($pythonUrl);
 
-            if (!$response->successful() && $response->status() !== 404) {
-                logger()->warning("Vector deletion failed for {$document->original_name}, proceeding anyway: " . $response->body());
+            if (! $response->successful() && $response->status() !== 404) {
+                logger()->warning("Vector deletion failed for {$document->original_name}, proceeding anyway: ".$response->body());
             }
         } catch (\Exception $e) {
-            logger()->warning("Vector deletion HTTP request failed for {$document->original_name}, proceeding anyway: " . $e->getMessage());
+            logger()->warning("Vector deletion HTTP request failed for {$document->original_name}, proceeding anyway: ".$e->getMessage());
         }
     }
 
