@@ -776,6 +776,160 @@ const registerChatPageData = (Alpine) => {
             return this.$wire.close();
         },
     }));
+
+    Alpine.data('documentViewerExport', (config = {}) => ({
+        extractUrl: config.extractUrl || '',
+        exportUrl: config.exportUrl || '',
+        fileName: config.fileName || 'ista-ai-tabel-dokumen',
+        exportMenuOpen: false,
+        loading: false,
+        error: '',
+        tables: null,
+
+        toggleMenu() {
+            if (this.loading) {
+                return;
+            }
+
+            this.exportMenuOpen = !this.exportMenuOpen;
+            this.error = '';
+        },
+
+        async exportTablesAs(format) {
+            if (!this.extractUrl || !this.exportUrl || this.loading) {
+                return;
+            }
+
+            this.exportMenuOpen = false;
+            this.loading = true;
+            this.error = '';
+
+            try {
+                const tables = await this.extractTables();
+
+                if (tables.length === 0) {
+                    this.error = 'Tidak ada tabel yang bisa diekspor.';
+                    return;
+                }
+
+                const response = await fetch(this.exportUrl, {
+                    method: 'POST',
+                    credentials: 'same-origin',
+                    headers: {
+                        'Accept': '*/*',
+                        'Content-Type': 'application/json',
+                        'X-CSRF-TOKEN': this.getCsrfToken(),
+                    },
+                    body: JSON.stringify({
+                        content_html: this.tablesToHtml(tables),
+                        target_format: format,
+                        file_name: this.fileName,
+                    }),
+                });
+
+                if (!response.ok) {
+                    throw new Error(await response.text() || 'Gagal mengekspor tabel.');
+                }
+
+                const blob = await response.blob();
+                this.downloadBlob(blob, this.filenameFromResponse(response, format));
+            } catch (error) {
+                console.error('Gagal mengekspor tabel dokumen', error);
+                this.error = error?.message || 'Gagal mengekspor tabel.';
+            } finally {
+                this.loading = false;
+            }
+        },
+
+        async extractTables() {
+            if (Array.isArray(this.tables)) {
+                return this.tables;
+            }
+
+            const response = await fetch(this.extractUrl, {
+                credentials: 'same-origin',
+                headers: {
+                    'Accept': 'application/json',
+                },
+            });
+
+            let payload = null;
+
+            try {
+                payload = await response.json();
+            } catch (error) {
+                payload = null;
+            }
+
+            if (!response.ok) {
+                throw new Error(payload?.message || payload?.detail || 'Gagal mengekstrak tabel.');
+            }
+
+            this.tables = Array.isArray(payload?.tables) ? payload.tables : [];
+
+            return this.tables;
+        },
+
+        tablesToHtml(tables) {
+            const sections = tables.map((table, index) => {
+                const pageLabel = table.page ? ` - Halaman ${table.page}` : '';
+                const title = `Tabel ${index + 1}${pageLabel}`;
+                const header = Array.isArray(table.header) ? table.header : [];
+                const rows = Array.isArray(table.rows) ? table.rows : [];
+                const headerHtml = header.length > 0
+                    ? `<thead><tr>${header.map((cell) => `<th>${this.escapeHtml(cell)}</th>`).join('')}</tr></thead>`
+                    : '';
+                const bodyHtml = rows
+                    .map((row) => `<tr>${(Array.isArray(row) ? row : []).map((cell) => `<td>${this.escapeHtml(cell)}</td>`).join('')}</tr>`)
+                    .join('');
+
+                return `
+                    <section>
+                        <h2>${this.escapeHtml(title)}</h2>
+                        <table>
+                            ${headerHtml}
+                            <tbody>${bodyHtml}</tbody>
+                        </table>
+                    </section>
+                `;
+            }).join('');
+
+            return `<article><h1>Ekstrak Tabel Dokumen</h1>${sections}</article>`;
+        },
+
+        escapeHtml(value) {
+            const element = document.createElement('div');
+            element.textContent = value == null ? '' : String(value);
+
+            return element.innerHTML;
+        },
+
+        getCsrfToken() {
+            return document.querySelector('meta[name="csrf-token"]')?.content || '';
+        },
+
+        downloadBlob(blob, fileName) {
+            const downloadUrl = window.URL.createObjectURL(blob);
+            const anchor = document.createElement('a');
+            anchor.href = downloadUrl;
+            anchor.download = fileName;
+            document.body.appendChild(anchor);
+            anchor.click();
+            anchor.remove();
+            window.URL.revokeObjectURL(downloadUrl);
+        },
+
+        filenameFromResponse(response, format) {
+            const disposition = response.headers.get('Content-Disposition') || '';
+            const fileNameMatch = disposition.match(/filename="?([^"]+)"?/i);
+
+            if (fileNameMatch?.[1]) {
+                return fileNameMatch[1];
+            }
+
+            return `${this.fileName}.${format}`;
+        },
+    }));
 };
 
 document.addEventListener('alpine:init', () => {

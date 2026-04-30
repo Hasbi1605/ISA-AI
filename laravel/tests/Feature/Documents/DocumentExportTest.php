@@ -74,6 +74,23 @@ class DocumentExportTest extends TestCase
             ->assertJsonPath('tables.0.rows.0.1', '10');
     }
 
+    public function test_extract_tables_route_forbids_non_owner(): void
+    {
+        Storage::fake('local');
+        $owner = User::factory()->create(['email_verified_at' => now()]);
+        $other = User::factory()->create(['email_verified_at' => now()]);
+        $document = $this->createDocument($owner, 'application/pdf', 'sample.pdf');
+
+        $service = Mockery::mock(DocumentExportService::class);
+        $service->shouldNotReceive('extractTables');
+
+        $this->app->instance(DocumentExportService::class, $service);
+
+        $this->actingAs($other)
+            ->get(route('documents.extract-tables', $document))
+            ->assertForbidden();
+    }
+
     public function test_export_and_extract_routes_require_authentication(): void
     {
         Storage::fake('local');

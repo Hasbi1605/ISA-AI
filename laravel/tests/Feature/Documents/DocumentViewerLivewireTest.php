@@ -66,6 +66,32 @@ class DocumentViewerLivewireTest extends TestCase
             ->assertDontSeeHtml('sandbox=');
     }
 
+    public function test_viewer_renders_table_export_controls_for_extractable_document(): void
+    {
+        $user = User::factory()->create();
+        $document = Document::create([
+            'user_id' => $user->id,
+            'filename' => 'sample.pdf',
+            'original_name' => 'sample.pdf',
+            'file_path' => 'documents/'.$user->id.'/sample.pdf',
+            'mime_type' => 'application/pdf',
+            'file_size_bytes' => 100,
+            'status' => 'ready',
+            'preview_status' => Document::PREVIEW_STATUS_READY,
+        ]);
+
+        Livewire::actingAs($user)
+            ->test(DocumentViewer::class)
+            ->call('open', $document->id)
+            ->assertSee('wire:key="document-export-actions-' . $document->id . '"', false)
+            ->assertSee('data-document-export-actions', false)
+            ->assertSee('Ekspor tabel', false)
+            ->assertSee('data-document-export-format="xlsx"', false)
+            ->assertSee('data-document-export-format="csv"', false)
+            ->assertSee('data-document-export-format="docx"', false)
+            ->assertSee('data-document-export-format="pdf"', false);
+    }
+
     public function test_viewer_does_not_render_other_users_document(): void
     {
         $owner = User::factory()->create();
