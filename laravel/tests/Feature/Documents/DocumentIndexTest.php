@@ -3,6 +3,7 @@
 namespace Tests\Feature\Documents;
 
 use App\Jobs\ProcessDocument;
+use App\Jobs\RenderDocumentPreview;
 use App\Livewire\Documents\DocumentIndex;
 use App\Models\Document;
 use App\Models\User;
@@ -45,6 +46,9 @@ class DocumentIndexTest extends TestCase
         $this->assertSame('dokumen.pdf', $document->original_name);
         $this->assertSame('pending', $document->status);
 
+        Queue::assertPushed(RenderDocumentPreview::class, function ($job) {
+            return $job->queue === 'document-previews';
+        });
         Queue::assertPushed(ProcessDocument::class, 1);
     }
 

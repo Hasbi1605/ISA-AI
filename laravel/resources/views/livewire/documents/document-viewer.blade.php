@@ -38,8 +38,7 @@
                     @elseif ($kind === 'pdf')
                         <iframe src="{{ $streamUrl }}"
                                 class="w-full h-[70vh] bg-white"
-                                title="Preview {{ $document->original_name }}"
-                                sandbox="allow-same-origin allow-scripts"></iframe>
+                                title="Preview {{ $document->original_name }}"></iframe>
                     @elseif (in_array($kind, ['docx', 'xlsx'], true))
                         @if ($previewStatus === \App\Models\Document::PREVIEW_STATUS_READY)
                             <div wire:poll.30s.keep-alive
