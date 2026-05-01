@@ -57,6 +57,13 @@ Repo ini menggunakan workflow berbasis plan, implementasi bertahap, verifikasi w
 - Setelah branch dihapus, pastikan branch aktif lokal kembali ke `main`.
 - Pastikan `main` lokal sudah update dan sinkron dengan remote.
 
+## Aturan Deploy
+- Agent tidak boleh menjalankan deploy production langsung dari terminal agent, termasuk perintah `ssh`, `docker compose`, restart service, migration production, atau command lain yang mengubah server production.
+- Setelah perubahan sudah diverifikasi, commit, dan push, agent hanya boleh memberikan daftar command deploy yang diperlukan agar user menjalankannya sendiri dari terminal lokal.
+- Command deploy harus ringkas, berurutan, dan sesuai scope perubahan. Jangan sertakan command destruktif seperti hapus volume/database/cache permanen kecuali user meminta secara eksplisit dan risikonya sudah dijelaskan.
+- Jika deploy membutuhkan keputusan manual, secret, atau akses khusus, agent harus menjelaskan asumsi dan menunggu user menjalankan atau memberi hasil output terminal.
+- Agent boleh menjalankan verifikasi lokal dan menyiapkan command deploy, tetapi tidak mengeksekusi command production.
+
 ## Aturan Planning
 - Untuk tugas yang kompleks, planning harus ditulis sebagai file markdown di folder `issue/` sebelum implementasi dimulai.
 - File issue markdown menjadi acuan utama untuk scope, tujuan, risiko, dan langkah implementasi.
@@ -117,3 +124,4 @@ Sebuah tugas dianggap selesai hanya jika:
 - branch kerja sudah dihapus bila tidak lagi dibutuhkan
 - branch lokal sudah kembali ke `main`
 - kondisi lokal dan remote sudah sinkron
+- untuk deploy production, agent sudah memberikan command deploy yang perlu dijalankan user sendiri, bukan menjalankannya dari terminal agent
