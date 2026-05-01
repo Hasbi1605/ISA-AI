@@ -5,6 +5,7 @@ import os
 import shutil
 import subprocess
 import tempfile
+import zipfile
 from io import BytesIO, StringIO
 from pathlib import Path
 
@@ -92,13 +93,24 @@ def _convert_to_pdf(file_path: str, source: str, filename: str | None, base_name
 def _convert_to_docx(file_path: str, source: str, filename: str | None, base_name: str) -> ExportArtifact:
     if source == "pdf":
         try:
+            content = _pdf_to_docx(file_path)
+            if _pdf_has_non_text_visuals(file_path) and not _docx_has_embedded_media(content):
+                content = _pdf_to_visual_docx(file_path)
+
             return ExportArtifact(
                 filename=f"{base_name}.docx",
                 mime_type=DOCX_MIME,
-                content=_pdf_to_docx(file_path),
+                content=content,
             )
         except Exception:
-            pass
+            try:
+                return ExportArtifact(
+                    filename=f"{base_name}.docx",
+                    mime_type=DOCX_MIME,
+                    content=_pdf_to_visual_docx(file_path),
+                )
+            except Exception:
+                pass
 
         content_html = extract_document_content_html(file_path, filename=filename)
         artifact = export_content(content_html, "docx", base_name)
@@ -236,6 +248,63 @@ def _pdf_to_docx(file_path: str) -> bytes:
             converter.close()
 
         return output_path.read_bytes()
+
+
+def _pdf_has_non_text_visuals(file_path: str) -> bool:
+    import fitz
+
+    document = fitz.open(file_path)
+    try:
+        for page in document:
+            if page.get_images(full=True) or page.get_drawings():
+                return True
+    finally:
+        document.close()
+
+    return False
+
+
+def _docx_has_embedded_media(content: bytes) -> bool:
+    try:
+        with zipfile.ZipFile(BytesIO(content)) as archive:
+            return any(name.startswith("word/media/") for name in archive.namelist())
+    except zipfile.BadZipFile:
+        return False
+
+
+def _pdf_to_visual_docx(file_path: str) -> bytes:
+    import fitz
+
+    pdf = fitz.open(file_path)
+    try:
+        document = DocxDocument()
+        section = document.sections[-1]
+        section.top_margin = Inches(0)
+        section.bottom_margin = Inches(0)
+        section.left_margin = Inches(0)
+        section.right_margin = Inches(0)
+
+        for page_index, page in enumerate(pdf):
+            if page_index == 0:
+                section.page_width = Inches(page.rect.width / 72)
+                section.page_height = Inches(page.rect.height / 72)
+            elif page_index > 0:
+                document.add_page_break()
+
+            pixmap = page.get_pixmap(matrix=fitz.Matrix(2, 2), alpha=False)
+            image_stream = BytesIO(pixmap.tobytes("png"))
+            paragraph = document.add_paragraph()
+            paragraph.paragraph_format.space_before = Pt(0)
+            paragraph.paragraph_format.space_after = Pt(0)
+            paragraph.paragraph_format.line_spacing = 1
+            run = paragraph.add_run()
+            run.add_picture(image_stream, width=section.page_width)
+
+        buffer = BytesIO()
+        document.save(buffer)
+        return buffer.getvalue()
+    finally:
+        pdf.close()
 
 
 def _spreadsheet_to_docx(file_path: str, filename: str | None = None) -> bytes:

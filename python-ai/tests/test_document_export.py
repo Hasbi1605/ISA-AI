@@ -1,5 +1,6 @@
 import os
 import sys
+import zipfile
 from io import BytesIO
 
 from docx import Document as DocxDocument
@@ -14,6 +15,11 @@ from app.services.document_export import export_content
 
 client = TestClient(app)
 AUTH_HEADERS = {"Authorization": "Bearer your_internal_api_secret"}
+
+
+def _docx_has_media(content: bytes) -> bool:
+    with zipfile.ZipFile(BytesIO(content)) as archive:
+        return any(name.startswith("word/media/") for name in archive.namelist())
 
 
 def _sample_html() -> str:
@@ -264,3 +270,26 @@ def test_documents_convert_route_converts_pdf_to_docx():
     docx_document = DocxDocument(BytesIO(response.content))
     text = "\n".join(paragraph.text for paragraph in docx_document.paragraphs)
     assert "PDF" in text or docx_document.tables
+
+
+def test_documents_convert_route_preserves_visual_pdf_layout_in_docx():
+    import fitz
+
+    pdf = fitz.open()
+    page = pdf.new_page(width=595, height=842)
+    page.insert_text((72, 72), "Dokumen visual")
+    pixmap = fitz.Pixmap(fitz.csRGB, fitz.IRect(0, 0, 90, 90), 0)
+    pixmap.clear_with(0x8A1538)
+    page.insert_image(fitz.Rect(72, 110, 162, 200), pixmap=pixmap)
+    pdf_bytes = pdf.write()
+    pdf.close()
+
+    response = client.post(
+        "/api/documents/convert",
+        headers=AUTH_HEADERS,
+        data={"target_format": "docx", "file_name": "dokumen-visual"},
+        files={"file": ("dokumen-visual.pdf", pdf_bytes, "application/pdf")},
+    )
+
+    assert response.status_code == 200
+    assert _docx_has_media(response.content)

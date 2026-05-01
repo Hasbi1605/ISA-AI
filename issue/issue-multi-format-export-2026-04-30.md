@@ -87,3 +87,9 @@ Mentor meminta ISTA AI bisa menerima dokumen dalam satu format (mis. PDF) dan me
 - Gunakan LibreOffice headless untuk DOCX/XLSX/CSV -> PDF agar layout, page setup, font, dan tabel lebih terjaga.
 - Gunakan `pdf2docx` untuk PDF -> DOCX sebelum fallback ke ekstraksi teks.
 - Gunakan pembentuk DOCX khusus spreadsheet untuk XLSX/CSV -> DOCX agar tabel tetap terbaca dan tidak berubah menjadi paragraf acak.
+
+## Follow-up 2026-05-01: PDF Visual ke DOCX
+- PDF -> DOCX editable tetap dicoba lebih dulu dengan `pdf2docx`.
+- Jika PDF memiliki gambar/vector drawing tetapi hasil DOCX tidak membawa media, fallback ke DOCX visual-preserving: setiap halaman PDF dirender sebagai gambar beresolusi tinggi ke halaman Word.
+- Tujuan fallback ini adalah menjaga tampilan/logo/layout tidak hancur untuk PDF visual; trade-off-nya teks pada halaman fallback tidak sepenuhnya editable.
+- LibreOffice tetap dipakai untuk konversi Office/spreadsheet -> PDF, bukan untuk PDF -> DOCX.
