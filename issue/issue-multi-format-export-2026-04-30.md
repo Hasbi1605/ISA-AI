@@ -93,3 +93,9 @@ Mentor meminta ISTA AI bisa menerima dokumen dalam satu format (mis. PDF) dan me
 - Jika PDF memiliki gambar/vector drawing tetapi hasil DOCX tidak membawa media, fallback ke DOCX visual-preserving: setiap halaman PDF dirender sebagai gambar beresolusi tinggi ke halaman Word.
 - Tujuan fallback ini adalah menjaga tampilan/logo/layout tidak hancur untuk PDF visual; trade-off-nya teks pada halaman fallback tidak sepenuhnya editable.
 - LibreOffice tetap dipakai untuk konversi Office/spreadsheet -> PDF, bukan untuk PDF -> DOCX.
+
+## Follow-up 2026-05-01: Stale Compiled View di Production
+- Production memakai volume `laravel_storage`, sehingga `storage/framework/views` dapat menyimpan compiled Blade lama setelah container baru naik.
+- Jika compiled view lama masih dipakai, tombol ekspor viewer bisa tetap memanggil jalur lama `content-html` -> `documents/export`, bukan jalur baru `documents/{document}/convert`.
+- Entry point Laravel perlu membersihkan compiled view saat container start agar markup terbaru selalu dipakai setelah deploy.
+- JavaScript viewer export juga tidak boleh mensyaratkan `exportUrl` ketika `convertUrl` tersedia, karena konversi file asli seharusnya bisa berjalan mandiri.

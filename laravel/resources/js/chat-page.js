@@ -800,7 +800,7 @@ const registerChatPageData = (Alpine) => {
         },
 
         async exportTablesAs(format) {
-            if (!this.exportUrl || this.loading) {
+            if (this.loading || (!this.convertUrl && !this.exportUrl)) {
                 return;
             }
 
