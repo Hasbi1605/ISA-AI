@@ -30,7 +30,6 @@ Route::middleware(['auth', 'verified'])
     ->group(function () {
         Route::get('/{document}/content-html', [DocumentExportController::class, 'extractContent'])->name('content-html');
         Route::get('/{document}/extract-tables', [DocumentExportController::class, 'extractTables'])->name('extract-tables');
-        Route::post('/{document}/convert', [DocumentExportController::class, 'convert'])->name('convert');
         Route::post('/export', [DocumentExportController::class, 'export'])->name('export');
     });
 

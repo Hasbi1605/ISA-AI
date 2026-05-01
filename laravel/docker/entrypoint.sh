@@ -18,6 +18,5 @@ for cache_file in packages.php services.php; do
 done
 
 php artisan storage:link >/dev/null 2>&1 || true
-php artisan view:clear >/dev/null 2>&1 || true
 
 exec "$@"

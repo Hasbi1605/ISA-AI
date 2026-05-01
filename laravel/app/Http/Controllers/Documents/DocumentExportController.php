@@ -51,29 +51,6 @@ class DocumentExportController extends Controller
         return response()->json($result);
     }
 
-    public function convert(Request $request, Document $document, DocumentExportService $exportService): Response
-    {
-        $this->authorizeView($request, $document);
-
-        $data = $request->validate([
-            'target_format' => ['required', 'in:pdf,docx,xlsx,csv'],
-            'file_name' => ['nullable', 'string', 'max:120'],
-        ]);
-
-        $artifact = $exportService->convertDocument(
-            $document,
-            $data['target_format'],
-            $data['file_name'] ?? null,
-        );
-
-        return response($artifact['body'], Response::HTTP_OK, [
-            'Content-Type' => $artifact['content_type'],
-            'Content-Disposition' => 'attachment; filename="'.$artifact['file_name'].'"',
-            'X-Content-Type-Options' => 'nosniff',
-            'Cache-Control' => 'no-store',
-        ]);
-    }
-
     protected function authorizeView(Request $request, Document $document): void
     {
         $user = $request->user();
