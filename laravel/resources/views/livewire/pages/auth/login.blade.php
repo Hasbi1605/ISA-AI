@@ -1,18 +1,13 @@
 <?php
 
 use App\Livewire\Forms\LoginForm;
-use App\Mail\VerificationCodeMail;
 use App\Models\User;
-use App\Services\Auth\PendingRegistrationService;
+use App\Services\Auth\PasswordResetLinkService;
+use App\Services\Auth\PendingRegistrationWorkflowService;
 use Illuminate\Support\Facades\Auth;
-use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Hash;
-use Illuminate\Support\Facades\Mail;
-use Illuminate\Support\Facades\Password;
-use Illuminate\Support\Facades\RateLimiter;
 use Illuminate\Support\Facades\Session;
-use Illuminate\Support\Str;
 use Illuminate\Validation\Rules;
+use Illuminate\Validation\ValidationException;
 use Livewire\Attributes\Layout;
 use Livewire\Volt\Component;
 
@@ -52,9 +47,14 @@ new #[Layout('layouts.auth-canvas')] class extends Component
         }
     }
 
-    protected function pendingRegistrationService(): PendingRegistrationService
+    protected function passwordResetLinkService(): PasswordResetLinkService
     {
-        return app(PendingRegistrationService::class);
+        return app(PasswordResetLinkService::class);
+    }
+
+    protected function pendingRegistrationWorkflowService(): PendingRegistrationWorkflowService
+    {
+        return app(PendingRegistrationWorkflowService::class);
     }
 
     public function setView(string $view): void
@@ -78,24 +78,8 @@ new #[Layout('layouts.auth-canvas')] class extends Component
             'forgot_email' => 'email',
         ]);
 
-        $user = User::where('email', $this->forgot_email)->first();
-
-        if ($user && is_null($user->email_verified_at)) {
-            $this->addError('forgot_email', 'Email belum terverifikasi. Silakan daftar ulang lalu verifikasi kode OTP.');
-
-            return;
-        }
-
-        $status = Password::broker()->sendResetLink(
-            ['email' => $this->forgot_email]
-        );
-
-        if ($status == Password::RESET_LINK_SENT) {
-            $this->forgot_status = __($status);
-            $this->forgot_email = '';
-        } else {
-            $this->addError('forgot_email', __($status));
-        }
+        $this->forgot_status = $this->passwordResetLinkService()->sendResetLink($this->forgot_email, 'forgot_email');
+        $this->forgot_email = '';
     }
 
     /**
@@ -117,13 +101,6 @@ new #[Layout('layouts.auth-canvas')] class extends Component
 
     public function register(): void
     {
-        $pendingRegistrationService = $this->pendingRegistrationService();
-
-        $existingUser = User::where('email', $this->register_email)->first();
-        if ($existingUser && is_null($existingUser->email_verified_at)) {
-            $existingUser->delete();
-        }
-
         $validated = $this->validate([
             'name' => ['required', 'string', 'max:255'],
             'register_email' => ['required', 'string', 'lowercase', 'email', 'max:255', 'unique:'.User::class.',email'],
@@ -140,21 +117,13 @@ new #[Layout('layouts.auth-canvas')] class extends Component
             'register_password' => 'password',
         ]);
 
-        $registrationEmail = Str::lower($validated['register_email']);
-        $existingPendingToken = $pendingRegistrationService->pendingTokenByEmail($registrationEmail);
-        if ($existingPendingToken) {
-            $pendingRegistrationService->clearPendingRegistration($existingPendingToken, $registrationEmail, request()->ip());
-        }
-
-        [$pendingToken, $plainCode] = $pendingRegistrationService->createPendingRegistration(
+        $this->pendingRegistrationToken = $this->pendingRegistrationWorkflowService()->startRegistration(
             name: $validated['name'],
-            email: $registrationEmail,
-            hashedPassword: Hash::make($validated['register_password']),
+            email: $validated['register_email'],
+            password: $validated['register_password'],
+            ipAddress: request()->ip(),
         );
 
-        Mail::to($registrationEmail)->send(new VerificationCodeMail($plainCode));
-
-        $this->pendingRegistrationToken = $pendingToken;
         $this->showVerificationModal = true;
         $this->verification_code_input = '';
         $this->otp_status = null;
@@ -162,46 +131,10 @@ new #[Layout('layouts.auth-canvas')] class extends Component
 
     public function resendOtp(): void
     {
-        if (! $this->pendingRegistrationToken) {
-            $this->addError('verification_code_input', 'Sesi pendaftaran tidak ditemukan. Silakan daftar ulang.');
-
-            return;
-        }
-
-        $pendingRegistrationService = $this->pendingRegistrationService();
-        $pending = $pendingRegistrationService->getPendingRegistration($this->pendingRegistrationToken);
-
-        if (! is_array($pending)) {
-            $this->addError('verification_code_input', 'Sesi pendaftaran sudah berakhir. Silakan daftar ulang.');
-
-            return;
-        }
-
-        $otpResendRateLimitKey = $pendingRegistrationService->otpResendRateLimitKey(
-            token: $this->pendingRegistrationToken,
-            ipAddress: request()->ip(),
+        $this->pendingRegistrationWorkflowService()->resendOtp(
+            $this->pendingRegistrationToken,
+            request()->ip(),
         );
-
-        if (RateLimiter::tooManyAttempts($otpResendRateLimitKey, 1)) {
-            $seconds = RateLimiter::availableIn($otpResendRateLimitKey);
-            $this->addError('verification_code_input', 'Kode OTP sudah dikirim ulang. Coba lagi dalam '.$seconds.' detik.');
-
-            return;
-        }
-
-        $plainCode = sprintf('%06d', random_int(0, 999999));
-        $email = (string) ($pending['email'] ?? '');
-
-        $pendingRegistrationService->storePendingRegistration($this->pendingRegistrationToken, [
-            'name' => (string) ($pending['name'] ?? ''),
-            'email' => $email,
-            'password' => (string) ($pending['password'] ?? ''),
-            'code_hash' => hash('sha256', $plainCode),
-        ]);
-
-        Mail::to($email)->send(new VerificationCodeMail($plainCode));
-
-        RateLimiter::hit($otpResendRateLimitKey, $pendingRegistrationService->otpResendCooldownSeconds());
 
         $this->verification_code_input = '';
         $this->otp_status = 'Kode OTP baru telah dikirim ke email Anda.';
@@ -215,11 +148,10 @@ new #[Layout('layouts.auth-canvas')] class extends Component
             return;
         }
 
-        $pendingRegistrationService = $this->pendingRegistrationService();
-        $pending = $pendingRegistrationService->getPendingRegistration($this->pendingRegistrationToken);
-        $pendingEmail = is_array($pending) ? ($pending['email'] ?? null) : null;
-
-        $pendingRegistrationService->clearPendingRegistration($this->pendingRegistrationToken, $pendingEmail, request()->ip());
+        $this->pendingRegistrationWorkflowService()->cancelRegistration(
+            $this->pendingRegistrationToken,
+            request()->ip(),
+        );
 
         $this->pendingRegistrationToken = null;
         $this->verification_code_input = '';
@@ -229,8 +161,6 @@ new #[Layout('layouts.auth-canvas')] class extends Component
 
     public function verifyOtp(): void
     {
-        $pendingRegistrationService = $this->pendingRegistrationService();
-
         $this->validate([
             'verification_code_input' => ['required', 'digits:6'],
         ], [
@@ -244,82 +174,23 @@ new #[Layout('layouts.auth-canvas')] class extends Component
             return;
         }
 
-        $otpRateLimitKey = $pendingRegistrationService->otpRateLimitKey(
-            token: $this->pendingRegistrationToken,
-            ipAddress: request()->ip(),
-        );
-        if (RateLimiter::tooManyAttempts($otpRateLimitKey, $pendingRegistrationService->otpMaxAttempts())) {
-            $seconds = RateLimiter::availableIn($otpRateLimitKey);
-            $this->addError('verification_code_input', 'Terlalu banyak percobaan OTP. Coba lagi dalam '.ceil($seconds / 60).' menit.');
-
-            return;
-        }
-
-        $pending = $pendingRegistrationService->getPendingRegistration($this->pendingRegistrationToken);
-
-        if (! is_array($pending)) {
-            $this->addError('verification_code_input', 'Sesi pendaftaran sudah berakhir. Silakan daftar ulang.');
-
-            return;
-        }
-
-        $expiresAt = (int) ($pending['expires_at'] ?? 0);
-        if ($expiresAt < now()->getTimestamp()) {
-            $pendingRegistrationService->clearPendingRegistration($this->pendingRegistrationToken, $pending['email'] ?? null, request()->ip());
-            $this->addError('verification_code_input', 'Kode verifikasi sudah kedaluwarsa. Silakan daftar ulang.');
-
-            return;
-        }
-
-        $providedCodeHash = hash('sha256', $this->verification_code_input);
-
-        if (! hash_equals((string) ($pending['code_hash'] ?? ''), $providedCodeHash)) {
-            RateLimiter::hit($otpRateLimitKey, $pendingRegistrationService->otpDecaySeconds());
-
-            $this->addError('verification_code_input', 'Kode verifikasi tidak valid.');
-
-            return;
-        }
-
-        $email = (string) ($pending['email'] ?? '');
-
         try {
-            $user = DB::transaction(function () use ($email, $pending) {
-                $legacyUnverifiedUser = User::where('email', $email)
-                    ->whereNull('email_verified_at')
-                    ->first();
-
-                if ($legacyUnverifiedUser) {
-                    $legacyUnverifiedUser->delete();
-                }
-
-                $user = User::create([
-                    'name' => (string) ($pending['name'] ?? ''),
-                    'email' => $email,
-                    'password' => (string) ($pending['password'] ?? ''),
-                    'verification_code' => null,
-                    'verification_code_expires_at' => null,
-                ]);
-
-                $user->forceFill([
-                    'email_verified_at' => now(),
-                ])->save();
-
-                return $user;
-            });
-        } catch (Throwable $e) {
+            $user = $this->pendingRegistrationWorkflowService()->verifyOtp(
+                $this->pendingRegistrationToken,
+                $this->verification_code_input,
+                request()->ip(),
+            );
+        } catch (ValidationException $e) {
+            throw $e;
+        } catch (\Throwable $e) {
             $this->addError('verification_code_input', 'Terjadi kendala saat menyelesaikan pendaftaran. Silakan coba lagi.');
 
             return;
         }
 
-        RateLimiter::clear($otpRateLimitKey);
-
         Auth::login($user);
-
         Session::regenerate();
 
-        $pendingRegistrationService->clearPendingRegistration($this->pendingRegistrationToken, $email, request()->ip());
         $this->pendingRegistrationToken = null;
         $this->verification_code_input = '';
         $this->showVerificationModal = false;
