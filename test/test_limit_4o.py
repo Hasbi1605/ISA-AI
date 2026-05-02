@@ -9,7 +9,7 @@ if not GITHUB_TOKEN:
     print("❌ Token tidak ditemukan!")
     exit(1)
 
-API_URL = "https://models.inference.ai.azure.com/chat/completions"
+API_URL = "https://models.github.ai/inference/chat/completions"
 HEADERS = {
     "Authorization": f"Bearer {GITHUB_TOKEN}",
     "Content-Type": "application/json"
@@ -43,4 +43,3 @@ if response.status_code == 200:
     print("\nResponse: ", data['choices'][0]['message']['content'])
 else:
     print(f"❌ Error {response.status_code}: {response.text}")
-
