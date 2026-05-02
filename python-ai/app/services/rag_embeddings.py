@@ -94,7 +94,7 @@ def get_embeddings_with_fallback(model_index: int = 0) -> Tuple[Optional[Embeddi
                     model=model_config["model"],
                     openai_api_base=GITHUB_MODELS_BASE_URL,
                     openai_api_key=api_key,
-                    dimensions=MAX_EMBEDDING_DIM
+                    dimensions=model_config.get("dimensions", MAX_EMBEDDING_DIM),
                 )
                 _ = embeddings.embed_query("test")
                 logger.info(f"✅ Menggunakan {model_config['name']} (TPM: {model_config['tpm_limit']:,}, Dim: {MAX_EMBEDDING_DIM})")

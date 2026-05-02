@@ -21,7 +21,7 @@ class DocumentExportService
             $this->normalizeStringConfig(config('services.ai_document_service.url'), 'http://127.0.0.1:8001'),
             '/'
         );
-        $this->token = $this->normalizeStringConfig(config('services.ai_document_service.token'), 'your_internal_api_secret');
+        $this->token = $this->normalizeStringConfig(config('services.ai_document_service.token'));
         $this->connectTimeout = max(1, $this->normalizeIntConfig(config('services.ai_document_service.connect_timeout'), 10));
         $this->timeout = max(1, $this->normalizeIntConfig(config('services.ai_document_service.timeout'), 120));
     }

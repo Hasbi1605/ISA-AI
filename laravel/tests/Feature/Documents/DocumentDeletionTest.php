@@ -45,9 +45,9 @@ class DocumentDeletionTest extends TestCase
 
         $this->assertSoftDeleted($document);
         Storage::disk('local')->assertMissing($filePath);
-        Http::assertSent(function ($request) use ($document) {
+        Http::assertSent(function ($request) use ($document, $user) {
             return $request->method() === 'DELETE'
-                && $request->url() === 'http://python-ai-docs:8002/api/documents/delete.pdf';
+                && $request->url() === 'http://python-ai-docs:8002/api/documents/delete.pdf?user_id='.$user->id;
         });
     }
 
@@ -81,9 +81,9 @@ class DocumentDeletionTest extends TestCase
         $this->assertSoftDeleted($document);
         Storage::disk('local')->assertMissing($filePath);
         $component->assertSee('Dokumen berhasil dihapus.');
-        Http::assertSent(function ($request) use ($document) {
+        Http::assertSent(function ($request) use ($document, $user) {
             return $request->method() === 'DELETE'
-                && $request->url() === 'http://python-ai-docs:8002/api/documents/delete_chat.pdf';
+                && $request->url() === 'http://python-ai-docs:8002/api/documents/delete_chat.pdf?user_id='.$user->id;
         });
     }
 

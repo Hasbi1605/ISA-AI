@@ -6,6 +6,7 @@ from docx import Document
 from fastapi.testclient import TestClient
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
+os.environ["AI_SERVICE_TOKEN"] = "test_internal_api_secret"
 
 from app.documents_api import app
 from app.services.memo_generation import MemoDraft
@@ -70,7 +71,7 @@ def test_generate_memo_endpoint_handles_unicode_searchable_text(monkeypatch):
 
     response = client.post(
         "/api/memos/generate-body",
-        headers={"Authorization": "Bearer your_internal_api_secret"},
+        headers={"Authorization": "Bearer test_internal_api_secret"},
         json={
             "memo_type": "memo_internal",
             "title": "Judul Unicode",

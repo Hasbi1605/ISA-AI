@@ -3,7 +3,10 @@ import os
 import time
 
 API_BASE = "http://localhost:8001/api"
-TOKEN = "your_internal_api_secret"
+TOKEN = os.getenv("AI_SERVICE_TOKEN")
+
+if not TOKEN:
+    raise RuntimeError("AI_SERVICE_TOKEN wajib diisi untuk menjalankan test E2E RAG besar.")
 HEADERS = {
     "Authorization": f"Bearer {TOKEN}"
 }
@@ -85,7 +88,7 @@ def run_large_test():
     print("\n[4] Membersihkan index RAG...")
     delete_url = f"{API_BASE}/documents/{FILENAME}"
     try:
-        response = requests.delete(delete_url, headers=HEADERS)
+        response = requests.delete(delete_url, headers=HEADERS, params={"user_id": "test_e2e_large_user"})
         response.raise_for_status()
         print(f"✅ Cleanup berhasil: {response.json()}")
     except Exception as e:

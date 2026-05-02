@@ -190,7 +190,8 @@ class DocumentLifecycleService
     private function deleteDocumentVectors(Document $document): void
     {
         $pythonUrl = rtrim((string) config('services.ai_document_service.url', config('services.ai_service.url', 'http://127.0.0.1:8001')), '/')
-            .'/api/documents/'.urlencode($document->original_name);
+            .'/api/documents/'.urlencode($document->original_name)
+            .'?'.http_build_query(['user_id' => (string) $document->user_id]);
         $token = config('services.ai_document_service.token', config('services.ai_service.token'));
 
         try {

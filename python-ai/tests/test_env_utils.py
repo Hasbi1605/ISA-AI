@@ -34,3 +34,40 @@ def test_llm_manager_strips_quotes_from_default_system_prompt_env(monkeypatch):
     monkeypatch.setenv("DEFAULT_SYSTEM_PROMPT", '  "Prompt override dari env"  ')
 
     assert manager._get_default_system_prompt_fallback() == "Prompt override dari env"
+
+
+def test_internal_service_token_rejects_missing_or_default_secret(monkeypatch):
+    from fastapi import HTTPException
+    from app.api_shared import get_internal_service_token, verify_token
+
+    monkeypatch.delenv("AI_SERVICE_TOKEN", raising=False)
+
+    assert get_internal_service_token() is None
+
+    try:
+        verify_token("Bearer anything")
+    except HTTPException as exc:
+        assert exc.status_code == 503
+    else:
+        raise AssertionError("verify_token should fail closed when token is missing")
+
+    monkeypatch.setenv("AI_SERVICE_TOKEN", "your_internal_api_secret")
+
+    assert get_internal_service_token() is None
+
+    monkeypatch.setenv("AI_SERVICE_TOKEN", "change_me_internal_api_secret")
+
+    assert get_internal_service_token() is None
+
+    monkeypatch.setenv("AI_SERVICE_TOKEN", "CHANGE_ME")
+
+    assert get_internal_service_token() is None
+
+
+def test_internal_service_token_accepts_configured_secret(monkeypatch):
+    from app.api_shared import get_internal_service_token, verify_token
+
+    monkeypatch.setenv("AI_SERVICE_TOKEN", ' "safe-secret" ')
+
+    assert get_internal_service_token() == "safe-secret"
+    assert verify_token("Bearer safe-secret") is None

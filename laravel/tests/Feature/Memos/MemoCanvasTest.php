@@ -6,6 +6,7 @@ use App\Livewire\Memos\MemoCanvas;
 use App\Models\Memo;
 use App\Models\User;
 use App\Services\OnlyOffice\JwtSigner;
+use Carbon\Carbon;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Storage;
@@ -86,5 +87,35 @@ class MemoCanvasTest extends TestCase
         unset($config['token']);
 
         $this->assertSame($config, (new JwtSigner('editor-secret'))->verify($token));
+    }
+
+    public function test_editor_document_url_uses_configured_signed_url_ttl(): void
+    {
+        Carbon::setTestNow(Carbon::parse('2026-05-02 10:00:00'));
+
+        config([
+            'services.onlyoffice.jwt_secret' => 'editor-secret',
+            'services.onlyoffice.laravel_internal_url' => 'http://laravel:8000',
+            'services.onlyoffice.signed_url_ttl_minutes' => 17,
+        ]);
+
+        $user = User::factory()->create(['email_verified_at' => now()]);
+        $memo = Memo::create([
+            'user_id' => $user->id,
+            'title' => 'Memo TTL',
+            'memo_type' => 'memo_internal',
+            'file_path' => 'memos/'.$user->id.'/memo.docx',
+            'status' => Memo::STATUS_GENERATED,
+        ]);
+
+        $component = Livewire::actingAs($user)
+            ->test(MemoCanvas::class, ['memo' => $memo]);
+
+        $config = $component->instance()->editorConfig();
+        parse_str((string) parse_url($config['document']['url'], PHP_URL_QUERY), $query);
+
+        $this->assertSame((string) now()->addMinutes(17)->getTimestamp(), $query['expires']);
+
+        Carbon::setTestNow();
     }
 }

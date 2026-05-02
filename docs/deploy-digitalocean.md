@@ -74,9 +74,12 @@ Lalu isi `.env.droplet`:
 - `APP_DOMAIN` dengan domain final
 - `APP_URL` dengan `https://domain-kamu`
 - `APP_KEY` dengan key Laravel valid
-- `AI_SERVICE_TOKEN` dengan secret internal yang sama untuk Laravel dan Python
+- `AI_SERVICE_TOKEN` dengan secret internal yang sama untuk Laravel dan Python, bukan nilai default
 - `DB_PASSWORD` / `MYSQL_PASSWORD` / `MYSQL_ROOT_PASSWORD`
 - seluruh API key AI (`GITHUB_TOKEN`, `GROQ_API_KEY`, `GEMINI_API_KEY`, `LANGSEARCH_API_KEY`)
+- `ONLYOFFICE_JWT_SECRET` untuk JWT editor/callback
+- `ONLYOFFICE_SIGNED_URL_TTL_MINUTES` untuk durasi signed URL memo, disarankan 15-30
+- `ONLYOFFICE_DOCUMENTSERVER_TAG` untuk pin versi OnlyOffice, jangan pakai `latest`
 
 Contoh generator cepat:
 
@@ -90,19 +93,19 @@ Gunakan hasil `openssl rand -base64 32` sebagai isi setelah prefix `base64:` unt
 ## 6. Build dan Jalankan Service
 
 ```bash
-docker compose -f docker-compose.production.yml up -d --build
+docker compose --env-file .env.droplet -f docker-compose.production.yml up -d --build
 ```
 
 Cek status:
 
 ```bash
-docker compose -f docker-compose.production.yml ps
+docker compose --env-file .env.droplet -f docker-compose.production.yml ps
 ```
 
 ## 7. Jalankan Migrasi
 
 ```bash
-docker compose -f docker-compose.production.yml run --rm artisan migrate --force
+docker compose --env-file .env.droplet -f docker-compose.production.yml run --rm artisan migrate --force
 ```
 
 Jika Anda butuh akun awal atau data dummy, jalankan seed secara terpisah sesuai kebutuhan aplikasi.
@@ -110,7 +113,7 @@ Jika Anda butuh akun awal atau data dummy, jalankan seed secara terpisah sesuai 
 ## 8. Restart Aplikasi Setelah Migrasi Pertama
 
 ```bash
-docker compose -f docker-compose.production.yml restart laravel horizon
+docker compose --env-file .env.droplet -f docker-compose.production.yml restart laravel horizon
 ```
 
 ## 9. Verifikasi Deploy
@@ -139,31 +142,31 @@ Lalu uji:
 Laravel web:
 
 ```bash
-docker compose -f docker-compose.production.yml logs -f laravel
+docker compose --env-file .env.droplet -f docker-compose.production.yml logs -f laravel
 ```
 
 Python AI:
 
 ```bash
-docker compose -f docker-compose.production.yml logs -f python-ai
+docker compose --env-file .env.droplet -f docker-compose.production.yml logs -f python-ai
 ```
 
 Queue / Horizon:
 
 ```bash
-docker compose -f docker-compose.production.yml logs -f horizon
+docker compose --env-file .env.droplet -f docker-compose.production.yml logs -f horizon
 ```
 
 Reverse proxy publik:
 
 ```bash
-docker compose -f docker-compose.production.yml logs -f caddy
+docker compose --env-file .env.droplet -f docker-compose.production.yml logs -f caddy
 ```
 
 Semua service:
 
 ```bash
-docker compose -f docker-compose.production.yml logs -f
+docker compose --env-file .env.droplet -f docker-compose.production.yml logs -f
 ```
 
 ## 11. Update Rilis Berikutnya
@@ -171,9 +174,9 @@ docker compose -f docker-compose.production.yml logs -f
 ```bash
 cd /opt/ista-ai
 git pull origin main
-docker compose -f docker-compose.production.yml up -d --build
-docker compose -f docker-compose.production.yml run --rm artisan migrate --force
-docker compose -f docker-compose.production.yml restart laravel horizon
+docker compose --env-file .env.droplet -f docker-compose.production.yml up -d --build
+docker compose --env-file .env.droplet -f docker-compose.production.yml run --rm artisan migrate --force
+docker compose --env-file .env.droplet -f docker-compose.production.yml restart laravel horizon
 ```
 
 ## 12. Backup Minimum
@@ -188,3 +191,6 @@ docker compose -f docker-compose.production.yml restart laravel horizon
 - Service Python tidak diexpose ke publik; hanya Laravel yang menerima trafik internet.
 - Log model, web search, dan error runtime sekarang dilihat via `docker compose logs`, bukan terminal Python lokal seperti saat development manual.
 - Compose produksi ini diposisikan untuk **single droplet**. Jika nanti dipindah ke server mentor, file yang sama bisa menjadi baseline sebelum dipisah ke service yang lebih formal.
+- Panduan konfigurasi rinci ada di `docs/production-config-guide.md`.
+- Checklist maintenance RAM/disk/log ada di `docs/production-maintenance.md`.
+- Catatan data flow dan privacy ada di `docs/data-flow-privacy.md`.

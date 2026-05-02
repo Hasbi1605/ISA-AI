@@ -69,22 +69,22 @@ scp /Users/macbookair/Magang-Istana/.env.droplet root@YOUR_DROPLET_IP:/opt/ista-
 
 ```bash
 cd /opt/ista-ai
-docker compose -f docker-compose.production.yml up -d --build
+docker compose --env-file .env.droplet -f docker-compose.production.yml up -d --build
 ```
 
 ## 6. Jalankan Migrasi
 
 ```bash
 cd /opt/ista-ai
-docker compose -f docker-compose.production.yml run --rm artisan migrate --force
-docker compose -f docker-compose.production.yml restart laravel horizon
+docker compose --env-file .env.droplet -f docker-compose.production.yml run --rm artisan migrate --force
+docker compose --env-file .env.droplet -f docker-compose.production.yml restart laravel horizon
 ```
 
 ## 7. Cek Status Container
 
 ```bash
 cd /opt/ista-ai
-docker compose -f docker-compose.production.yml ps
+docker compose --env-file .env.droplet -f docker-compose.production.yml ps
 ```
 
 Semua service yang diharapkan:
@@ -120,25 +120,25 @@ Lalu uji:
 Laravel:
 
 ```bash
-docker compose -f docker-compose.production.yml logs -f laravel
+docker compose --env-file .env.droplet -f docker-compose.production.yml logs -f laravel
 ```
 
 Python AI:
 
 ```bash
-docker compose -f docker-compose.production.yml logs -f python-ai
+docker compose --env-file .env.droplet -f docker-compose.production.yml logs -f python-ai
 ```
 
 Queue / Horizon:
 
 ```bash
-docker compose -f docker-compose.production.yml logs -f horizon
+docker compose --env-file .env.droplet -f docker-compose.production.yml logs -f horizon
 ```
 
 Reverse proxy:
 
 ```bash
-docker compose -f docker-compose.production.yml logs -f caddy
+docker compose --env-file .env.droplet -f docker-compose.production.yml logs -f caddy
 ```
 
 ## 10. Setelah Demo Selesai
@@ -148,9 +148,9 @@ Update berikutnya cukup:
 ```bash
 cd /opt/ista-ai
 git pull origin main
-docker compose -f docker-compose.production.yml up -d --build
-docker compose -f docker-compose.production.yml run --rm artisan migrate --force
-docker compose -f docker-compose.production.yml restart laravel horizon
+docker compose --env-file .env.droplet -f docker-compose.production.yml up -d --build
+docker compose --env-file .env.droplet -f docker-compose.production.yml run --rm artisan migrate --force
+docker compose --env-file .env.droplet -f docker-compose.production.yml restart laravel horizon
 ```
 
 ## Catatan
@@ -159,3 +159,5 @@ docker compose -f docker-compose.production.yml restart laravel horizon
 - API key AI diambil dari konfigurasi lokal saat ini
 - password database dan token internal server dibuat baru khusus file deploy ini
 - jika nanti ingin pakai `www` juga, tambahkan record DNS `www` ke IP droplet atau pakai `CNAME www -> @`
+- Seluruh command compose production memakai `--env-file .env.droplet` agar secret dan variable image tag terbaca saat interpolation.
+- Jangan gunakan `ONLYOFFICE_DOCUMENTSERVER_TAG=latest`; gunakan tag eksplisit seperti `9.3.1.2`.
