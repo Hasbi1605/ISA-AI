@@ -87,7 +87,10 @@ class MemoCanvas extends Component
             ],
         ];
 
-        $config['token'] = $signer->sign($config + ['memo_id' => $this->memo->id]);
+        $config['token'] = $signer->sign($config + [
+            'token_use' => 'editor_config',
+            'exp' => now()->addHours(12)->timestamp,
+        ]);
 
         return $config;
     }

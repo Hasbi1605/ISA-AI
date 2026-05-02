@@ -8,6 +8,7 @@ from fastapi.testclient import TestClient
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 from app.documents_api import app
+from app.services.memo_generation import MemoDraft
 from app.services.memo_generation import generate_memo_docx
 
 
@@ -54,3 +55,31 @@ def test_generate_memo_endpoint_requires_token():
     })
 
     assert response.status_code == 401
+
+
+def test_generate_memo_endpoint_handles_unicode_searchable_text(monkeypatch):
+    def fake_generate_memo_docx(memo_type, title, context):
+        return MemoDraft(
+            filename="memo-unicode.docx",
+            content=b"docx-bytes",
+            searchable_text="Paragraf awal\n- Poin penting • arahan — selesai",
+        )
+
+    monkeypatch.setattr("app.routers.memos.generate_memo_docx", fake_generate_memo_docx)
+    client = TestClient(app)
+
+    response = client.post(
+        "/api/memos/generate-body",
+        headers={"Authorization": "Bearer your_internal_api_secret"},
+        json={
+            "memo_type": "memo_internal",
+            "title": "Judul Unicode",
+            "context": "Konteks",
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.content == b"docx-bytes"
+    assert "X-Memo-Searchable-Text" not in response.headers
+    encoded = response.headers["X-Memo-Searchable-Text-B64"]
+    assert isinstance(encoded.encode("latin-1"), bytes)

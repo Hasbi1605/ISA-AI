@@ -53,7 +53,11 @@ class MemoGenerationService
             'memo_type' => $memoType,
             'status' => Memo::STATUS_GENERATED,
             'source_document_ids' => array_values(array_unique(array_map('intval', $sourceDocumentIds))),
-            'searchable_text' => $this->normalizeSearchableText($response->header('X-Memo-Searchable-Text'), $title, $context),
+            'searchable_text' => $this->normalizeSearchableText(
+                $response->header('X-Memo-Searchable-Text-B64') ?: $response->header('X-Memo-Searchable-Text'),
+                $title,
+                $context,
+            ),
         ]);
 
         $path = 'memos/'.$user->id.'/'.$memo->id.'-'.Str::uuid().'.docx';
@@ -66,7 +70,9 @@ class MemoGenerationService
 
     protected function normalizeSearchableText(?string $headerText, string $title, string $context): string
     {
-        $text = trim((string) $headerText);
+        $encodedText = trim((string) $headerText);
+        $decodedText = $encodedText !== '' ? base64_decode(strtr($encodedText, '-_', '+/'), true) : false;
+        $text = is_string($decodedText) ? trim($decodedText) : $encodedText;
 
         return $text !== '' ? $text : trim($title."\n".$context);
     }
