@@ -4,6 +4,7 @@ use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
 use Illuminate\Foundation\Configuration\Middleware;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Log;
 
 return Application::configure(basePath: dirname(__DIR__))
     ->withRouting(
@@ -12,20 +13,22 @@ return Application::configure(basePath: dirname(__DIR__))
         health: '/up',
     )
     ->withMiddleware(function (Middleware $middleware) {
-        $middleware->trustProxies(at: '*', headers:
-            Request::HEADER_X_FORWARDED_FOR |
+        $middleware->trustProxies(at: '*', headers: Request::HEADER_X_FORWARDED_FOR |
             Request::HEADER_X_FORWARDED_HOST |
             Request::HEADER_X_FORWARDED_PORT |
             Request::HEADER_X_FORWARDED_PROTO |
             Request::HEADER_X_FORWARDED_PREFIX
         );
+        $middleware->validateCsrfTokens(except: [
+            'onlyoffice/callback/*',
+        ]);
     })
     ->withExceptions(function (Exceptions $exceptions) {
-        $exceptions->reportable(function (\Throwable $e) {
-            \Illuminate\Support\Facades\Log::error('Global Exception Caught: ' . $e->getMessage(), [
+        $exceptions->reportable(function (Throwable $e) {
+            Log::error('Global Exception Caught: '.$e->getMessage(), [
                 'exception_class' => get_class($e),
                 'file' => $e->getFile(),
-                'line' => $e->getLine()
+                'line' => $e->getLine(),
             ]);
         });
 

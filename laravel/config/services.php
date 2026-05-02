@@ -53,4 +53,11 @@ return [
         'read_timeout' => env('AI_DOCUMENT_SERVICE_READ_TIMEOUT', env('AI_SERVICE_READ_TIMEOUT', 120)),
     ],
 
+    'onlyoffice' => [
+        'public_url' => env('ONLYOFFICE_PUBLIC_URL', 'http://127.0.0.1:8080'),
+        'internal_url' => env('ONLYOFFICE_INTERNAL_URL', 'http://onlyoffice'),
+        'laravel_internal_url' => env('ONLYOFFICE_LARAVEL_INTERNAL_URL', env('APP_URL', 'http://localhost')),
+        'jwt_secret' => env('ONLYOFFICE_JWT_SECRET'),
+    ],
+
 ];

@@ -152,6 +152,29 @@ services:
       retries: 5
       start_period: 30s
 
+  onlyoffice:
+    image: onlyoffice/documentserver:latest
+    container_name: ista_onlyoffice
+    restart: always
+    ports:
+      - "8080:80"
+    environment:
+      - JWT_ENABLED=true
+      - JWT_SECRET=${ONLYOFFICE_JWT_SECRET}
+    deploy:
+      resources:
+        limits:
+          memory: 2048M
+          cpus: '1.0'
+        reservations:
+          memory: 512M
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost/healthcheck"]
+      interval: 30s
+      timeout: 10s
+      retries: 10
+      start_period: 60s
+
   # Laravel Web App
   laravel:
     build:
@@ -173,6 +196,10 @@ services:
       - AI_SERVICE_URL=${AI_SERVICE_URL:-http://python-ai:8001}
       - AI_DOCUMENT_SERVICE_URL=${AI_DOCUMENT_SERVICE_URL:-http://python-ai-docs:8002}
       - AI_SERVICE_TOKEN=${AI_SERVICE_TOKEN}
+      - ONLYOFFICE_PUBLIC_URL=${ONLYOFFICE_PUBLIC_URL:-http://127.0.0.1:8080}
+      - ONLYOFFICE_INTERNAL_URL=${ONLYOFFICE_INTERNAL_URL:-http://onlyoffice}
+      - ONLYOFFICE_LARAVEL_INTERNAL_URL=${ONLYOFFICE_LARAVEL_INTERNAL_URL:-http://laravel:8000}
+      - ONLYOFFICE_JWT_SECRET=${ONLYOFFICE_JWT_SECRET}
     volumes:
       - ./laravel:/var/www/html
       - laravel_storage:/var/www/html/storage
@@ -184,6 +211,8 @@ services:
       python-ai:
         condition: service_healthy
       python-ai-docs:
+        condition: service_healthy
+      onlyoffice:
         condition: service_healthy
     deploy:
       resources:

@@ -96,6 +96,21 @@ services:
       retries: 20
       start_period: 120s
 
+  onlyoffice:
+    image: onlyoffice/documentserver:latest
+    restart: unless-stopped
+    env_file:
+      - ./.env.droplet
+    environment:
+      JWT_ENABLED: "true"
+      JWT_SECRET: ${ONLYOFFICE_JWT_SECRET}
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1/healthcheck"]
+      interval: 30s
+      timeout: 10s
+      retries: 20
+      start_period: 120s
+
   laravel:
     build:
       context: ./laravel
@@ -105,6 +120,8 @@ services:
       - ./.env.droplet
     environment:
       AI_DOCUMENT_SERVICE_URL: http://python-ai-docs:8002
+      ONLYOFFICE_INTERNAL_URL: http://onlyoffice
+      ONLYOFFICE_LARAVEL_INTERNAL_URL: http://laravel:8000
     command: ["php", "artisan", "serve", "--host=0.0.0.0", "--port=8000"]
     volumes:
       - laravel_storage:/var/www/html/storage
@@ -112,6 +129,8 @@ services:
       mysql:
         condition: service_healthy
       redis:
+        condition: service_healthy
+      onlyoffice:
         condition: service_healthy
     healthcheck:
       test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8000/up"]
