@@ -69,6 +69,19 @@ ONLYOFFICE_SIGNED_URL_TTL_MINUTES=30
 
 Nilai 15-30 menit direkomendasikan untuk production. Jangan naikkan ke hitungan jam kecuali ada alasan operasional yang jelas.
 
+## Runtime Decision
+
+Untuk deployment production saat ini, container Laravel tetap menjalankan `php artisan serve` di port internal 8000.
+
+Alasannya:
+
+- Caddy sudah menjadi reverse proxy publik dan terminasi TLS.
+- Service Laravel hanya perlu menyediakan HTTP internal untuk Caddy, healthcheck `/up`, dan callback internal OnlyOffice.
+- Proses kerja berat tetap dipisah: `horizon` menangani queue dan `scheduler` menangani cron.
+- Storage persisten tetap berada di volume `laravel_storage`, jadi perubahan runtime web server tidak mengubah model data.
+
+Keputusan ini sengaja dipertahankan untuk PR cleanup ini agar scope tidak melebar ke migrasi web server. Jika nanti ingin pindah ke `php-fpm` + web server terpisah, itu layak diperlakukan sebagai perubahan deployment tersendiri.
+
 ## Command Compose Production
 
 Gunakan `--env-file .env.droplet` agar variable interpolation seperti `ONLYOFFICE_JWT_SECRET` dan `ONLYOFFICE_DOCUMENTSERVER_TAG` terbaca konsisten:

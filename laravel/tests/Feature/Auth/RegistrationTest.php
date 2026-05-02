@@ -49,6 +49,31 @@ class RegistrationTest extends TestCase
         Mail::assertQueued(VerificationCodeMail::class, fn (VerificationCodeMail $mail) => $mail->hasTo('test@example.com') && $mail->queue === 'mail' && $mail->tries === 1 && $mail->timeout === 15);
     }
 
+    public function test_register_from_login_replaces_existing_unverified_account_and_sends_new_otp(): void
+    {
+        Mail::fake();
+
+        User::factory()->unverified()->create([
+            'name' => 'Legacy Pending User',
+            'email' => 'replace@example.com',
+        ]);
+
+        $component = Volt::test('pages.auth.login')
+            ->set('view', 'register')
+            ->set('name', 'Replacement User')
+            ->set('register_email', 'replace@example.com')
+            ->set('register_password', 'password')
+            ->set('register_password_confirmation', 'password');
+
+        $component->call('register')
+            ->assertSet('showVerificationModal', true)
+            ->assertNoRedirect();
+
+        $this->assertDatabaseMissing('users', ['email' => 'replace@example.com']);
+
+        Mail::assertQueued(VerificationCodeMail::class, fn (VerificationCodeMail $mail) => $mail->hasTo('replace@example.com') && $mail->queue === 'mail');
+    }
+
     public function test_valid_otp_finalizes_registration_logs_in_and_redirects_to_intended_chat(): void
     {
         Mail::fake();

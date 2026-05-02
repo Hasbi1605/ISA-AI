@@ -8,6 +8,7 @@ from langchain_core.documents import Document
 from app.env_utils import get_env_bool, get_env_int
 from app.services.rag_config import CHROMA_PATH, VECTOR_COLLECTION_NAME
 from app.services.rag_embeddings import get_embeddings_with_fallback
+from app.services.rag_prompt import build_rag_prompt as _build_rag_prompt
 from app.services.rag_hybrid import (
     _should_use_hyde,
     _generate_hyde_query,
@@ -17,7 +18,6 @@ from app.services.rag_hybrid import (
     _exclude_parent_corpus,
     _resolve_pdr_parents,
 )
-from app.config_loader import get_rag_prompt
 from app.services.rag_policy import get_langsearch_service
 
 logger = logging.getLogger(__name__)
@@ -360,44 +360,4 @@ def search_relevant_chunks(query: str, filenames: List[str] = None, top_k: int =
         return [], False
 
 
-def build_rag_prompt(
-    question: str,
-    chunks: List[Dict],
-    include_sources: bool = True,
-    web_context: str = "",
-) -> Tuple[str, List[Dict]]:
-    if not chunks:
-        return question, []
-
-    context_parts = []
-    sources = []
-
-    for chunk in chunks:
-        filename = chunk.get("filename", "Dokumen Tidak Diketahui")
-        context_parts.append(f"--- Referensi dari Dokumen: {filename} ---")
-        context_parts.append(chunk.get("content", ""))
-        context_parts.append("")
-
-        if include_sources:
-            sources.append({
-                "filename": chunk.get("filename", "unknown"),
-                "chunk_index": chunk.get("chunk_index", 0),
-                "relevance_score": chunk.get("score", 0)
-            })
-
-    context_str = "\n".join(context_parts)
-    web_section = ""
-    if web_context.strip():
-        web_section = f"""
-KONTEKS WEB TERBARU:
-{web_context}
-"""
-
-    rag_prompt_template = get_rag_prompt()
-    rag_prompt = rag_prompt_template.format(
-        context_str=context_str or "",
-        web_section=web_section or "",
-        question=question or ""
-    )
-
-    return rag_prompt, sources
+build_rag_prompt = _build_rag_prompt

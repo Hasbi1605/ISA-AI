@@ -6,6 +6,7 @@ use App\Services\Auth\PasswordResetLinkService;
 use App\Services\Auth\PendingRegistrationWorkflowService;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Session;
+use Illuminate\Validation\Rule;
 use Illuminate\Validation\Rules;
 use Illuminate\Validation\ValidationException;
 use Livewire\Attributes\Layout;
@@ -103,7 +104,15 @@ new #[Layout('layouts.auth-canvas')] class extends Component
     {
         $validated = $this->validate([
             'name' => ['required', 'string', 'max:255'],
-            'register_email' => ['required', 'string', 'lowercase', 'email', 'max:255', 'unique:'.User::class.',email'],
+            'register_email' => [
+                'required',
+                'string',
+                'lowercase',
+                'email',
+                'max:255',
+                Rule::unique(User::class, 'email')
+                    ->where(fn ($query) => $query->whereNotNull('email_verified_at')),
+            ],
             'register_password' => ['required', 'string', 'confirmed', Rules\Password::defaults()],
         ], [
             'name.required' => 'Nama lengkap wajib diisi.',
