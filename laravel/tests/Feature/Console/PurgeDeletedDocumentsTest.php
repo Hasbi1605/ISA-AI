@@ -47,9 +47,9 @@ class PurgeDeletedDocumentsTest extends TestCase
 
         $this->assertDatabaseMissing('documents', ['id' => $document->id]);
         Storage::disk('local')->assertMissing($filePath);
-        Http::assertSent(function ($request) {
+        Http::assertSent(function ($request) use ($user) {
             return $request->method() === 'DELETE'
-                && $request->url() === 'http://python-ai-docs:8002/api/documents/purge.pdf';
+                && $request->url() === 'http://python-ai-docs:8002/api/documents/purge.pdf?user_id='.$user->id;
         });
     }
 

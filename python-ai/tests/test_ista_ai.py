@@ -411,8 +411,8 @@ class TestEmbeddingDimensionStrategy:
         from app.services import rag_service
 
         source = inspect.getsource(rag_service.get_embeddings_with_fallback)
-        assert "MAX_EMBEDDING_DIM" in source, "All fallback models should use MAX_EMBEDDING_DIM"
-        assert "model_config['dimensions']" not in source, "Should NOT use model native dimensions"
+        assert "MAX_EMBEDDING_DIM" in source, "Fallback should keep MAX_EMBEDDING_DIM as safe default"
+        assert "model_config.get(\"dimensions\"" in source, "API requests should use model native dimensions"
 
 
 # ═══════════════════════════════════════════════════════════════════════════════

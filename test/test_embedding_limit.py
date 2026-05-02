@@ -5,7 +5,7 @@ from dotenv import load_dotenv
 load_dotenv("/Users/macbookair/Magang-Istana/python-ai/.env")
 GITHUB_TOKEN = os.getenv("GITHUB_TOKEN")
 
-API_URL = "https://models.inference.ai.azure.com/embeddings"
+API_URL = "https://models.github.ai/inference/embeddings"
 HEADERS = {
     "Authorization": f"Bearer {GITHUB_TOKEN}",
     "Content-Type": "application/json"

@@ -7,13 +7,14 @@ from fastapi.testclient import TestClient
 from openpyxl import load_workbook
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
+os.environ["AI_SERVICE_TOKEN"] = "test_internal_api_secret"
 
 from app.documents_api import app
 from app.services.document_export import export_content
 
 
 client = TestClient(app)
-AUTH_HEADERS = {"Authorization": "Bearer your_internal_api_secret"}
+AUTH_HEADERS = {"Authorization": "Bearer test_internal_api_secret"}
 
 
 def _sample_html() -> str:
@@ -162,3 +163,36 @@ def test_documents_extract_content_route_supports_csv_for_file_conversion():
     )
     assert "Nama" in table_text
     assert "10" in table_text
+
+
+def test_documents_delete_route_requires_user_scope(monkeypatch):
+    captured = {}
+
+    def fake_delete_document_vectors(filename, user_id=None):
+        captured["filename"] = filename
+        captured["user_id"] = user_id
+        return True, "deleted"
+
+    monkeypatch.setattr("app.routers.documents.delete_document_vectors", fake_delete_document_vectors)
+
+    response = client.delete(
+        "/api/documents/agenda.pdf?user_id=user-42",
+        headers=AUTH_HEADERS,
+    )
+
+    assert response.status_code == 200
+    assert captured == {"filename": "agenda.pdf", "user_id": "user-42"}
+
+
+def test_documents_delete_route_rejects_missing_user_scope(monkeypatch):
+    monkeypatch.setattr(
+        "app.routers.documents.delete_document_vectors",
+        lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError("should not delete")),
+    )
+
+    response = client.delete(
+        "/api/documents/agenda.pdf",
+        headers=AUTH_HEADERS,
+    )
+
+    assert response.status_code == 422

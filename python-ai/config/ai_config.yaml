@@ -36,25 +36,25 @@ lanes:
         provider: "litellm"
         model_name: "openai/gpt-4.1"
         api_key_env: "GITHUB_TOKEN"
-        base_url: "https://models.inference.ai.azure.com"
+        base_url: "https://models.github.ai/inference"
         
       - label: "GPT-4.1 (Backup Node)"
         provider: "litellm"
         model_name: "openai/gpt-4.1"
         api_key_env: "GITHUB_TOKEN_2"
-        base_url: "https://models.inference.ai.azure.com"
+        base_url: "https://models.github.ai/inference"
         
       - label: "GPT-4o (Primary)"
         provider: "litellm"
         model_name: "openai/gpt-4o"
         api_key_env: "GITHUB_TOKEN"
-        base_url: "https://models.inference.ai.azure.com"
+        base_url: "https://models.github.ai/inference"
         
       - label: "GPT-4o (Backup Node)"
         provider: "litellm"
         model_name: "openai/gpt-4o"
         api_key_env: "GITHUB_TOKEN_2"
-        base_url: "https://models.inference.ai.azure.com"
+        base_url: "https://models.github.ai/inference"
         
       # Fallback utama saat GPT-4.1/4o kena 413: Groq punya 128K context window,
       # production-ready, dan konsisten mengikuti instruksi RAG.

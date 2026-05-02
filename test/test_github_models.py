@@ -11,7 +11,7 @@ if not GITHUB_TOKEN:
     exit(1)
 
 # Endpoint khusus untuk Chat
-API_URL = "https://models.inference.ai.azure.com/chat/completions"
+API_URL = "https://models.github.ai/inference/chat/completions"
 HEADERS = {
     "Authorization": f"Bearer {GITHUB_TOKEN}",
     "Content-Type": "application/json"

@@ -13,6 +13,8 @@ from app.services.rag_config import (
 
 logger = logging.getLogger(__name__)
 
+GITHUB_MODELS_BASE_URL = "https://models.github.ai/inference"
+
 try:
     TIKTOKEN_ENCODER = tiktoken.get_encoding("cl100k_base")
     logger.info("✅ Tiktoken encoder initialized (cl100k_base)")
@@ -90,9 +92,9 @@ def get_embeddings_with_fallback(model_index: int = 0) -> Tuple[Optional[Embeddi
             if model_config["provider"] == "github":
                 embeddings = GithubOpenAIEmbeddings(
                     model=model_config["model"],
-                    openai_api_base="https://models.inference.ai.azure.com",
+                    openai_api_base=GITHUB_MODELS_BASE_URL,
                     openai_api_key=api_key,
-                    dimensions=MAX_EMBEDDING_DIM
+                    dimensions=model_config.get("dimensions", MAX_EMBEDDING_DIM),
                 )
                 _ = embeddings.embed_query("test")
                 logger.info(f"✅ Menggunakan {model_config['name']} (TPM: {model_config['tpm_limit']:,}, Dim: {MAX_EMBEDDING_DIM})")

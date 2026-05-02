@@ -58,6 +58,7 @@ return [
         'internal_url' => env('ONLYOFFICE_INTERNAL_URL', 'http://onlyoffice'),
         'laravel_internal_url' => env('ONLYOFFICE_LARAVEL_INTERNAL_URL', env('APP_URL', 'http://localhost')),
         'jwt_secret' => env('ONLYOFFICE_JWT_SECRET'),
+        'signed_url_ttl_minutes' => env('ONLYOFFICE_SIGNED_URL_TTL_MINUTES', 30),
     ],
 
 ];

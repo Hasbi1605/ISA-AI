@@ -97,7 +97,7 @@ services:
       start_period: 120s
 
   onlyoffice:
-    image: onlyoffice/documentserver:latest
+    image: onlyoffice/documentserver:${ONLYOFFICE_DOCUMENTSERVER_TAG:-9.3.1.2}
     restart: unless-stopped
     environment:
       JWT_ENABLED: "true"

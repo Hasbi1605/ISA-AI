@@ -65,7 +65,8 @@ class MemoCanvas extends Component
 
         $signer = app(JwtSigner::class);
         $laravelInternalUrl = rtrim((string) config('services.onlyoffice.laravel_internal_url', config('app.url')), '/');
-        $documentPath = URL::temporarySignedRoute('memos.file.signed', now()->addHours(12), $this->memo, false);
+        $ttlMinutes = max(1, (int) config('services.onlyoffice.signed_url_ttl_minutes', 30));
+        $documentPath = URL::temporarySignedRoute('memos.file.signed', now()->addMinutes($ttlMinutes), $this->memo, false);
         $callbackPath = route('onlyoffice.callback', $this->memo, false);
 
         $config = [

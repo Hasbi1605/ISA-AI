@@ -6,12 +6,31 @@ from pydantic import BaseModel
 from app.env_utils import get_env
 
 
-AI_SERVICE_TOKEN = get_env("AI_SERVICE_TOKEN", "your_internal_api_secret")
+DEFAULT_AI_SERVICE_TOKEN = "your_internal_api_secret"
+UNSAFE_AI_SERVICE_TOKENS = {
+    DEFAULT_AI_SERVICE_TOKEN,
+    "change_me_internal_api_secret",
+    "CHANGE_ME",
+}
 
 
-def verify_token(authorization: str = Header(None)):
+def get_internal_service_token() -> str | None:
+    token = get_env("AI_SERVICE_TOKEN")
+
+    if token is None or token in UNSAFE_AI_SERVICE_TOKENS:
+        return None
+
+    return token
+
+
+def verify_token(authorization: str | None = Header(None)):
     """Simple token-based security for internal service communication."""
-    if not authorization or authorization != f"Bearer {AI_SERVICE_TOKEN}":
+    token = get_internal_service_token()
+
+    if token is None:
+        raise HTTPException(status_code=503, detail="AI Service token is not configured.")
+
+    if not authorization or authorization != f"Bearer {token}":
         raise HTTPException(status_code=401, detail="Unauthorized access to AI Service.")
 
 

@@ -35,7 +35,7 @@ lanes:
         provider: "litellm"
         model_name: "openai/gpt-5-chat"
         api_key_env: "GITHUB_TOKEN"
-        base_url: "https://models.inference.ai.azure.com"
+        base_url: "https://models.github.ai/inference"
 ```
 - Urutan menentukan prioritas fallback
 - Model pertama = primary, lanjut ke bawah jika gagal

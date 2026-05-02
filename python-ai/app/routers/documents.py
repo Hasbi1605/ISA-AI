@@ -2,7 +2,7 @@ import os
 import shutil
 import uuid
 
-from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile
 from fastapi.responses import Response
 from pydantic import BaseModel
 
@@ -76,8 +76,11 @@ async def upload_document(
 
 
 @router.delete("/{filename}", dependencies=[Depends(verify_token)])
-async def delete_document(filename: str):
-    success, message = delete_document_vectors(filename)
+async def delete_document(
+    filename: str,
+    user_id: str = Query(..., min_length=1),
+):
+    success, message = delete_document_vectors(filename, user_id=user_id)
     if success:
         return {"status": "success", "message": message}
     raise HTTPException(status_code=500, detail=message)

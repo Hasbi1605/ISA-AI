@@ -496,13 +496,16 @@ def process_document(file_path: str, filename: str, user_id: str = "unknown"):
         return False, str(e)
 
 
-def delete_document_vectors(filename: str):
+def delete_document_vectors(filename: str, user_id: str | None = None):
     try:
         from app.services.rag_config import (
             CHROMA_PATH,
             VECTOR_COLLECTION_NAME,
             PARENT_COLLECTION_NAME,
         )
+        if not user_id:
+            return False, "user_id is required to delete document vectors safely."
+
         embeddings, provider_name, _ = get_embeddings_with_fallback()
 
         if embeddings is None:
@@ -514,7 +517,8 @@ def delete_document_vectors(filename: str):
             persist_directory=CHROMA_PATH
         )
 
-        vectorstore.delete(where={"filename": filename})
+        scoped_filter = {"$and": [{"filename": filename}, {"user_id": str(user_id)}]}
+        vectorstore.delete(where=scoped_filter)
 
         try:
             parent_store = Chroma(
@@ -522,12 +526,18 @@ def delete_document_vectors(filename: str):
                 persist_directory=CHROMA_PATH,
             )
             raw_col = parent_store._collection
-            raw_col.delete(where={"$and": [{"filename": filename}, {"chunk_type": "parent"}]})
-            logger.info("✅ PDR parent chunks for %s deleted", filename)
+            raw_col.delete(where={
+                "$and": [
+                    {"filename": filename},
+                    {"user_id": str(user_id)},
+                    {"chunk_type": "parent"},
+                ],
+            })
+            logger.info("✅ PDR parent chunks for %s deleted for user_id=%s", filename, user_id)
         except Exception as pe:
             logger.debug("PDR parent delete skipped (mungkin non-PDR dokumen): %s", pe)
 
-        logger.info("✅ Vectors for %s deleted successfully using %s", filename, provider_name)
+        logger.info("✅ Vectors for %s deleted successfully for user_id=%s using %s", filename, user_id, provider_name)
         return True, f"Vectors for {filename} deleted successfully."
     except Exception as e:
         logger.error(f"❌ Error deleting vectors for {filename}: {str(e)}")
