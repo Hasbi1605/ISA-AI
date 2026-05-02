@@ -99,11 +99,9 @@ services:
   onlyoffice:
     image: onlyoffice/documentserver:latest
     restart: unless-stopped
-    env_file:
-      - ./.env.droplet
     environment:
       JWT_ENABLED: "true"
-      JWT_SECRET: ${ONLYOFFICE_JWT_SECRET}
+      JWT_SECRET: ${ONLYOFFICE_JWT_SECRET:?ONLYOFFICE_JWT_SECRET is required}
     healthcheck:
       test: ["CMD", "curl", "-fsS", "http://127.0.0.1/healthcheck"]
       interval: 30s
