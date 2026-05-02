@@ -193,9 +193,9 @@ def get_reasoning_model() -> Optional[Dict[str, Any]]:
 
 def get_embedding_models() -> List[Dict[str, Any]]:
     """Get embedding lane models."""
-    # TODO: implement when needed
     config = load_config()
-    return config.get('lanes', {}).get('embedding', {}).get('models', [])
+    models = config.get('lanes', {}).get('embedding', {}).get('models', [])
+    return models if isinstance(models, list) else []
 
 
 def get_search_config() -> Dict[str, Any]:

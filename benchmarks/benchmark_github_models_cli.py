@@ -1,14 +1,15 @@
 #!/usr/bin/env python3
 import json
+import random
 import re
 import statistics
 import subprocess
 import time
-import random
 import urllib.error
 import urllib.request
 from dataclasses import dataclass
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import Any
 
 
@@ -459,7 +460,7 @@ def main() -> None:
             f"[{model}] selesai | prompt success {all_results['aggregates'][-1]['prompt_success_rate']}% | burst success {all_results['aggregates'][-1]['burst_success_rate']}%"
         )
 
-    out_path = "test/benchmark_results_github_models.json"
+    out_path = Path(__file__).with_name("benchmark_results_github_models.json")
     with open(out_path, "w", encoding="utf-8") as f:
         json.dump(all_results, f, ensure_ascii=False, indent=2)
     print(f"Hasil tersimpan di: {out_path}")

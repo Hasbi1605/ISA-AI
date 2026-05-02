@@ -2,15 +2,14 @@
 
 namespace App\Livewire\Chat;
 
-use App\Jobs\ProcessDocument;
 use App\Models\Conversation;
 use App\Models\Message;
 use App\Models\Document;
 use App\Services\AIService;
+use App\Services\Chat\ChatDocumentStateService;
 use App\Services\ChatOrchestrationService;
 use App\Services\DocumentLifecycleService;
 use Illuminate\Support\Facades\Auth;
-use Illuminate\Support\Facades\Storage;
 use Illuminate\Validation\ValidationException;
 use Livewire\Attributes\Layout;
 use Livewire\Attributes\Url;
@@ -47,16 +46,6 @@ class ChatIndex extends Component
     // Maximum chats to show before "Show More"
     const MAX_VISIBLE_CHATS = 10;
 
-    private const ALLOWED_ATTACHMENT_MIME_TYPES = [
-        'application/pdf',
-        'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-        'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-        'text/csv',
-        'text/plain',
-        'application/csv',
-        'application/vnd.ms-excel',
-    ];
-
     public function mount($id = null)
     {
         $this->loadConversations();
@@ -89,26 +78,17 @@ class ChatIndex extends Component
         $this->conversations = $user->conversations()->orderBy('updated_at', 'desc')->get();
     }
 
-    public function loadAvailableDocuments()
+    protected function chatDocumentStateService(): ChatDocumentStateService
     {
-        $documents = Document::where('user_id', Auth::id())
-            ->orderBy('created_at', 'desc')
-            ->get();
-
-        $this->hasDocumentsInProgress = $documents->contains(function (Document $document) {
-            return in_array($document->status, ['pending', 'processing'], true);
-        });
-
-        $this->availableDocuments = $documents;
+        return app(ChatDocumentStateService::class);
     }
 
-    protected function getReadyDocumentIds(): array
+    public function loadAvailableDocuments()
     {
-        return Document::where('user_id', Auth::id())
-            ->where('status', 'ready')
-            ->pluck('id')
-            ->map(fn($id) => (int) $id)
-            ->toArray();
+        $state = $this->chatDocumentStateService()->loadAvailableDocuments((int) Auth::id());
+
+        $this->availableDocuments = $state['documents'];
+        $this->hasDocumentsInProgress = $state['has_documents_in_progress'];
     }
 
     public function loadConversation($id)
@@ -148,34 +128,20 @@ class ChatIndex extends Component
 
     public function toggleDocument($documentId)
     {
-        if (in_array($documentId, $this->selectedDocuments)) {
-            $this->selectedDocuments = array_values(array_filter($this->selectedDocuments, function ($id) use ($documentId) {
-                return $id != $documentId;
-            }));
-        } else {
-            $this->selectedDocuments[] = $documentId;
-        }
+        $this->selectedDocuments = $this->chatDocumentStateService()->toggleDocument($this->selectedDocuments, $documentId);
     }
 
     public function selectAllDocuments()
     {
-        $this->selectedDocuments = $this->getReadyDocumentIds();
+        $this->selectedDocuments = $this->chatDocumentStateService()->selectAllReadyDocuments((int) Auth::id());
     }
 
     public function toggleSelectAllDocuments()
     {
-        $allDocumentIds = $this->getReadyDocumentIds();
-
-        $selectedIds = array_map('intval', $this->selectedDocuments);
-        sort($allDocumentIds);
-        sort($selectedIds);
-
-        if (!empty($allDocumentIds) && $selectedIds === $allDocumentIds) {
-            $this->selectedDocuments = [];
-            return;
-        }
-
-        $this->selectedDocuments = $allDocumentIds;
+        $this->selectedDocuments = $this->chatDocumentStateService()->toggleSelectAllDocuments(
+            $this->selectedDocuments,
+            $this->chatDocumentStateService()->readyDocumentIds((int) Auth::id()),
+        );
     }
 
     public function clearDocumentSelection()
@@ -185,21 +151,18 @@ class ChatIndex extends Component
 
     public function updatedSelectedDocuments()
     {
-        $availableIds = $this->getReadyDocumentIds();
-
-        $availableMap = array_flip($availableIds);
-        $this->selectedDocuments = array_values(array_filter(array_map('intval', $this->selectedDocuments), function ($id) use ($availableMap) {
-            return isset($availableMap[$id]);
-        }));
+        $this->selectedDocuments = $this->chatDocumentStateService()->filterSelectedDocuments(
+            $this->selectedDocuments,
+            $this->chatDocumentStateService()->readyDocumentIds((int) Auth::id()),
+        );
     }
 
     public function addSelectedDocumentsToChat()
     {
-        $readyMap = array_flip($this->getReadyDocumentIds());
-
-        $this->conversationDocuments = array_values(array_filter(array_unique(array_map('intval', $this->selectedDocuments)), function ($id) use ($readyMap) {
-            return isset($readyMap[$id]);
-        }));
+        $this->conversationDocuments = $this->chatDocumentStateService()->addSelectedDocumentsToChat(
+            $this->selectedDocuments,
+            $this->chatDocumentStateService()->readyDocumentIds((int) Auth::id()),
+        );
     }
 
     public function clearConversationDocuments()
@@ -221,13 +184,9 @@ class ChatIndex extends Component
         try {
             $documentLifecycleService->deleteDocument($document);
 
-            $this->selectedDocuments = array_values(array_filter($this->selectedDocuments, function ($id) use ($documentId) {
-                return (int) $id !== (int) $documentId;
-            }));
-
-            $this->conversationDocuments = array_values(array_filter($this->conversationDocuments, function ($id) use ($documentId) {
-                return (int) $id !== (int) $documentId;
-            }));
+            $stateService = $this->chatDocumentStateService();
+            $this->selectedDocuments = $stateService->removeDocumentIds($this->selectedDocuments, (int) $documentId);
+            $this->conversationDocuments = $stateService->removeDocumentIds($this->conversationDocuments, (int) $documentId);
 
             $this->loadAvailableDocuments();
             session()->flash('message', 'Dokumen berhasil dihapus.');
@@ -253,9 +212,10 @@ class ChatIndex extends Component
             $documentLifecycleService->deleteDocuments($documents);
 
             $this->selectedDocuments = [];
-            $this->conversationDocuments = array_values(array_filter($this->conversationDocuments, function ($id) use ($documentIds) {
-                return !in_array((int) $id, $documentIds, true);
-            }));
+            $this->conversationDocuments = $this->chatDocumentStateService()->removeDocumentIds(
+                $this->conversationDocuments,
+                $documentIds,
+            );
 
             $this->loadAvailableDocuments();
             session()->flash('message', 'Dokumen terpilih berhasil dihapus.');
@@ -266,13 +226,15 @@ class ChatIndex extends Component
 
     public function removeConversationDocument($documentId)
     {
-        $this->conversationDocuments = array_values(array_filter($this->conversationDocuments, function ($id) use ($documentId) {
-            return (int) $id !== (int) $documentId;
-        }));
+        $this->conversationDocuments = $this->chatDocumentStateService()->removeDocumentIds(
+            $this->conversationDocuments,
+            (int) $documentId,
+        );
 
-        $this->selectedDocuments = array_values(array_filter($this->selectedDocuments, function ($id) use ($documentId) {
-            return (int) $id !== (int) $documentId;
-        }));
+        $this->selectedDocuments = $this->chatDocumentStateService()->removeDocumentIds(
+            $this->selectedDocuments,
+            (int) $documentId,
+        );
     }
 
     public function toggleOlderChats()
@@ -303,8 +265,8 @@ class ChatIndex extends Component
                 'chatAttachment' => [
                     'required',
                     'file',
-                    'mimes:pdf,docx,xlsx,csv',
-                    'mimetypes:' . implode(',', self::ALLOWED_ATTACHMENT_MIME_TYPES),
+                    'mimes:' . implode(',', Document::attachmentFileExtensions()),
+                    'mimetypes:' . implode(',', Document::attachmentMimeTypes()),
                     'max:51200',
                 ],
             ]);
@@ -357,7 +319,7 @@ class ChatIndex extends Component
         }
     }
 
-    public function sendMessage(?string $prompt = null, AIService $aiService, ?ChatOrchestrationService $orchestrator = null)
+    public function sendMessage(AIService $aiService, ?string $prompt = null, ?ChatOrchestrationService $orchestrator = null)
     {
         $orchestrator = $orchestrator ?? app(ChatOrchestrationService::class);
 
@@ -440,16 +402,6 @@ class ChatIndex extends Component
         $this->loadConversation($this->currentConversationId);
         $this->loadConversations();
         $this->dispatch('assistant-message-persisted');
-    }
-
-    private function sanitizeAssistantOutput(string $text): string
-    {
-        return app(ChatOrchestrationService::class)->sanitizeAssistantOutput($text);
-    }
-
-    private function extractStreamMetadata(string $chunk, string $buffer = ''): array
-    {
-        return app(ChatOrchestrationService::class)->extractStreamMetadata($chunk, $buffer);
     }
 
     public function render()

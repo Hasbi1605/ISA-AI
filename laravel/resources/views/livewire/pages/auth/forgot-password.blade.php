@@ -1,13 +1,17 @@
 <?php
 
-use App\Models\User;
-use Illuminate\Support\Facades\Password;
+use App\Services\Auth\PasswordResetLinkService;
 use Livewire\Attributes\Layout;
 use Livewire\Volt\Component;
 
 new #[Layout('layouts.auth-canvas')] class extends Component
 {
     public string $email = '';
+
+    protected function passwordResetLinkService(): PasswordResetLinkService
+    {
+        return app(PasswordResetLinkService::class);
+    }
 
     public function sendPasswordResetLink(): void
     {
@@ -17,27 +21,11 @@ new #[Layout('layouts.auth-canvas')] class extends Component
             'email' => 'email',
         ]);
 
-        $user = User::where('email', $this->email)->first();
-
-        if ($user && is_null($user->email_verified_at)) {
-            $this->addError('email', 'Email belum terverifikasi. Silakan daftar ulang lalu verifikasi kode OTP.');
-
-            return;
-        }
-
-        $status = Password::sendResetLink(
-            $this->only('email')
-        );
-
-        if ($status != Password::RESET_LINK_SENT) {
-            $this->addError('email', __($status));
-
-            return;
-        }
+        $status = $this->passwordResetLinkService()->sendResetLink($this->email);
 
         $this->reset('email');
 
-        session()->flash('status', __($status));
+        session()->flash('status', $status);
     }
 }; ?>
 

@@ -11,10 +11,12 @@ VECTOR_COLLECTION_NAME = "documents_collection"
 PARENT_COLLECTION_NAME = "documents_parent_collection"
 
 try:
-    from app.config_loader import get_config as _get_config
+    from app.config_loader import get_config as _get_config, get_embedding_models as _get_embedding_models
     _chunking_cfg = _get_config().get("chunking", {})
+    EMBEDDING_MODELS = _get_embedding_models()
 except Exception:
     _chunking_cfg = {}
+    EMBEDDING_MODELS = []
 
 def _chunking_int(env_key: str, yaml_key: str, default: int) -> int:
     env_val = get_env(env_key)
@@ -41,41 +43,6 @@ logger.info(
 )
 
 MAX_EMBEDDING_DIM = 3072
-
-EMBEDDING_MODELS = [
-    {
-        "name": "GitHub Models (OpenAI Large) - Primary",
-        "provider": "github",
-        "model": "text-embedding-3-large",
-        "api_key_env": "GITHUB_TOKEN",
-        "tpm_limit": 500000,
-        "dimensions": 3072,
-    },
-    {
-        "name": "GitHub Models (OpenAI Large) - Backup",
-        "provider": "github",
-        "model": "text-embedding-3-large",
-        "api_key_env": "GITHUB_TOKEN_2",
-        "tpm_limit": 500000,
-        "dimensions": 3072,
-    },
-    {
-        "name": "GitHub Models (OpenAI Small) - Fallback 1",
-        "provider": "github",
-        "model": "text-embedding-3-small",
-        "api_key_env": "GITHUB_TOKEN",
-        "tpm_limit": 500000,
-        "dimensions": 1536,
-    },
-    {
-        "name": "GitHub Models (OpenAI Small) - Fallback 2",
-        "provider": "github",
-        "model": "text-embedding-3-small",
-        "api_key_env": "GITHUB_TOKEN_2",
-        "tpm_limit": 500000,
-        "dimensions": 1536,
-    }
-]
 
 EXPLICIT_WEB_PATTERNS = [
     r"\bweb\s*search\b",

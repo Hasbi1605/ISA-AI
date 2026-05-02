@@ -3,11 +3,12 @@
 Test script untuk memverifikasi Token-Aware Chunking implementation
 """
 
+from pathlib import Path
 import sys
-import os
 
-# Add parent directory to path
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+# Add python-ai directory to path
+REPO_ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(REPO_ROOT / "python-ai"))
 
 from app.services.rag_service import count_tokens, TIKTOKEN_ENCODER
 

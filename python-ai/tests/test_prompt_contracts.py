@@ -14,6 +14,18 @@ def test_legacy_top_level_system_prompt_is_removed():
     assert "system" not in config, "Top-level system.default_prompt harus sudah deprecated"
 
 
+def test_embedding_models_are_loaded_from_yaml_and_match_rag_config():
+    from app import config_loader
+    from app.services import rag_config
+
+    models = config_loader.get_embedding_models()
+
+    assert models, "Embedding models harus ada di ai_config.yaml"
+    assert models == rag_config.EMBEDDING_MODELS
+    assert all("dimensions" in model for model in models)
+    assert max(int(model["dimensions"]) for model in models) <= rag_config.MAX_EMBEDDING_DIM
+
+
 def test_system_prompt_uses_ista_work_assistant_persona():
     from app import config_loader
 

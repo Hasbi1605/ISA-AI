@@ -90,4 +90,23 @@ class ChatOrchestrationServiceTest extends TestCase
         $this->assertSame(1, substr_count($footer, 'https://example.com/resmi'));
         $this->assertSame(1, substr_count($footer, 'memo-rapat.pdf'));
     }
+
+    public function test_extract_stream_metadata_buffers_split_sources_marker(): void
+    {
+        $service = new ChatOrchestrationService();
+
+        $firstPass = $service->extractStreamMetadata('Jawaban awal [SOURCES:[{"url":"https://example.com"', '');
+
+        $this->assertSame('Jawaban awal ', $firstPass[0]);
+        $this->assertSame('[SOURCES:[{"url":"https://example.com"', $firstPass[1]);
+        $this->assertNull($firstPass[3]);
+
+        $secondPass = $service->extractStreamMetadata(',"title":"Contoh"}]]', $firstPass[1]);
+
+        $this->assertSame('', $secondPass[0]);
+        $this->assertSame('', $secondPass[1]);
+        $this->assertSame([
+            ['url' => 'https://example.com', 'title' => 'Contoh'],
+        ], $secondPass[3]);
+    }
 }
