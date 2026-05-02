@@ -18,16 +18,6 @@ class DocumentLifecycleService
 
     public const SOFT_DELETE_RETENTION_DAYS = 7;
 
-    public const ALLOWED_ATTACHMENT_MIME_TYPES = [
-        'application/pdf',
-        'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-        'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-        'text/csv',
-        'text/plain',
-        'application/csv',
-        'application/vnd.ms-excel',
-    ];
-
     /**
      * Upload and initiate document processing
      *
@@ -48,7 +38,7 @@ class DocumentLifecycleService
         $originalName = $file->getClientOriginalName();
         $detectedMimeType = (string) $file->getMimeType();
 
-        if (! in_array($detectedMimeType, self::ALLOWED_ATTACHMENT_MIME_TYPES, true)) {
+        if (! in_array($detectedMimeType, Document::attachmentMimeTypes(), true)) {
             throw ValidationException::withMessages([
                 'file' => 'Tipe MIME file tidak valid. Gunakan PDF, DOCX, XLSX, atau CSV.',
             ]);

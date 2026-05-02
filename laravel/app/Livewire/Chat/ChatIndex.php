@@ -2,7 +2,6 @@
 
 namespace App\Livewire\Chat;
 
-use App\Jobs\ProcessDocument;
 use App\Models\Conversation;
 use App\Models\Message;
 use App\Models\Document;
@@ -10,7 +9,6 @@ use App\Services\AIService;
 use App\Services\ChatOrchestrationService;
 use App\Services\DocumentLifecycleService;
 use Illuminate\Support\Facades\Auth;
-use Illuminate\Support\Facades\Storage;
 use Illuminate\Validation\ValidationException;
 use Livewire\Attributes\Layout;
 use Livewire\Attributes\Url;
@@ -46,16 +44,6 @@ class ChatIndex extends Component
 
     // Maximum chats to show before "Show More"
     const MAX_VISIBLE_CHATS = 10;
-
-    private const ALLOWED_ATTACHMENT_MIME_TYPES = [
-        'application/pdf',
-        'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-        'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-        'text/csv',
-        'text/plain',
-        'application/csv',
-        'application/vnd.ms-excel',
-    ];
 
     public function mount($id = null)
     {
@@ -303,8 +291,8 @@ class ChatIndex extends Component
                 'chatAttachment' => [
                     'required',
                     'file',
-                    'mimes:pdf,docx,xlsx,csv',
-                    'mimetypes:' . implode(',', self::ALLOWED_ATTACHMENT_MIME_TYPES),
+                    'mimes:' . implode(',', Document::attachmentFileExtensions()),
+                    'mimetypes:' . implode(',', Document::attachmentMimeTypes()),
                     'max:51200',
                 ],
             ]);

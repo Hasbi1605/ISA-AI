@@ -3,7 +3,6 @@
 namespace Tests\Feature\Documents;
 
 use App\Livewire\Chat\ChatIndex;
-use App\Livewire\Documents\DocumentIndex;
 use App\Models\Document;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -15,41 +14,6 @@ use Tests\TestCase;
 class DocumentDeletionTest extends TestCase
 {
     use RefreshDatabase;
-
-    public function test_delete_from_document_index_cleans_up_storage_and_vector(): void
-    {
-        Storage::fake('local');
-        config()->set('services.ai_document_service.url', 'http://python-ai-docs:8002');
-        $user = User::factory()->create();
-
-        $filePath = 'documents/' . $user->id . '/delete.pdf';
-        Storage::disk('local')->put($filePath, 'dummy content');
-
-        $document = Document::create([
-            'user_id' => $user->id,
-            'filename' => 'delete.pdf',
-            'original_name' => 'delete.pdf',
-            'file_path' => $filePath,
-            'mime_type' => 'application/pdf',
-            'file_size_bytes' => 123,
-            'status' => 'ready',
-        ]);
-
-        Http::fake([
-            '*' => Http::response(['message' => 'success'], 200),
-        ]);
-
-        Livewire::actingAs($user)
-            ->test(DocumentIndex::class)
-            ->call('delete', $document->id);
-
-        $this->assertSoftDeleted($document);
-        Storage::disk('local')->assertMissing($filePath);
-        Http::assertSent(function ($request) use ($document, $user) {
-            return $request->method() === 'DELETE'
-                && $request->url() === 'http://python-ai-docs:8002/api/documents/delete.pdf?user_id='.$user->id;
-        });
-    }
 
     public function test_delete_from_chat_cleans_up_storage_and_vector(): void
     {

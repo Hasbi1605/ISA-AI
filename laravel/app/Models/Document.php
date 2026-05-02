@@ -49,6 +49,21 @@ class Document extends Model
         'application/vnd.ms-excel',
     ];
 
+    public static function attachmentFileExtensions(): array
+    {
+        return ['pdf', 'docx', 'xlsx', 'csv'];
+    }
+
+    public static function attachmentMimeTypes(): array
+    {
+        return [
+            ...self::PDF_MIME_TYPES,
+            ...self::DOCX_MIME_TYPES,
+            ...self::XLSX_MIME_TYPES,
+            ...self::CSV_MIME_TYPES,
+        ];
+    }
+
     protected function casts(): array
     {
         return [
