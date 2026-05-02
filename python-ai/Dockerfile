@@ -11,7 +11,6 @@ WORKDIR /wheels
 RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
     curl \
-    libmagic-dev \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy dan kompilasi semua dependency jadi wheel files
@@ -28,20 +27,15 @@ FROM python:3.11-slim
 WORKDIR /app
 
 # Install hanya runtime dependencies (bukan build tools)
-# - libmagic1: untuk python-magic (deteksi tipe file)
-# - poppler-utils: untuk pdf2image (konversi PDF ke gambar)
-# - tesseract-ocr: untuk OCR dokumen
+# - libcairo/pango stack: untuk WeasyPrint PDF export
 # - curl: untuk health check
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    libmagic1 \
     libcairo2 \
     libgdk-pixbuf-2.0-0 \
     libharfbuzz0b \
     libpango-1.0-0 \
     libpangoft2-1.0-0 \
-    poppler-utils \
     shared-mime-info \
-    tesseract-ocr \
     fonts-dejavu-core \
     curl \
     && rm -rf /var/lib/apt/lists/*
