@@ -11,8 +11,8 @@ File konfigurasi terpusat untuk menyederhanakan pergantian nilai operasional AI 
 - **Modul Loader**: `python-ai/app/config_loader.py`
 
 ### Laravel Backend
-- **Lokasi**: `laravel/config/ai.php`
-- **Catatan**: File ini hanya untuk koneksi service AI dari Laravel ke Python. Persona dan prompt aktif dibaca dari `python-ai/config/ai_config.yaml -> prompts.*`.
+- **Lokasi**: `laravel/config/services.php`
+- **Catatan**: Laravel membaca koneksi service AI dari `services.ai_service` dan `services.ai_document_service`. Persona, prompt, chunking, dan embedding aktif tetap dibaca dari `python-ai/config/ai_config.yaml`.
 
 ## Struktur Konfigurasi
 
@@ -157,11 +157,11 @@ timeout = search.get("timeout", 10)
 use Illuminate\Support\Facades\Config;
 
 // Ambil nilai dari config
-$timeout = config('ai.global.timeout');
-$url = config('ai.lanes.chat.url');
+$timeout = config('services.ai_service.timeout');
+$url = config('services.ai_service.url');
 
-// Atau langsung dari env
-$aiUrl = config('services.ai_service.url');
+// Untuk jalur dokumen
+$documentUrl = config('services.ai_document_service.url');
 ```
 
 ## Referensi Model Tersedia
