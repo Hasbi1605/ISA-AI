@@ -5,6 +5,7 @@ namespace Tests\Feature\Memos;
 use App\Livewire\Memos\MemoCanvas;
 use App\Models\Memo;
 use App\Models\User;
+use App\Services\OnlyOffice\JwtSigner;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Storage;
@@ -59,5 +60,31 @@ class MemoCanvasTest extends TestCase
         $this->actingAs($other)
             ->get(route('memos.edit', $memo))
             ->assertForbidden();
+    }
+
+    public function test_editor_token_signs_exact_onlyoffice_config_shape(): void
+    {
+        config([
+            'services.onlyoffice.jwt_secret' => 'editor-secret',
+            'services.onlyoffice.laravel_internal_url' => 'http://laravel:8000',
+        ]);
+
+        $user = User::factory()->create(['email_verified_at' => now()]);
+        $memo = Memo::create([
+            'user_id' => $user->id,
+            'title' => 'Memo Editor',
+            'memo_type' => 'memo_internal',
+            'file_path' => 'memos/'.$user->id.'/memo.docx',
+            'status' => Memo::STATUS_GENERATED,
+        ]);
+
+        $component = Livewire::actingAs($user)
+            ->test(MemoCanvas::class, ['memo' => $memo]);
+
+        $config = $component->instance()->editorConfig();
+        $token = $config['token'];
+        unset($config['token']);
+
+        $this->assertSame($config, (new JwtSigner('editor-secret'))->verify($token));
     }
 }
