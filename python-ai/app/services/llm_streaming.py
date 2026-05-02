@@ -142,6 +142,18 @@ def build_enhanced_messages(messages: List[Dict[str, str]], enhanced_system: str
     return enhanced_messages
 
 
+def get_model_display_label(model: Dict) -> str:
+    label = model.get("label")
+    if isinstance(label, str):
+        label = label.strip()
+    if label:
+        return label
+
+    provider = (model.get("provider") or "unknown").strip()
+    model_name = (model.get("model_name") or "unknown").strip()
+    return f"{provider}:{model_name}"
+
+
 def _stream_gemini_native(model_name: str, api_key: str, messages: List[Dict[str, str]]) -> Generator[str, None, None]:
     """
     Stream response from Google AI Studio REST API directly.
@@ -255,7 +267,7 @@ def stream_with_cascade(
         return
 
     for idx, model in enumerate(model_list, start=1):
-        label = f"{model['provider']}:{model['model_name']}"
+        label = get_model_display_label(model)
 
         try:
             gen = _run_model(model, messages)
