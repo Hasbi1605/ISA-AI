@@ -27,11 +27,12 @@ class OnlyOfficeCallbackController extends Controller
             abort(Response::HTTP_UNAUTHORIZED, 'Token OnlyOffice tidak valid.');
         }
 
-        $status = (int) $request->input('status', 0);
-        $this->validateSignedCallbackPayload($request, $memo, $payload, $status);
+        $callback = $this->normalizeSignedCallbackPayload($request, $payload);
+        $this->validateSignedCallbackPayload($memo, $callback);
+        $status = (int) $callback['status'];
 
         if (in_array($status, [2, 6], true)) {
-            $url = (string) $request->input('url', '');
+            $url = (string) $callback['url'];
             abort_if($url === '', Response::HTTP_BAD_REQUEST, 'URL file OnlyOffice kosong.');
             abort_unless($this->isTrustedOnlyOfficeUrl($url), Response::HTTP_FORBIDDEN, 'URL file OnlyOffice tidak dipercaya.');
 
@@ -53,20 +54,39 @@ class OnlyOfficeCallbackController extends Controller
 
     /**
      * @param  array<string, mixed>  $payload
+     * @return array<string, mixed>
      */
-    protected function validateSignedCallbackPayload(Request $request, Memo $memo, array $payload, int $status): void
+    protected function normalizeSignedCallbackPayload(Request $request, array $payload): array
     {
-        abort_unless((int) ($payload['status'] ?? -1) === $status, Response::HTTP_FORBIDDEN);
+        $callback = isset($payload['payload']) && is_array($payload['payload'])
+            ? $payload['payload']
+            : $payload;
 
-        $key = (string) $request->input('key', '');
+        foreach (['status', 'key', 'url'] as $field) {
+            if (! $request->has($field)) {
+                continue;
+            }
+
+            abort_unless(($callback[$field] ?? null) === $request->input($field), Response::HTTP_FORBIDDEN);
+        }
+
+        return $callback;
+    }
+
+    /**
+     * @param  array<string, mixed>  $callback
+     */
+    protected function validateSignedCallbackPayload(Memo $memo, array $callback): void
+    {
+        abort_unless(isset($callback['status']) && is_numeric($callback['status']), Response::HTTP_FORBIDDEN);
+
+        $key = (string) ($callback['key'] ?? '');
         abort_if($key === '', Response::HTTP_BAD_REQUEST, 'Key OnlyOffice wajib dikirim.');
-        abort_unless(($payload['key'] ?? null) === $key, Response::HTTP_FORBIDDEN);
         abort_unless(str_starts_with($key, 'memo-'.$memo->id.'-'), Response::HTTP_FORBIDDEN);
 
-        if (in_array($status, [2, 6], true)) {
-            $url = (string) $request->input('url', '');
+        if (in_array((int) $callback['status'], [2, 6], true)) {
+            $url = (string) ($callback['url'] ?? '');
             abort_if($url === '', Response::HTTP_BAD_REQUEST, 'URL file OnlyOffice kosong.');
-            abort_unless(($payload['url'] ?? null) === $url, Response::HTTP_FORBIDDEN);
         }
     }
 

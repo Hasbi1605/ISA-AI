@@ -62,6 +62,93 @@ class OnlyOfficeCallbackTest extends TestCase
         $this->assertSame('updated-docx', Storage::disk('local')->get($memo->file_path));
     }
 
+    public function test_callback_accepts_onlyoffice_header_payload_wrapper(): void
+    {
+        config([
+            'services.onlyoffice.jwt_secret' => 'callback-secret',
+            'services.onlyoffice.internal_url' => 'https://onlyoffice.test',
+        ]);
+        Storage::fake('local');
+        Http::fake([
+            'https://onlyoffice.test/header-file.docx' => Http::response('header-docx', 200),
+        ]);
+
+        $user = User::factory()->create(['email_verified_at' => now()]);
+        $memo = $this->createMemo($user);
+        $body = [
+            'status' => 2,
+            'key' => 'memo-'.$memo->id.'-header',
+            'url' => 'https://onlyoffice.test/header-file.docx',
+        ];
+        $token = (new JwtSigner('callback-secret'))->sign([
+            'payload' => $body,
+        ]);
+
+        $this->withHeader('Authorization', 'Bearer '.$token)
+            ->postJson(route('onlyoffice.callback', $memo), $body)
+            ->assertOk()
+            ->assertJson(['error' => 0]);
+
+        Storage::disk('local')->assertExists($memo->refresh()->file_path);
+        $this->assertSame('header-docx', Storage::disk('local')->get($memo->file_path));
+    }
+
+    public function test_callback_accepts_onlyoffice_token_in_body_payload_only(): void
+    {
+        config([
+            'services.onlyoffice.jwt_secret' => 'callback-secret',
+            'services.onlyoffice.internal_url' => 'https://onlyoffice.test',
+        ]);
+        Storage::fake('local');
+        Http::fake([
+            'https://onlyoffice.test/body-file.docx' => Http::response('body-docx', 200),
+        ]);
+
+        $user = User::factory()->create(['email_verified_at' => now()]);
+        $memo = $this->createMemo($user);
+        $token = (new JwtSigner('callback-secret'))->sign([
+            'status' => 2,
+            'key' => 'memo-'.$memo->id.'-body',
+            'url' => 'https://onlyoffice.test/body-file.docx',
+        ]);
+
+        $this->postJson(route('onlyoffice.callback', $memo), [
+            'token' => $token,
+        ])->assertOk()
+            ->assertJson(['error' => 0]);
+
+        Storage::disk('local')->assertExists($memo->refresh()->file_path);
+        $this->assertSame('body-docx', Storage::disk('local')->get($memo->file_path));
+    }
+
+    public function test_callback_rejects_mismatch_between_header_payload_and_body(): void
+    {
+        config([
+            'services.onlyoffice.jwt_secret' => 'callback-secret',
+            'services.onlyoffice.internal_url' => 'https://onlyoffice.test',
+        ]);
+        Http::fake();
+
+        $user = User::factory()->create(['email_verified_at' => now()]);
+        $memo = $this->createMemo($user);
+        $token = (new JwtSigner('callback-secret'))->sign([
+            'payload' => [
+                'status' => 2,
+                'key' => 'memo-'.$memo->id.'-header',
+                'url' => 'https://onlyoffice.test/header-file.docx',
+            ],
+        ]);
+
+        $this->withHeader('Authorization', 'Bearer '.$token)
+            ->postJson(route('onlyoffice.callback', $memo), [
+                'status' => 2,
+                'key' => 'memo-'.$memo->id.'-header',
+                'url' => 'https://evil.test/header-file.docx',
+            ])->assertForbidden();
+
+        Http::assertNothingSent();
+    }
+
     public function test_editor_config_token_cannot_be_used_as_callback_token(): void
     {
         config([
