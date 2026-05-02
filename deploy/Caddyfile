@@ -14,7 +14,7 @@
         format console
     }
 
-    @onlyoffice path_regexp onlyoffice ^/(?:[^/]+/)?(?:web-apps|sdkjs|cache|doc|coauthoring|spellchecker)(?:/.*)?$|^/healthcheck$
+    @onlyoffice path_regexp onlyoffice ^/(?:[^/]+/)?(?:web-apps|sdkjs|cache|doc|coauthoring|spellchecker|fonts)(?:/.*)?$|^/(?:[^/]+/)?document_editor_service_worker\.js$|^/healthcheck$
     reverse_proxy @onlyoffice onlyoffice:80
 
     reverse_proxy laravel:8000 {
