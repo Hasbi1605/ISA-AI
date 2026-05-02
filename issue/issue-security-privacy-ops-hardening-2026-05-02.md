@@ -56,6 +56,10 @@ Referensi eksternal yang perlu dipakai saat dokumentasi privacy:
 - Mengubah seluruh provider AI atau mematikan semua provider eksternal secara sepihak.
 - Menjalankan deploy production langsung dari agent jika aturan deploy tidak sedang di-override user.
 
+## Status Implementasi (2026-05-02)
+- PR #124 hanya mencakup migrasi endpoint GitHub Models ke `https://models.github.ai/inference`.
+- Item lain di scope issue #123 masih pending dan akan dipecah ke PR terpisah.
+
 ## Area / File Terkait
 - Konfigurasi AI:
   - `python-ai/config/ai_config.yaml`
