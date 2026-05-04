@@ -333,7 +333,7 @@ const registerChatPageData = (Alpine) => {
 
         driveButtonLabel() {
             if (!this.driveUploadAvailable) {
-                return 'Upload Drive perlu Shared Drive kantor';
+                return 'Upload Drive perlu koneksi akun pusat';
             }
 
             return this.driveLoading ? 'Mengupload ke Google Drive' : 'Upload ke Google Drive';
@@ -858,7 +858,7 @@ const registerChatPageData = (Alpine) => {
 
         driveButtonLabel() {
             if (!this.driveUploadAvailable) {
-                return 'Upload Drive perlu Shared Drive kantor';
+                return 'Upload Drive perlu koneksi akun pusat';
             }
 
             return this.loading ? 'Menyiapkan upload ke Google Drive' : 'Upload ke GDrive Kantor';

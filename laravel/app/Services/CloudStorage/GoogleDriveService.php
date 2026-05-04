@@ -21,7 +21,7 @@ class GoogleDriveService
 
     public function isConfigured(): bool
     {
-        return $this->rootFolderId() !== null && $this->loadCredentialPayload() !== null;
+        return $this->rootFolderId() !== null && ($this->hasCentralOAuthConnection() || $this->loadCredentialPayload() !== null);
     }
 
     public function rootFolderId(): ?string
@@ -41,7 +41,7 @@ class GoogleDriveService
 
     public function canUploadWithConfiguredAccount(): bool
     {
-        return $this->sharedDriveId() !== null || $this->impersonatedUserEmail() !== null;
+        return $this->hasCentralOAuthConnection() || $this->sharedDriveId() !== null || $this->impersonatedUserEmail() !== null;
     }
 
     public function defaultUploadFolderName(): string
@@ -315,6 +315,14 @@ class GoogleDriveService
             return $this->client;
         }
 
+        $oauthService = app(GoogleDriveOAuthService::class);
+
+        if ($oauthService->hasCentralConnection()) {
+            $this->client = $oauthService->clientForCentralConnection();
+
+            return $this->client;
+        }
+
         $payload = $this->loadCredentialPayload();
 
         if ($payload === null) {
@@ -480,7 +488,16 @@ class GoogleDriveService
 
     private function unsupportedServiceAccountUploadMessage(): string
     {
-        return 'Upload ke Google Drive belum aktif. Folder tujuan masih My Drive; gunakan Shared Drive kantor atau OAuth delegation.';
+        return 'Upload ke Google Drive belum aktif. Hubungkan akun Google Drive pusat lewat OAuth atau gunakan Shared Drive kantor.';
+    }
+
+    private function hasCentralOAuthConnection(): bool
+    {
+        try {
+            return app(GoogleDriveOAuthService::class)->hasCentralConnection();
+        } catch (\Throwable) {
+            return false;
+        }
     }
 
     /**

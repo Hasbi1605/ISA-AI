@@ -33,7 +33,7 @@
                 @if (! $isConfigured)
                     <div class="rounded-2xl border border-amber-200 bg-amber-50 p-5 text-amber-900 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-100">
                         <p class="font-semibold">Google Drive belum dikonfigurasi</p>
-                        <p class="mt-2 text-sm leading-6">Lengkapi service account dan root folder id terlebih dahulu agar picker chat bisa menampilkan daftar Drive kantor.</p>
+                        <p class="mt-2 text-sm leading-6">Lengkapi root folder id dan hubungkan akun Google Drive pusat agar picker chat bisa menampilkan daftar Drive kantor.</p>
                     </div>
                 @else
                     <div class="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">

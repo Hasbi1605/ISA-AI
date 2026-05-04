@@ -1,0 +1,54 @@
+<?php
+
+namespace App\Http\Controllers\CloudStorage;
+
+use App\Http\Controllers\Controller;
+use App\Models\User;
+use App\Services\CloudStorage\GoogleDriveOAuthService;
+use Illuminate\Http\RedirectResponse;
+use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Auth;
+
+class GoogleDriveOAuthController extends Controller
+{
+    public function connect(Request $request, GoogleDriveOAuthService $oauthService): RedirectResponse
+    {
+        if (! $oauthService->canUseSetupKey($request->query('setup_key'))) {
+            abort(403, 'Setup key Google Drive tidak valid.');
+        }
+
+        /** @var User $user */
+        $user = Auth::user();
+
+        return redirect()->away($oauthService->authorizationUrl($user));
+    }
+
+    public function callback(Request $request, GoogleDriveOAuthService $oauthService): RedirectResponse
+    {
+        /** @var User $user */
+        $user = Auth::user();
+
+        $request->validate([
+            'code' => ['required', 'string'],
+            'state' => ['required', 'string'],
+        ]);
+
+        try {
+            $connection = $oauthService->completeCallback(
+                (string) $request->query('code'),
+                (string) $request->query('state'),
+                $user,
+            );
+        } catch (\Throwable $e) {
+            return redirect()
+                ->route('chat')
+                ->with('error', 'Gagal menghubungkan Google Drive pusat: '.$e->getMessage());
+        }
+
+        $accountLabel = $connection->account_email ?: 'akun Google pusat';
+
+        return redirect()
+            ->route('chat')
+            ->with('message', 'Google Drive pusat tersambung ke '.$accountLabel.'. Upload Drive sekarang aktif untuk semua user.');
+    }
+}

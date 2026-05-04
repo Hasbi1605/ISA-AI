@@ -61,7 +61,7 @@ class GoogleDriveServiceTest extends TestCase
         $this->assertNull($service->impersonatedUserEmail());
     }
 
-    public function test_uploads_require_shared_drive_or_oauth_delegation(): void
+    public function test_uploads_require_shared_drive_or_central_oauth_connection(): void
     {
         config([
             'services.google_drive.shared_drive_id' => null,
@@ -78,7 +78,7 @@ class GoogleDriveServiceTest extends TestCase
         try {
             $this->assertFalse($service->canUploadWithConfiguredAccount());
             $this->expectException(\RuntimeException::class);
-            $this->expectExceptionMessage('Upload ke Google Drive belum aktif. Folder tujuan masih My Drive; gunakan Shared Drive kantor atau OAuth delegation.');
+            $this->expectExceptionMessage('Upload ke Google Drive belum aktif. Hubungkan akun Google Drive pusat lewat OAuth atau gunakan Shared Drive kantor.');
 
             $service->uploadFromPath($tempPath, 'answer.pdf', 'application/pdf');
         } finally {
@@ -117,7 +117,7 @@ class GoogleDriveServiceTest extends TestCase
         );
 
         $this->assertSame(
-            'Upload ke Google Drive belum aktif. Folder tujuan masih My Drive; gunakan Shared Drive kantor atau OAuth delegation.',
+            'Upload ke Google Drive belum aktif. Hubungkan akun Google Drive pusat lewat OAuth atau gunakan Shared Drive kantor.',
             $service->describeUploadFailure($throwable),
         );
     }

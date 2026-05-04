@@ -68,6 +68,10 @@ return [
         'default_upload_folder_name' => env('GOOGLE_DRIVE_UPLOAD_FOLDER_NAME', 'ISTA AI'),
         'shared_drive_id' => env('GOOGLE_DRIVE_SHARED_DRIVE_ID'),
         'impersonated_user_email' => env('GOOGLE_DRIVE_IMPERSONATED_USER_EMAIL'),
+        'oauth_client_id' => env('GOOGLE_DRIVE_OAUTH_CLIENT_ID'),
+        'oauth_client_secret' => env('GOOGLE_DRIVE_OAUTH_CLIENT_SECRET'),
+        'oauth_redirect_uri' => env('GOOGLE_DRIVE_OAUTH_REDIRECT_URI'),
+        'oauth_setup_key' => env('GOOGLE_DRIVE_OAUTH_SETUP_KEY'),
     ],
 
 ];
