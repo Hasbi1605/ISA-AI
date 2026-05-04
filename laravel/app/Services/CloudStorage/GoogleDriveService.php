@@ -34,6 +34,16 @@ class GoogleDriveService
         return $this->normalizeNullableStringConfig(config('services.google_drive.shared_drive_id'));
     }
 
+    public function impersonatedUserEmail(): ?string
+    {
+        return $this->normalizeNullableStringConfig(config('services.google_drive.impersonated_user_email'));
+    }
+
+    public function canUploadWithConfiguredAccount(): bool
+    {
+        return $this->sharedDriveId() !== null || $this->impersonatedUserEmail() !== null;
+    }
+
     public function defaultUploadFolderName(): string
     {
         return $this->normalizeStringConfig(config('services.google_drive.default_upload_folder_name'), 'ISTA AI');
@@ -176,6 +186,8 @@ class GoogleDriveService
             throw new RuntimeException('File lokal untuk upload ke Google Drive tidak ditemukan.');
         }
 
+        $this->ensureUploadTargetSupportsServiceAccount();
+
         $folderId = $this->resolveUploadFolderId($parentFolderId);
         $contents = file_get_contents($localPath);
 
@@ -250,7 +262,7 @@ class GoogleDriveService
         $details = $this->extractGoogleDriveErrorDetails($throwable, $message);
 
         if ($this->isSharedDriveQuotaError($throwable, $message, $details)) {
-            return 'Upload ke Google Drive gagal karena service account tidak bisa menyimpan file ke My Drive. Pindahkan folder tujuan ke Shared Drive atau isi GOOGLE_DRIVE_SHARED_DRIVE_ID.';
+            return $this->unsupportedServiceAccountUploadMessage();
         }
 
         if ($details['message'] !== null && $details['message'] !== '') {
@@ -315,6 +327,12 @@ class GoogleDriveService
         $client->setAccessType('offline');
         $client->setPrompt('consent');
         $client->setAuthConfig($payload);
+
+        $impersonatedUserEmail = $this->impersonatedUserEmail();
+
+        if ($impersonatedUserEmail !== null) {
+            $client->setSubject($impersonatedUserEmail);
+        }
 
         $this->client = $client;
 
@@ -449,6 +467,20 @@ class GoogleDriveService
         $normalized = $this->normalizeStringConfig($value);
 
         return $normalized !== '' ? $normalized : null;
+    }
+
+    private function ensureUploadTargetSupportsServiceAccount(): void
+    {
+        if ($this->canUploadWithConfiguredAccount()) {
+            return;
+        }
+
+        throw new RuntimeException($this->unsupportedServiceAccountUploadMessage());
+    }
+
+    private function unsupportedServiceAccountUploadMessage(): string
+    {
+        return 'Upload ke Google Drive belum aktif. Folder tujuan masih My Drive; gunakan Shared Drive kantor atau OAuth delegation.';
     }
 
     /**

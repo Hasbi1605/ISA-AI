@@ -245,6 +245,7 @@ const registerChatPageData = (Alpine) => {
         html: config.html || '',
         exportUrl: config.exportUrl || '',
         exportFileName: config.exportFileName || 'ista-ai-export',
+        driveUploadAvailable: Boolean(config.driveUploadAvailable),
         exportMenuOpen: false,
         driveMenuOpen: false,
         copied: false,
@@ -330,6 +331,14 @@ const registerChatPageData = (Alpine) => {
             return this.copied ? 'Tersalin' : 'Salin';
         },
 
+        driveButtonLabel() {
+            if (!this.driveUploadAvailable) {
+                return 'Upload Drive perlu Shared Drive kantor';
+            }
+
+            return this.driveLoading ? 'Mengupload ke Google Drive' : 'Upload ke Google Drive';
+        },
+
         toggleExportMenu() {
             if (this.exportLoading) {
                 return;
@@ -340,7 +349,7 @@ const registerChatPageData = (Alpine) => {
         },
 
         toggleDriveMenu() {
-            if (this.driveLoading) {
+            if (this.driveLoading || !this.driveUploadAvailable) {
                 return;
             }
 
@@ -458,7 +467,7 @@ const registerChatPageData = (Alpine) => {
         },
 
         async uploadToGoogleDrive(format) {
-            if (!this.messageId || this.driveLoading) {
+            if (!this.messageId || this.driveLoading || !this.driveUploadAvailable) {
                 return;
             }
 
@@ -829,6 +838,7 @@ const registerChatPageData = (Alpine) => {
         exportUrl: config.exportUrl || '',
         fileName: config.fileName || 'ista-ai-tabel-dokumen',
         preferTableExtraction: Boolean(config.preferTableExtraction),
+        driveUploadAvailable: Boolean(config.driveUploadAvailable),
         exportMenuOpen: false,
         driveMenuOpen: false,
         loading: false,
@@ -846,8 +856,16 @@ const registerChatPageData = (Alpine) => {
             this.error = '';
         },
 
+        driveButtonLabel() {
+            if (!this.driveUploadAvailable) {
+                return 'Upload Drive perlu Shared Drive kantor';
+            }
+
+            return this.loading ? 'Menyiapkan upload ke Google Drive' : 'Upload ke GDrive Kantor';
+        },
+
         toggleDriveMenu() {
-            if (this.loading) {
+            if (this.loading || !this.driveUploadAvailable) {
                 return;
             }
 
@@ -902,7 +920,7 @@ const registerChatPageData = (Alpine) => {
         },
 
         async saveToGoogleDrive(format) {
-            if (this.loading) {
+            if (this.loading || !this.driveUploadAvailable) {
                 return;
             }
 

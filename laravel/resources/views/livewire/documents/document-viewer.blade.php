@@ -43,6 +43,7 @@
                                     exportUrl: @js(route('documents.export')),
                                     fileName: @js($exportBaseName),
                                     preferTableExtraction: @js($usesTableExtraction),
+                                    driveUploadAvailable: @js($googleDriveUploadAvailable ?? false),
                                 })"
                                 data-document-export-actions
                                 class="relative flex items-center gap-2"
@@ -92,13 +93,13 @@
                                 <button
                                     type="button"
                                     @click="toggleDriveMenu()"
-                                    :disabled="loading"
-                                    class="inline-flex h-9 items-center gap-2 rounded-md border border-stone-300 bg-white px-3 text-[12px] font-semibold text-stone-700 shadow-sm transition hover:border-ista-primary/30 hover:bg-stone-50 disabled:cursor-wait disabled:opacity-75 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-100 dark:hover:bg-gray-800"
-                                    :aria-label="loading ? 'Menyiapkan upload ke Google Drive' : 'Upload ke GDrive Kantor'"
-                                    :title="loading ? 'Menyiapkan upload ke Google Drive' : 'Upload ke GDrive Kantor'"
+                                    :disabled="loading || !driveUploadAvailable"
+                                    class="inline-flex h-9 items-center gap-2 rounded-md border border-stone-300 bg-white px-3 text-[12px] font-semibold text-stone-700 shadow-sm transition hover:border-ista-primary/30 hover:bg-stone-50 disabled:cursor-not-allowed disabled:opacity-75 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-100 dark:hover:bg-gray-800"
+                                    :aria-label="driveButtonLabel()"
+                                    :title="driveButtonLabel()"
                                 >
                                     <span x-show="loading" class="h-3.5 w-3.5 rounded-full border-2 border-current border-t-transparent animate-spin" aria-hidden="true"></span>
-                                    <img x-show="!loading" src="{{ asset('images/icons/google-drive.svg') }}" alt="" class="h-4 w-[18px]" />
+                                    <img x-show="!loading" src="{{ asset('images/icons/google-drive.svg') }}" alt="" class="h-[15px] w-[17px]" />
                                     <span class="hidden sm:inline">Upload ke GDrive Kantor</span>
                                 </button>
 

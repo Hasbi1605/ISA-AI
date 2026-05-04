@@ -50,6 +50,55 @@ class GoogleDriveServiceTest extends TestCase
         $this->assertNull($service->sharedDriveId());
     }
 
+    public function test_empty_impersonated_user_email_is_treated_as_null(): void
+    {
+        config([
+            'services.google_drive.impersonated_user_email' => '',
+        ]);
+
+        $service = app(GoogleDriveService::class);
+
+        $this->assertNull($service->impersonatedUserEmail());
+    }
+
+    public function test_uploads_require_shared_drive_or_oauth_delegation(): void
+    {
+        config([
+            'services.google_drive.shared_drive_id' => null,
+            'services.google_drive.impersonated_user_email' => null,
+            'services.google_drive.root_folder_id' => 'my-drive-folder-id',
+        ]);
+
+        $service = app(GoogleDriveService::class);
+        $tempPath = tempnam(sys_get_temp_dir(), 'gdrive-upload-test-');
+
+        $this->assertIsString($tempPath);
+        file_put_contents($tempPath, 'content');
+
+        try {
+            $this->assertFalse($service->canUploadWithConfiguredAccount());
+            $this->expectException(\RuntimeException::class);
+            $this->expectExceptionMessage('Upload ke Google Drive belum aktif. Folder tujuan masih My Drive; gunakan Shared Drive kantor atau OAuth delegation.');
+
+            $service->uploadFromPath($tempPath, 'answer.pdf', 'application/pdf');
+        } finally {
+            @unlink($tempPath);
+        }
+    }
+
+    public function test_impersonated_user_email_enables_server_side_uploads(): void
+    {
+        config([
+            'services.google_drive.shared_drive_id' => null,
+            'services.google_drive.impersonated_user_email' => 'drive-owner@example.test',
+        ]);
+
+        $service = app(GoogleDriveService::class);
+
+        $this->assertSame('drive-owner@example.test', $service->impersonatedUserEmail());
+        $this->assertTrue($service->canUploadWithConfiguredAccount());
+    }
+
     public function test_upload_error_message_is_sanitized_for_service_account_quota_errors(): void
     {
         $service = app(GoogleDriveService::class);
@@ -68,7 +117,7 @@ class GoogleDriveServiceTest extends TestCase
         );
 
         $this->assertSame(
-            'Upload ke Google Drive gagal karena service account tidak bisa menyimpan file ke My Drive. Pindahkan folder tujuan ke Shared Drive atau isi GOOGLE_DRIVE_SHARED_DRIVE_ID.',
+            'Upload ke Google Drive belum aktif. Folder tujuan masih My Drive; gunakan Shared Drive kantor atau OAuth delegation.',
             $service->describeUploadFailure($throwable),
         );
     }

@@ -140,6 +140,7 @@ class DocumentViewer extends Component
             'previewStatus' => $previewStatus,
             'streamUrl' => $streamUrl,
             'htmlUrl' => $htmlUrl,
+            'googleDriveUploadAvailable' => app(GoogleDriveService::class)->canUploadWithConfiguredAccount(),
         ]);
     }
 

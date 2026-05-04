@@ -538,7 +538,9 @@ class ChatIndex extends Component
 
     public function render()
     {
-        return view('livewire.chat.chat-index');
+        return view('livewire.chat.chat-index', [
+            'googleDriveUploadAvailable' => app(GoogleDriveService::class)->canUploadWithConfiguredAccount(),
+        ]);
     }
 
     private function normalizeDriveExportFormat(string $targetFormat): ?string

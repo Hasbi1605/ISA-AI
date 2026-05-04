@@ -49,6 +49,9 @@ class GoogleDriveUploadTest extends TestCase
         $this->app->instance(DocumentExportService::class, $exportService);
 
         $googleDriveService = Mockery::mock(GoogleDriveService::class);
+        $googleDriveService->shouldReceive('canUploadWithConfiguredAccount')
+            ->byDefault()
+            ->andReturn(true);
         $googleDriveService->shouldReceive('uploadFromPath')
             ->once()
             ->with(Mockery::on(function (string $path): bool {
@@ -102,6 +105,9 @@ class GoogleDriveUploadTest extends TestCase
         $this->app->instance(DocumentExportService::class, $exportService);
 
         $googleDriveService = Mockery::mock(GoogleDriveService::class);
+        $googleDriveService->shouldReceive('canUploadWithConfiguredAccount')
+            ->byDefault()
+            ->andReturn(true);
         $googleDriveService->shouldReceive('uploadFromPath')
             ->once()
             ->with(Mockery::on(function (string $path): bool {
