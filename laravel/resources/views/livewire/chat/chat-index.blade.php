@@ -84,6 +84,8 @@
     <!-- RIGHT SIDEBAR: Documents -->
     @include('livewire.chat.partials.chat-right-sidebar')
 
+    <livewire:chat.google-drive-picker />
+
     <!-- Drag & Drop Overlay Visual -->
     <div x-show="isDraggingFile" x-transition.opacity class="fixed inset-0 z-[60] bg-ista-primary/10 backdrop-blur-[2px] flex items-center justify-center pointer-events-none">
         <div class="h-[120px] w-[320px] rounded-2xl border-2 border-dashed border-ista-primary bg-white/90 dark:bg-gray-900/90 shadow-2xl flex flex-col items-center justify-center gap-3 scale-110 transition-transform">

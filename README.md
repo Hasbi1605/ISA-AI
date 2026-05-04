@@ -86,10 +86,10 @@ Tahap 7 menambahkan integrasi Google Drive kantor terpusat untuk import dan expo
    - `GOOGLE_DRIVE_ROOT_FOLDER_ID`
    - `GOOGLE_DRIVE_UPLOAD_FOLDER_NAME` jika ingin folder default khusus
    - `GOOGLE_DRIVE_SHARED_DRIVE_ID` jika memakai Shared Drive
-5. Buka menu `Google Drive Kantor` di dashboard untuk cek status dan browser file.
+5. Buka halaman `/chat`, lalu gunakan tombol logo Google Drive di composer untuk mengambil file dari Drive kantor.
 
 ### Perilaku MVP
 
-- File binary PDF, DOCX, XLSX, dan CSV dari folder kantor yang diizinkan bisa di-browse dan diproses ke pipeline ISTA AI.
-- Hasil export dokumen bisa disimpan kembali ke Google Drive kantor.
+- File binary PDF, DOCX, XLSX, dan CSV dari folder kantor yang diizinkan bisa di-browse dari modal chat dan diproses ke pipeline ISTA AI.
+- Jawaban AI dan hasil export dokumen bisa disimpan kembali ke Google Drive kantor.
 - Secret service account tidak disimpan di database dan tidak ditampilkan di UI.

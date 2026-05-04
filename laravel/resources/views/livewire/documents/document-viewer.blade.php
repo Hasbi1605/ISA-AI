@@ -45,8 +45,8 @@
                                     preferTableExtraction: @js($usesTableExtraction),
                                 })"
                                 data-document-export-actions
-                                class="relative"
-                                x-on:click.outside="exportMenuOpen = false"
+                                class="relative flex items-center gap-2"
+                                x-on:click.outside="exportMenuOpen = false; driveMenuOpen = false"
                             >
                                 <button
                                     type="button"
@@ -68,8 +68,8 @@
                                 <div
                                     x-show="exportMenuOpen"
                                     x-transition.opacity
-                                    class="absolute right-0 z-30 mt-2 w-44 overflow-hidden rounded-xl border border-stone-200 bg-white shadow-xl dark:border-gray-700 dark:bg-gray-800"
-                                    style="display: none;"
+                                    class="absolute left-0 z-30 mt-2 w-44 overflow-hidden rounded-xl border border-stone-200 bg-white shadow-xl dark:border-gray-700 dark:bg-gray-800"
+                                    style="display: none; top: 2.5rem;"
                                 >
                                     <button type="button" data-document-export-format="xlsx" @click="exportTablesAs('xlsx')" class="flex w-full items-center justify-between px-4 py-2.5 text-left text-[12px] text-stone-700 transition hover:bg-stone-50 dark:text-gray-100 dark:hover:bg-gray-700/80">
                                         <span>XLSX</span>
@@ -87,9 +87,33 @@
                                         <span>PDF</span>
                                         <span class="text-[10px] text-[#64748B] dark:text-[#94A3B8]">Laporan</span>
                                     </button>
+                                </div>
 
-                                    <div class="border-t border-stone-200 bg-stone-50 px-4 py-2 text-[10px] font-semibold uppercase tracking-[0.2em] text-stone-500 dark:border-gray-700 dark:bg-gray-800/80 dark:text-gray-400">
-                                        Simpan ke Google Drive
+                                <button
+                                    type="button"
+                                    @click="toggleDriveMenu()"
+                                    :disabled="loading"
+                                    class="inline-flex h-9 items-center gap-2 rounded-md border border-stone-300 bg-white px-3 text-[12px] font-semibold text-stone-700 shadow-sm transition hover:border-ista-primary/30 hover:bg-stone-50 disabled:cursor-wait disabled:opacity-75 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-100 dark:hover:bg-gray-800"
+                                    :aria-label="loading ? 'Menyiapkan upload ke Google Drive' : 'Upload ke GDrive Kantor'"
+                                    :title="loading ? 'Menyiapkan upload ke Google Drive' : 'Upload ke GDrive Kantor'"
+                                >
+                                    <span x-show="loading" class="h-3.5 w-3.5 rounded-full border-2 border-current border-t-transparent animate-spin" aria-hidden="true"></span>
+                                    <svg x-show="!loading" class="h-4 w-4" viewBox="0 0 24 24" aria-hidden="true">
+                                        <path fill="#1A73E8" d="M8.8 3.2h6.5l6.4 11.2h-6.5L8.8 3.2Z" />
+                                        <path fill="#34A853" d="M2.3 14.4 8.8 3.2l3.2 5.6-3.3 5.6H2.3Z" />
+                                        <path fill="#FBBC04" d="M8.7 14.4h13L18.5 20H5.5l3.2-5.6Z" />
+                                    </svg>
+                                    <span class="hidden sm:inline">Upload ke GDrive Kantor</span>
+                                </button>
+
+                                <div
+                                    x-show="driveMenuOpen"
+                                    x-transition.opacity
+                                    class="absolute right-0 z-30 mt-2 w-52 overflow-hidden rounded-xl border border-stone-200 bg-white shadow-xl dark:border-gray-700 dark:bg-gray-800"
+                                    style="display: none; top: 2.5rem;"
+                                >
+                                    <div class="border-b border-stone-200 bg-stone-50 px-4 py-2 text-[10px] font-semibold uppercase tracking-[0.2em] text-stone-500 dark:border-gray-700 dark:bg-gray-800/80 dark:text-gray-400">
+                                        Upload ke Drive
                                     </div>
                                     <button type="button" data-document-drive-format="xlsx" @click="saveToGoogleDrive('xlsx')" class="flex w-full items-center justify-between px-4 py-2.5 text-left text-[12px] text-stone-700 transition hover:bg-stone-50 dark:text-gray-100 dark:hover:bg-gray-700/80">
                                         <span>XLSX</span>

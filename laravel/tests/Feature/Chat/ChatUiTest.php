@@ -37,7 +37,11 @@ class ChatUiTest extends TestCase
             ->assertSee(':disabled="isNavigating"', false)
             ->assertSee('data-chat-history-id=', false)
             ->assertSee('chat-history-item', false)
-            ->assertSee('wire:key="chat-history-visible-', false);
+            ->assertSee('wire:key="chat-history-visible-', false)
+            ->assertSee('openGoogleDrivePicker()', false)
+            ->assertSee('open-google-drive-picker', false)
+            ->assertSee('Ambil file dari Google Drive Kantor', false)
+            ->assertSee('Ambil file untuk chat', false);
     }
 
     public function test_loading_conversation_dispatches_active_history_event(): void
@@ -77,6 +81,8 @@ class ChatUiTest extends TestCase
             ->assertSee('role="status"', false)
             ->assertSee('Tersalin', false)
             ->assertSee('Bagikan', false)
+            ->assertSee('Upload ke Google Drive', false)
+            ->assertSee('Upload ke Drive', false)
             ->assertSee('Ekspor', false)
             ->assertSee('PDF', false)
             ->assertSee('DOCX', false)

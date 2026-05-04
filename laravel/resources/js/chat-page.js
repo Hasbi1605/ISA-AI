@@ -241,13 +241,18 @@ const registerChatPageData = (Alpine) => {
     }));
 
     Alpine.data('chatAnswerActions', (config = {}) => ({
+        messageId: Number(config.messageId || 0),
         html: config.html || '',
         exportUrl: config.exportUrl || '',
         exportFileName: config.exportFileName || 'ista-ai-export',
         exportMenuOpen: false,
+        driveMenuOpen: false,
         copied: false,
         exportLoading: false,
         exportError: '',
+        driveLoading: false,
+        driveError: '',
+        driveResult: null,
 
         plainText() {
             const wrapper = document.createElement('div');
@@ -330,7 +335,18 @@ const registerChatPageData = (Alpine) => {
                 return;
             }
 
+            this.driveMenuOpen = false;
             this.exportMenuOpen = !this.exportMenuOpen;
+        },
+
+        toggleDriveMenu() {
+            if (this.driveLoading) {
+                return;
+            }
+
+            this.exportMenuOpen = false;
+            this.driveMenuOpen = !this.driveMenuOpen;
+            this.driveError = '';
         },
 
         async copyToClipboard() {
@@ -438,6 +454,32 @@ const registerChatPageData = (Alpine) => {
                 this.exportError = 'Ekspor gagal. Coba lagi.';
             } finally {
                 this.exportLoading = false;
+            }
+        },
+
+        async uploadToGoogleDrive(format) {
+            if (!this.messageId || this.driveLoading) {
+                return;
+            }
+
+            this.driveMenuOpen = false;
+            this.driveLoading = true;
+            this.driveError = '';
+            this.driveResult = null;
+
+            try {
+                const result = await this.$wire.saveAnswerToGoogleDrive(this.messageId, format);
+
+                if (!result?.ok) {
+                    throw new Error(result?.message || 'Upload ke Google Drive gagal.');
+                }
+
+                this.driveResult = result;
+            } catch (error) {
+                console.error('Gagal mengupload jawaban AI ke Google Drive', error);
+                this.driveError = error?.message || 'Upload ke Google Drive gagal. Coba lagi.';
+            } finally {
+                this.driveLoading = false;
             }
         },
     }));
@@ -696,6 +738,10 @@ const registerChatPageData = (Alpine) => {
             input.click();
         },
 
+        openGoogleDrivePicker() {
+            this.$dispatch('open-google-drive-picker');
+        },
+
         scrollChatToBottom(smooth = false) {
             const chatBox = document.querySelector('[data-chat-box]');
 
@@ -784,6 +830,7 @@ const registerChatPageData = (Alpine) => {
         fileName: config.fileName || 'ista-ai-tabel-dokumen',
         preferTableExtraction: Boolean(config.preferTableExtraction),
         exportMenuOpen: false,
+        driveMenuOpen: false,
         loading: false,
         error: '',
         contentHtml: '',
@@ -794,7 +841,18 @@ const registerChatPageData = (Alpine) => {
                 return;
             }
 
+            this.driveMenuOpen = false;
             this.exportMenuOpen = !this.exportMenuOpen;
+            this.error = '';
+        },
+
+        toggleDriveMenu() {
+            if (this.loading) {
+                return;
+            }
+
+            this.exportMenuOpen = false;
+            this.driveMenuOpen = !this.driveMenuOpen;
             this.error = '';
         },
 
@@ -804,6 +862,7 @@ const registerChatPageData = (Alpine) => {
             }
 
             this.exportMenuOpen = false;
+            this.driveMenuOpen = false;
             this.loading = true;
             this.error = '';
 
@@ -848,6 +907,7 @@ const registerChatPageData = (Alpine) => {
             }
 
             this.exportMenuOpen = false;
+            this.driveMenuOpen = false;
             this.loading = true;
             this.error = '';
 

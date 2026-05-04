@@ -1,17 +1,19 @@
 <?php
 
-namespace App\Livewire\CloudStorage;
+namespace App\Livewire\Chat;
 
 use App\Models\User;
 use App\Services\CloudStorage\GoogleDriveService;
 use App\Services\DocumentLifecycleService;
 use Illuminate\Support\Facades\Auth;
-use Livewire\Attributes\Layout;
 use Livewire\Component;
 
-#[Layout('layouts.app')]
-class GoogleDriveBrowser extends Component
+class GoogleDrivePicker extends Component
 {
+    public bool $isOpen = false;
+
+    public bool $isConfigured = false;
+
     public string $search = '';
 
     public ?string $currentFolderId = null;
@@ -35,50 +37,35 @@ class GoogleDriveBrowser extends Component
      */
     public array $pageTokenStack = [];
 
-    public bool $isConfigured = false;
-
     public bool $isLoading = false;
 
     public ?string $statusMessage = null;
 
     public ?string $errorMessage = null;
 
-    public function mount(GoogleDriveService $googleDriveService): void
+    public function open(): void
     {
-        $this->isConfigured = $googleDriveService->isConfigured();
+        $this->isOpen = true;
+        $this->statusMessage = null;
+        $this->errorMessage = null;
 
-        if (! $this->isConfigured) {
-            return;
-        }
-
-        $rootFolderId = $googleDriveService->rootFolderId();
-
-        if ($rootFolderId === null) {
-            $this->isConfigured = false;
-
-            return;
-        }
-
-        $this->currentFolderId = $rootFolderId;
-        $this->breadcrumb = [
-            [
-                'id' => $rootFolderId,
-                'name' => 'Folder root ISTA AI',
-            ],
-        ];
-
-        $this->loadFiles($googleDriveService);
+        $this->initializeDriveState();
     }
 
-    public function updatedSearch(GoogleDriveService $googleDriveService): void
+    public function close(): void
+    {
+        $this->isOpen = false;
+    }
+
+    public function updatedSearch(): void
     {
         $this->pageTokenStack = [];
         $this->pageToken = null;
         $this->nextPageToken = null;
-        $this->loadFiles($googleDriveService);
+        $this->loadFiles();
     }
 
-    public function goToBreadcrumb(int $index, GoogleDriveService $googleDriveService): void
+    public function goToBreadcrumb(int $index): void
     {
         if (! isset($this->breadcrumb[$index])) {
             return;
@@ -89,10 +76,10 @@ class GoogleDriveBrowser extends Component
         $this->pageTokenStack = [];
         $this->pageToken = null;
         $this->nextPageToken = null;
-        $this->loadFiles($googleDriveService);
+        $this->loadFiles();
     }
 
-    public function goToFolder(string $folderId, string $folderName, GoogleDriveService $googleDriveService): void
+    public function goToFolder(string $folderId, string $folderName): void
     {
         if (! $this->isConfigured) {
             return;
@@ -106,20 +93,20 @@ class GoogleDriveBrowser extends Component
         $this->pageTokenStack = [];
         $this->pageToken = null;
         $this->nextPageToken = null;
-        $this->loadFiles($googleDriveService);
+        $this->loadFiles();
     }
 
-    public function previousPage(GoogleDriveService $googleDriveService): void
+    public function previousPage(): void
     {
         if ($this->pageTokenStack === []) {
             return;
         }
 
         $this->pageToken = array_pop($this->pageTokenStack);
-        $this->loadFiles($googleDriveService);
+        $this->loadFiles();
     }
 
-    public function nextPage(GoogleDriveService $googleDriveService): void
+    public function nextPage(): void
     {
         if ($this->nextPageToken === null || $this->nextPageToken === '') {
             return;
@@ -127,7 +114,7 @@ class GoogleDriveBrowser extends Component
 
         $this->pageTokenStack[] = $this->pageToken;
         $this->pageToken = $this->nextPageToken;
-        $this->loadFiles($googleDriveService);
+        $this->loadFiles();
     }
 
     public function processFile(string $fileId, DocumentLifecycleService $documentLifecycleService): void
@@ -143,8 +130,12 @@ class GoogleDriveBrowser extends Component
 
         try {
             $document = $documentLifecycleService->ingestFromCloud($user, 'google_drive', $fileId);
-            $this->statusMessage = sprintf('File "%s" berhasil diproses menjadi dokumen ISTA AI.', $document->original_name);
+            $this->statusMessage = sprintf('File "%s" berhasil ditambahkan dari Google Drive.', $document->original_name);
             $this->errorMessage = null;
+            $this->isOpen = false;
+
+            $this->dispatch('google-drive-document-imported', documentId: $document->id);
+            $this->dispatch('open-sidebar-right');
         } catch (\Throwable $e) {
             $this->errorMessage = $e->getMessage();
             $this->statusMessage = null;
@@ -153,32 +144,66 @@ class GoogleDriveBrowser extends Component
 
     public function render()
     {
-        $googleDriveService = app(GoogleDriveService::class);
+        $defaultUploadFolderName = 'ISTA AI';
+        $sharedDriveId = null;
 
-        if (! $this->isConfigured) {
-            return view('livewire.cloud-storage.google-drive-browser', [
-                'isConfigured' => false,
-                'items' => [],
-                'breadcrumb' => [],
-                'currentFolderId' => null,
-                'nextPageToken' => null,
-            ]);
+        if ($this->isConfigured) {
+            $googleDriveService = app(GoogleDriveService::class);
+            $defaultUploadFolderName = $googleDriveService->defaultUploadFolderName();
+            $sharedDriveId = $googleDriveService->sharedDriveId();
         }
 
-        return view('livewire.cloud-storage.google-drive-browser', [
-            'isConfigured' => true,
+        return view('livewire.chat.google-drive-picker', [
             'items' => $this->items,
             'breadcrumb' => $this->breadcrumb,
-            'currentFolderId' => $this->currentFolderId,
             'nextPageToken' => $this->nextPageToken,
-            'defaultUploadFolderName' => $googleDriveService->defaultUploadFolderName(),
-            'sharedDriveId' => $googleDriveService->sharedDriveId(),
+            'defaultUploadFolderName' => $defaultUploadFolderName,
+            'sharedDriveId' => $sharedDriveId,
         ]);
     }
 
-    private function loadFiles(GoogleDriveService $googleDriveService): void
+    private function initializeDriveState(): void
     {
-        if (! $this->isConfigured || $this->currentFolderId === null) {
+        $googleDriveService = app(GoogleDriveService::class);
+        $this->isConfigured = $googleDriveService->isConfigured();
+
+        if (! $this->isConfigured) {
+            $this->items = [];
+            $this->breadcrumb = [];
+            $this->currentFolderId = null;
+            $this->nextPageToken = null;
+
+            return;
+        }
+
+        $rootFolderId = $googleDriveService->rootFolderId();
+
+        if ($rootFolderId === null) {
+            $this->isConfigured = false;
+            $this->items = [];
+            $this->breadcrumb = [];
+            $this->currentFolderId = null;
+            $this->nextPageToken = null;
+
+            return;
+        }
+
+        if ($this->currentFolderId === null) {
+            $this->currentFolderId = $rootFolderId;
+            $this->breadcrumb = [
+                [
+                    'id' => $rootFolderId,
+                    'name' => 'Folder root ISTA AI',
+                ],
+            ];
+        }
+
+        $this->loadFiles();
+    }
+
+    private function loadFiles(): void
+    {
+        if (! $this->isOpen || ! $this->isConfigured || $this->currentFolderId === null) {
             $this->items = [];
             $this->nextPageToken = null;
 
@@ -189,7 +214,7 @@ class GoogleDriveBrowser extends Component
         $this->errorMessage = null;
 
         try {
-            $listing = $googleDriveService->listFiles(
+            $listing = app(GoogleDriveService::class)->listFiles(
                 $this->currentFolderId,
                 $this->search,
                 $this->pageToken,

@@ -1,8 +1,8 @@
 <?php
 
-namespace Tests\Feature\CloudStorage;
+namespace Tests\Feature\Chat;
 
-use App\Livewire\CloudStorage\GoogleDriveBrowser;
+use App\Livewire\Chat\GoogleDrivePicker;
 use App\Models\User;
 use App\Services\CloudStorage\GoogleDriveService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -10,11 +10,11 @@ use Livewire\Livewire;
 use Mockery;
 use Tests\TestCase;
 
-class GoogleDriveBrowserTest extends TestCase
+class GoogleDrivePickerTest extends TestCase
 {
     use RefreshDatabase;
 
-    public function test_browser_lists_files_from_the_configured_root_folder(): void
+    public function test_chat_google_drive_picker_lists_files_from_configured_root_folder(): void
     {
         $user = User::factory()->create();
 
@@ -61,12 +61,15 @@ class GoogleDriveBrowserTest extends TestCase
         $this->app->instance(GoogleDriveService::class, $googleDriveService);
 
         Livewire::actingAs($user)
-            ->test(GoogleDriveBrowser::class)
+            ->test(GoogleDrivePicker::class)
+            ->call('open')
+            ->assertSet('isOpen', true)
+            ->assertSee('Ambil file untuk chat', false)
             ->assertSee('Folder root ISTA AI', false)
             ->assertSee('Subfolder', false)
             ->assertSee('arsip.pdf', false)
             ->assertSee('Buka Folder', false)
-            ->assertSee('Proses dengan AI', false)
+            ->assertSee('Gunakan di Chat', false)
             ->assertSet('nextPageToken', 'page-2');
     }
 }
