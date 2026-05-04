@@ -20,6 +20,7 @@
             'searchDark' => asset('images/icons/search-dark.svg'),
             'uploadLight' => asset('images/icons/upload-light.svg'),
             'uploadDark' => asset('images/icons/upload-dark.svg'),
+            'googleDrive' => asset('images/icons/google-drive.svg'),
             'sendLight' => asset('images/icons/send-light.svg'),
             'sendDark' => asset('images/icons/send-dark.svg'),
         ];

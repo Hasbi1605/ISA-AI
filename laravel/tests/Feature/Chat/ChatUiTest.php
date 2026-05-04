@@ -41,6 +41,7 @@ class ChatUiTest extends TestCase
             ->assertSee('openGoogleDrivePicker()', false)
             ->assertSee('open-google-drive-picker', false)
             ->assertSee('Ambil file dari Google Drive Kantor', false)
+            ->assertSee('images/icons/google-drive.svg', false)
             ->assertSee('Ambil file untuk chat', false);
     }
 
@@ -81,7 +82,9 @@ class ChatUiTest extends TestCase
             ->assertSee('role="status"', false)
             ->assertSee('Tersalin', false)
             ->assertSee('Bagikan', false)
+            ->assertSee('text-[#25D366]', false)
             ->assertSee('Upload ke Google Drive', false)
+            ->assertSee('images/icons/google-drive.svg', false)
             ->assertSee('Upload ke Drive', false)
             ->assertSee('Ekspor', false)
             ->assertSee('PDF', false)

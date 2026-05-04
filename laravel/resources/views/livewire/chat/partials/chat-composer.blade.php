@@ -106,11 +106,7 @@
 
                     <div class="flex items-center gap-2">
                         <button type="button" @click="openGoogleDrivePicker()" class="h-[34px] w-[34px] rounded-full transition-colors flex items-center justify-center bg-transparent hover:bg-[#F1F5F9] dark:hover:bg-gray-800" title="Ambil file dari Google Drive Kantor" aria-label="Ambil file dari Google Drive Kantor">
-                            <svg class="h-[19px] w-[19px]" viewBox="0 0 24 24" aria-hidden="true">
-                                <path fill="#1A73E8" d="M8.8 3.2h6.5l6.4 11.2h-6.5L8.8 3.2Z" />
-                                <path fill="#34A853" d="M2.3 14.4 8.8 3.2l3.2 5.6-3.3 5.6H2.3Z" />
-                                <path fill="#FBBC04" d="M8.7 14.4h13L18.5 20H5.5l3.2-5.6Z" />
-                            </svg>
+                            <img src="{{ $uiIcons['googleDrive'] }}" alt="" class="h-[19px] w-[21px]" />
                         </button>
 
                         <button type="button" @click="openAttachmentPicker()" wire:loading.attr="disabled" wire:target="chatAttachment" class="h-[34px] w-[34px] rounded-full transition-colors flex items-center justify-center bg-transparent hover:bg-[#F1F5F9] dark:hover:bg-gray-800 disabled:opacity-60" title="Lampirkan file">

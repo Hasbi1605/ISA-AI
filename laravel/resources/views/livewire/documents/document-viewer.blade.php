@@ -98,11 +98,7 @@
                                     :title="loading ? 'Menyiapkan upload ke Google Drive' : 'Upload ke GDrive Kantor'"
                                 >
                                     <span x-show="loading" class="h-3.5 w-3.5 rounded-full border-2 border-current border-t-transparent animate-spin" aria-hidden="true"></span>
-                                    <svg x-show="!loading" class="h-4 w-4" viewBox="0 0 24 24" aria-hidden="true">
-                                        <path fill="#1A73E8" d="M8.8 3.2h6.5l6.4 11.2h-6.5L8.8 3.2Z" />
-                                        <path fill="#34A853" d="M2.3 14.4 8.8 3.2l3.2 5.6-3.3 5.6H2.3Z" />
-                                        <path fill="#FBBC04" d="M8.7 14.4h13L18.5 20H5.5l3.2-5.6Z" />
-                                    </svg>
+                                    <img x-show="!loading" src="{{ asset('images/icons/google-drive.svg') }}" alt="" class="h-4 w-[18px]" />
                                     <span class="hidden sm:inline">Upload ke GDrive Kantor</span>
                                 </button>
 

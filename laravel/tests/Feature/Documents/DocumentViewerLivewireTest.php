@@ -93,6 +93,7 @@ class DocumentViewerLivewireTest extends TestCase
             ->assertSee('data-document-export-format="docx"', false)
             ->assertSee('data-document-export-format="pdf"', false)
             ->assertSee('Upload ke GDrive Kantor', false)
+            ->assertSee('images/icons/google-drive.svg', false)
             ->assertSee('Upload ke Drive', false)
             ->assertDontSee('Simpan ke Google Drive', false)
             ->assertSee('data-document-drive-format="xlsx"', false)
