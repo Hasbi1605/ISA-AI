@@ -3,6 +3,7 @@
 namespace Tests\Unit\Services\CloudStorage;
 
 use App\Services\CloudStorage\GoogleDriveService;
+use Google\Service\Exception as GoogleServiceException;
 use Tests\TestCase;
 
 class GoogleDriveServiceTest extends TestCase
@@ -47,5 +48,37 @@ class GoogleDriveServiceTest extends TestCase
         $service = app(GoogleDriveService::class);
 
         $this->assertNull($service->sharedDriveId());
+    }
+
+    public function test_upload_error_message_is_sanitized_for_service_account_quota_errors(): void
+    {
+        $service = app(GoogleDriveService::class);
+
+        $throwable = new GoogleServiceException(
+            '{"error":{"code":403,"message":"Service Accounts do not have storage quota. Leverage shared drives, or use OAuth delegation instead.","errors":[{"message":"Service Accounts do not have storage quota. Leverage shared drives, or use OAuth delegation instead.","domain":"usageLimits","reason":"storageQuotaExceeded"}]}}',
+            403,
+            null,
+            [
+                [
+                    'message' => 'Service Accounts do not have storage quota. Leverage shared drives, or use OAuth delegation instead.',
+                    'domain' => 'usageLimits',
+                    'reason' => 'storageQuotaExceeded',
+                ],
+            ]
+        );
+
+        $this->assertSame(
+            'Upload ke Google Drive gagal karena service account tidak bisa menyimpan file ke My Drive. Pindahkan folder tujuan ke Shared Drive atau isi GOOGLE_DRIVE_SHARED_DRIVE_ID.',
+            $service->describeUploadFailure($throwable),
+        );
+    }
+
+    public function test_upload_error_message_extracts_google_api_message_without_raw_json(): void
+    {
+        $service = app(GoogleDriveService::class);
+
+        $throwable = new \RuntimeException('{"error":{"code":404,"message":"Folder tujuan tidak ditemukan.","errors":[{"message":"Folder tujuan tidak ditemukan.","domain":"global","reason":"notFound"}]}}');
+
+        $this->assertSame('Folder tujuan tidak ditemukan.', $service->describeUploadFailure($throwable));
     }
 }

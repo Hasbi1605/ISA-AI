@@ -5,6 +5,7 @@ namespace App\Services\CloudStorage;
 use Google\Client;
 use Google\Service\Drive;
 use Google\Service\Drive\DriveFile;
+use Google\Service\Exception as GoogleServiceException;
 use Illuminate\Support\Facades\Storage;
 use RuntimeException;
 
@@ -76,7 +77,7 @@ class GoogleDriveService
             $options['corpora'] = 'user';
         }
 
-        $response = $this->drive()->files->listFiles($options);
+        $response = $this->callDriveApi(fn () => $this->drive()->files->listFiles($options));
         $items = [];
 
         foreach ($response->getFiles() as $file) {
@@ -134,10 +135,10 @@ class GoogleDriveService
             throw new RuntimeException('Gagal membuat file sementara untuk Google Drive.');
         }
 
-        $response = $this->drive()->files->get($fileId, [
+        $response = $this->callDriveApi(fn () => $this->drive()->files->get($fileId, [
             'alt' => 'media',
             'supportsAllDrives' => true,
-        ]);
+        ]));
 
         $contents = null;
 
@@ -192,13 +193,13 @@ class GoogleDriveService
             ],
         ]);
 
-        $response = $this->drive()->files->create($metadata, [
+        $response = $this->callDriveApi(fn () => $this->drive()->files->create($metadata, [
             'data' => $contents,
             'mimeType' => $mimeType,
             'uploadType' => 'multipart',
             'supportsAllDrives' => true,
             'fields' => 'id,name,mimeType,size,webViewLink,parents',
-        ]);
+        ]));
 
         return [
             'external_id' => (string) $response->getId(),
@@ -227,20 +228,44 @@ class GoogleDriveService
             'parents' => [$folderId],
         ]);
 
-        $created = $this->drive()->files->create($folder, [
+        $created = $this->callDriveApi(fn () => $this->drive()->files->create($folder, [
             'supportsAllDrives' => true,
             'fields' => 'id',
-        ]);
+        ]));
 
         return (string) $created->getId();
     }
 
     public function getFileMetadata(string $fileId): DriveFile
     {
-        return $this->drive()->files->get($fileId, [
+        return $this->callDriveApi(fn () => $this->drive()->files->get($fileId, [
             'fields' => 'id,name,mimeType,size,webViewLink,parents,modifiedTime,shortcutDetails',
             'supportsAllDrives' => true,
-        ]);
+        ]));
+    }
+
+    public function describeUploadFailure(\Throwable $throwable): string
+    {
+        $message = trim($throwable->getMessage());
+        $details = $this->extractGoogleDriveErrorDetails($throwable, $message);
+
+        if ($this->isSharedDriveQuotaError($throwable, $message, $details)) {
+            return 'Upload ke Google Drive gagal karena service account tidak bisa menyimpan file ke My Drive. Pindahkan folder tujuan ke Shared Drive atau isi GOOGLE_DRIVE_SHARED_DRIVE_ID.';
+        }
+
+        if ($details['message'] !== null && $details['message'] !== '') {
+            return $this->normalizeHumanReadableMessage($details['message']);
+        }
+
+        if ($message !== '') {
+            if ($this->looksLikeJsonPayload($message)) {
+                return 'Upload ke Google Drive gagal.';
+            }
+
+            return $this->normalizeHumanReadableMessage($message);
+        }
+
+        return 'Upload ke Google Drive gagal.';
     }
 
     private function drive(): Drive
@@ -253,6 +278,23 @@ class GoogleDriveService
         $this->drive = new Drive($client);
 
         return $this->drive;
+    }
+
+    /**
+     * @template TReturn
+     *
+     * @param  callable():TReturn  $callback
+     * @return TReturn
+     */
+    private function callDriveApi(callable $callback): mixed
+    {
+        try {
+            return $callback();
+        } catch (RuntimeException $e) {
+            throw $e;
+        } catch (\Throwable $e) {
+            throw new RuntimeException($this->describeUploadFailure($e), 0, $e);
+        }
     }
 
     private function client(): Client
@@ -368,7 +410,7 @@ class GoogleDriveService
             $options['corpora'] = 'user';
         }
 
-        $response = $this->drive()->files->listFiles($options);
+        $response = $this->callDriveApi(fn () => $this->drive()->files->listFiles($options));
 
         $files = $response->getFiles();
 
@@ -407,5 +449,167 @@ class GoogleDriveService
         $normalized = $this->normalizeStringConfig($value);
 
         return $normalized !== '' ? $normalized : null;
+    }
+
+    /**
+     * @return array{message: ?string, reason: ?string}
+     */
+    private function extractGoogleDriveErrorDetails(\Throwable $throwable, string $message): array
+    {
+        $details = [
+            'message' => null,
+            'reason' => null,
+        ];
+
+        if ($throwable instanceof GoogleServiceException) {
+            foreach ($throwable->getErrors() ?? [] as $error) {
+                if (! is_array($error)) {
+                    continue;
+                }
+
+                if ($details['message'] === null && isset($error['message']) && is_string($error['message']) && trim($error['message']) !== '') {
+                    $details['message'] = trim($error['message']);
+                }
+
+                if ($details['reason'] === null && isset($error['reason']) && is_string($error['reason']) && trim($error['reason']) !== '') {
+                    $details['reason'] = trim($error['reason']);
+                }
+
+                if ($details['message'] !== null && $details['reason'] !== null) {
+                    break;
+                }
+            }
+        }
+
+        $parsedMessage = $this->parseGoogleDriveJsonMessage($message);
+        if ($details['message'] === null && $parsedMessage !== null) {
+            $details['message'] = $parsedMessage;
+        }
+
+        if ($details['reason'] === null) {
+            $parsedReason = $this->parseGoogleDriveJsonReason($message);
+            if ($parsedReason !== null) {
+                $details['reason'] = $parsedReason;
+            }
+        }
+
+        return $details;
+    }
+
+    private function isSharedDriveQuotaError(\Throwable $throwable, string $message, array $details): bool
+    {
+        $haystack = strtolower($message.' '.($details['message'] ?? '').' '.($details['reason'] ?? ''));
+
+        if ($throwable instanceof GoogleServiceException) {
+            foreach ($throwable->getErrors() ?? [] as $error) {
+                if (! is_array($error)) {
+                    continue;
+                }
+
+                if (isset($error['message']) && is_string($error['message'])) {
+                    $haystack .= ' '.strtolower($error['message']);
+                }
+
+                if (isset($error['reason']) && is_string($error['reason'])) {
+                    $haystack .= ' '.strtolower($error['reason']);
+                }
+            }
+        }
+
+        return str_contains($haystack, 'storagequotaexceeded')
+            || str_contains($haystack, 'service accounts do not have storage quota')
+            || str_contains($haystack, 'do not have storage quota');
+    }
+
+    private function parseGoogleDriveJsonMessage(string $message): ?string
+    {
+        $candidate = trim($message);
+
+        if ($candidate === '' || (! str_starts_with($candidate, '{') && ! str_starts_with($candidate, '['))) {
+            return null;
+        }
+
+        $decoded = json_decode($candidate, true);
+
+        if (! is_array($decoded)) {
+            return null;
+        }
+
+        $error = $decoded['error'] ?? null;
+
+        if (! is_array($error)) {
+            return null;
+        }
+
+        if (isset($error['message']) && is_string($error['message']) && trim($error['message']) !== '') {
+            return trim($error['message']);
+        }
+
+        if (! isset($error['errors']) || ! is_array($error['errors'])) {
+            return null;
+        }
+
+        foreach ($error['errors'] as $errorItem) {
+            if (! is_array($errorItem)) {
+                continue;
+            }
+
+            if (isset($errorItem['message']) && is_string($errorItem['message']) && trim($errorItem['message']) !== '') {
+                return trim($errorItem['message']);
+            }
+        }
+
+        return null;
+    }
+
+    private function parseGoogleDriveJsonReason(string $message): ?string
+    {
+        $candidate = trim($message);
+
+        if ($candidate === '' || (! str_starts_with($candidate, '{') && ! str_starts_with($candidate, '['))) {
+            return null;
+        }
+
+        $decoded = json_decode($candidate, true);
+
+        if (! is_array($decoded)) {
+            return null;
+        }
+
+        $error = $decoded['error'] ?? null;
+
+        if (! is_array($error) || ! isset($error['errors']) || ! is_array($error['errors'])) {
+            return null;
+        }
+
+        foreach ($error['errors'] as $errorItem) {
+            if (! is_array($errorItem)) {
+                continue;
+            }
+
+            if (isset($errorItem['reason']) && is_string($errorItem['reason']) && trim($errorItem['reason']) !== '') {
+                return trim($errorItem['reason']);
+            }
+        }
+
+        return null;
+    }
+
+    private function normalizeHumanReadableMessage(string $message): string
+    {
+        $normalized = preg_replace('/\s+/', ' ', trim($message));
+
+        if (! is_string($normalized) || $normalized === '') {
+            return 'Upload ke Google Drive gagal.';
+        }
+
+        return $normalized;
+    }
+
+    private function looksLikeJsonPayload(string $message): bool
+    {
+        $candidate = trim($message);
+
+        return $candidate !== '' && (str_starts_with($candidate, '{') || str_starts_with($candidate, '['));
     }
 }
