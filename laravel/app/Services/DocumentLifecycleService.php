@@ -4,7 +4,10 @@ namespace App\Services;
 
 use App\Jobs\ProcessDocument;
 use App\Jobs\RenderDocumentPreview;
+use App\Models\CloudStorageFile;
 use App\Models\Document;
+use App\Models\User;
+use App\Services\CloudStorage\GoogleDriveService;
 use App\Services\Documents\DocumentPreviewRenderer;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Http;
@@ -24,7 +27,7 @@ class DocumentLifecycleService
      * @throws ValidationException
      * @throws \Exception
      */
-    public function uploadDocument(UploadedFile $file, int $userId): Document
+    public function uploadDocument(UploadedFile $file, int $userId, array $sourceAttributes = []): Document
     {
         // 1. Check Document Limit
         $count = Document::where('user_id', $userId)->count();
@@ -69,6 +72,9 @@ class DocumentLifecycleService
             'filename' => $filename,
             'original_name' => $originalName,
             'file_path' => $filePath,
+            'source_provider' => $sourceAttributes['source_provider'] ?? 'local',
+            'source_external_id' => $sourceAttributes['source_external_id'] ?? null,
+            'source_synced_at' => $sourceAttributes['source_synced_at'] ?? null,
             'mime_type' => $detectedMimeType,
             'file_size_bytes' => $file->getSize(),
             'status' => 'pending',
@@ -83,6 +89,78 @@ class DocumentLifecycleService
         $this->dispatchProcessing($document);
 
         return $document;
+    }
+
+    /**
+     * Download a file from Google Drive and ingest it into the normal document pipeline.
+     */
+    public function ingestFromCloud(User $user, string $provider, string $externalId): Document
+    {
+        if ($provider !== 'google_drive') {
+            throw new InvalidArgumentException('Provider cloud storage tidak didukung.');
+        }
+
+        $existingDocument = Document::query()
+            ->where('user_id', $user->id)
+            ->where('source_provider', $provider)
+            ->where('source_external_id', $externalId)
+            ->first();
+
+        if ($existingDocument !== null) {
+            throw ValidationException::withMessages([
+                'file' => 'File Drive ini sudah pernah diproses di akun Anda.',
+            ]);
+        }
+
+        /** @var GoogleDriveService $driveService */
+        $driveService = app(GoogleDriveService::class);
+        $download = $driveService->downloadToTemp($externalId);
+        $tempPath = $download['path'] ?? null;
+
+        if (! is_string($tempPath) || $tempPath === '' || ! is_file($tempPath)) {
+            throw new \RuntimeException('Gagal menyiapkan file sementara dari Google Drive.');
+        }
+
+        $originalName = (string) ($download['original_name'] ?? basename($tempPath));
+        $mimeType = (string) ($download['mime_type'] ?? 'application/octet-stream');
+        $sourceSyncedAt = now();
+
+        try {
+            $uploadedFile = new UploadedFile(
+                $tempPath,
+                $originalName,
+                $mimeType,
+                null,
+                true
+            );
+
+            $document = $this->uploadDocument($uploadedFile, $user->id, [
+                'source_provider' => $provider,
+                'source_external_id' => $externalId,
+                'source_synced_at' => $sourceSyncedAt,
+            ]);
+
+            CloudStorageFile::create([
+                'user_id' => $user->id,
+                'provider' => $provider,
+                'direction' => CloudStorageFile::DIRECTION_IMPORT,
+                'local_type' => Document::class,
+                'local_id' => $document->id,
+                'external_id' => $externalId,
+                'name' => $originalName,
+                'mime_type' => $mimeType,
+                'web_view_link' => $download['web_view_link'] ?? null,
+                'folder_external_id' => $download['folder_external_id'] ?? null,
+                'size_bytes' => $download['size_bytes'] ?? null,
+                'synced_at' => $sourceSyncedAt,
+            ]);
+
+            return $document;
+        } finally {
+            if (is_file($tempPath)) {
+                @unlink($tempPath);
+            }
+        }
     }
 
     /**

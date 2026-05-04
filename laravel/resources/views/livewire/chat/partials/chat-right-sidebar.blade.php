@@ -118,6 +118,9 @@
                               <div class="min-w-0 flex-1 flex flex-col gap-0.5">
                                   <div class="flex items-center gap-2">
                                      <p class="text-[13.3px] text-stone-800 dark:text-[#F8FAFC] truncate">{{ $doc->original_name }}</p>
+                                     @if(($doc->source_provider ?? 'local') === 'google_drive')
+                                         <span class="inline-flex items-center rounded-full bg-sky-50 px-2 py-0.5 text-[9px] font-semibold uppercase tracking-[0.18em] text-sky-700 dark:bg-sky-500/10 dark:text-sky-200">Google Drive</span>
+                                     @endif
                                      @if($isLoading)
                                          <span class="inline-flex items-center gap-1 text-[10px] text-ista-primary dark:text-[#A5B4FC]">
                                              <span class="h-1.5 w-1.5 rounded-full bg-current animate-ping"></span>

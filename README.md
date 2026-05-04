@@ -71,3 +71,25 @@ Sistem RAG menggunakan pendekatan campuran (*Hybrid/Search-First Strategy*):
 ---
 
 Dengan ketiga ekosistem di atas, ISTA AI memiliki sifat yang sangat Tangguh (anti-Down), Ekosistem RAG yang presisi (anti-Mismatch), dan berbudaya sapaan cepat tanpa membuang uang/berceramah (Web Search Filter).
+
+## Google Drive Kantor
+
+Tahap 7 menambahkan integrasi Google Drive kantor terpusat untuk import dan export dokumen.
+
+### Setup singkat
+
+1. Aktifkan Google Drive API di Google Cloud Console.
+2. Buat service account dan unduh key JSON-nya.
+3. Share folder atau Shared Drive kantor yang dipakai ISTA AI ke email service account tersebut.
+4. Isi environment server:
+   - `GOOGLE_DRIVE_SERVICE_ACCOUNT_JSON` atau `GOOGLE_DRIVE_SERVICE_ACCOUNT_PATH`
+   - `GOOGLE_DRIVE_ROOT_FOLDER_ID`
+   - `GOOGLE_DRIVE_UPLOAD_FOLDER_NAME` jika ingin folder default khusus
+   - `GOOGLE_DRIVE_SHARED_DRIVE_ID` jika memakai Shared Drive
+5. Buka menu `Google Drive Kantor` di dashboard untuk cek status dan browser file.
+
+### Perilaku MVP
+
+- File binary PDF, DOCX, XLSX, dan CSV dari folder kantor yang diizinkan bisa di-browse dan diproses ke pipeline ISTA AI.
+- Hasil export dokumen bisa disimpan kembali ke Google Drive kantor.
+- Secret service account tidak disimpan di database dan tidak ditampilkan di UI.

@@ -4,6 +4,7 @@ namespace Tests\Feature\Chat;
 
 use App\Livewire\Chat\ChatIndex;
 use App\Models\Conversation;
+use App\Models\Document;
 use App\Models\Message;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -106,12 +107,36 @@ class ChatUiTest extends TestCase
         Livewire::actingAs($user)
             ->test(ChatIndex::class)
             ->set('messages', [$firstMessage->toArray(), $secondMessage->toArray()])
-            ->assertSee('wire:key="chat-message-' . $firstMessage->id . '"', false)
-            ->assertSee('wire:key="chat-message-' . $secondMessage->id . '"', false)
-            ->assertSee('wire:key="chat-answer-actions-' . $firstMessage->id . '"', false)
-            ->assertSee('wire:key="chat-answer-actions-' . $secondMessage->id . '"', false)
-            ->assertSee('data-answer-message-id="' . $firstMessage->id . '"', false)
-            ->assertSee('data-answer-message-id="' . $secondMessage->id . '"', false);
+            ->assertSee('wire:key="chat-message-'.$firstMessage->id.'"', false)
+            ->assertSee('wire:key="chat-message-'.$secondMessage->id.'"', false)
+            ->assertSee('wire:key="chat-answer-actions-'.$firstMessage->id.'"', false)
+            ->assertSee('wire:key="chat-answer-actions-'.$secondMessage->id.'"', false)
+            ->assertSee('data-answer-message-id="'.$firstMessage->id.'"', false)
+            ->assertSee('data-answer-message-id="'.$secondMessage->id.'"', false);
+    }
+
+    public function test_google_drive_documents_show_source_label_in_sidebar(): void
+    {
+        $user = User::factory()->create();
+
+        Document::create([
+            'user_id' => $user->id,
+            'filename' => 'surat-drive.pdf',
+            'original_name' => 'surat-drive.pdf',
+            'file_path' => 'documents/'.$user->id.'/surat-drive.pdf',
+            'source_provider' => 'google_drive',
+            'source_external_id' => 'drive-file-id',
+            'source_synced_at' => now(),
+            'mime_type' => 'application/pdf',
+            'file_size_bytes' => 1234,
+            'status' => 'ready',
+            'preview_status' => Document::PREVIEW_STATUS_READY,
+        ]);
+
+        Livewire::actingAs($user)
+            ->test(ChatIndex::class)
+            ->assertSee('Google Drive', false)
+            ->assertSee('surat-drive.pdf', false);
     }
 
     public function test_latest_chat_answer_still_renders_actions(): void

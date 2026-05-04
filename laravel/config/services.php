@@ -61,4 +61,12 @@ return [
         'signed_url_ttl_minutes' => env('ONLYOFFICE_SIGNED_URL_TTL_MINUTES', 30),
     ],
 
+    'google_drive' => [
+        'service_account_json' => env('GOOGLE_DRIVE_SERVICE_ACCOUNT_JSON'),
+        'service_account_path' => env('GOOGLE_DRIVE_SERVICE_ACCOUNT_PATH'),
+        'root_folder_id' => env('GOOGLE_DRIVE_ROOT_FOLDER_ID'),
+        'default_upload_folder_name' => env('GOOGLE_DRIVE_UPLOAD_FOLDER_NAME', 'ISTA AI'),
+        'shared_drive_id' => env('GOOGLE_DRIVE_SHARED_DRIVE_ID'),
+    ],
+
 ];

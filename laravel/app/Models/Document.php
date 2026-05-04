@@ -2,10 +2,11 @@
 
 namespace App\Models;
 
-use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Casts\Attribute;
+use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\MorphMany;
 use Illuminate\Database\Eloquent\SoftDeletes;
 
 class Document extends Model
@@ -17,6 +18,9 @@ class Document extends Model
         'filename',
         'original_name',
         'file_path',
+        'source_provider',
+        'source_external_id',
+        'source_synced_at',
         'preview_html_path',
         'preview_status',
         'mime_type',
@@ -68,6 +72,7 @@ class Document extends Model
     {
         return [
             'file_size_bytes' => 'integer',
+            'source_synced_at' => 'datetime',
         ];
     }
 
@@ -82,10 +87,10 @@ class Document extends Model
                 }
 
                 if ($bytes >= 1048576) {
-                    return number_format($bytes / 1048576, 1) . ' MB';
+                    return number_format($bytes / 1048576, 1).' MB';
                 }
 
-                return number_format(max($bytes / 1024, 0.1), 1) . ' KB';
+                return number_format(max($bytes / 1024, 0.1), 1).' KB';
             }
         );
     }
@@ -93,12 +98,17 @@ class Document extends Model
     protected function extension(): Attribute
     {
         return Attribute::make(
-            get: fn() => strtolower((string) pathinfo((string) $this->original_name, PATHINFO_EXTENSION))
+            get: fn () => strtolower((string) pathinfo((string) $this->original_name, PATHINFO_EXTENSION))
         );
     }
 
     public function user(): BelongsTo
     {
         return $this->belongsTo(User::class);
+    }
+
+    public function cloudStorageFiles(): MorphMany
+    {
+        return $this->morphMany(CloudStorageFile::class, 'local');
     }
 }

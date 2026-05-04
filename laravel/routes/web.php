@@ -5,6 +5,8 @@ use App\Http\Controllers\Documents\DocumentPreviewController;
 use App\Http\Controllers\Memos\MemoFileController;
 use App\Http\Controllers\OnlyOfficeCallbackController;
 use App\Livewire\Chat\ChatIndex;
+use App\Livewire\CloudStorage\CloudConnections;
+use App\Livewire\CloudStorage\GoogleDriveBrowser;
 use App\Livewire\Memos\MemoCanvas;
 use App\Livewire\Memos\MemoIndex;
 use Illuminate\Http\Request;
@@ -45,6 +47,14 @@ Route::middleware(['auth', 'verified'])
         Route::get('/{memo}/download', [MemoFileController::class, 'download'])->name('download');
         Route::get('/{memo}/export-pdf', [MemoFileController::class, 'exportPdf'])->name('export.pdf');
         Route::get('/{memo}', MemoCanvas::class)->name('edit');
+    });
+
+Route::middleware(['auth', 'verified'])
+    ->prefix('cloud-storage')
+    ->name('cloud-storage.')
+    ->group(function () {
+        Route::get('/', CloudConnections::class)->name('index');
+        Route::get('/google-drive', GoogleDriveBrowser::class)->name('google-drive');
     });
 
 Route::middleware(['auth', 'verified'])

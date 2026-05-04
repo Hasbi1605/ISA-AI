@@ -71,6 +71,21 @@
                         <a href="{{ route('guest-chat') }}" class="rounded-2xl border border-stone-200 bg-white/80 px-4 py-3 text-sm font-semibold text-stone-700 transition hover:border-ista-primary/30 hover:text-ista-primary">Buka Chat</a>
                         @endauth
                     </div>
+
+                    @auth
+                        <div class="mx-auto mt-6 grid max-w-2xl gap-3 sm:grid-cols-2">
+                            <a href="{{ route('cloud-storage.index') }}" wire:navigate class="rounded-2xl border border-stone-200 bg-white/80 px-4 py-4 text-left shadow-sm transition hover:border-ista-primary/30 hover:bg-white">
+                                <p class="text-xs font-semibold uppercase tracking-[0.22em] text-stone-500">Google Drive Kantor</p>
+                                <p class="mt-2 text-base font-semibold text-stone-900">Status koneksi dan setelan server</p>
+                                <p class="mt-2 text-sm text-stone-600">Cek konfigurasi service account dan root folder yang dipakai ISTA AI.</p>
+                            </a>
+                            <a href="{{ route('cloud-storage.google-drive') }}" wire:navigate class="rounded-2xl border border-stone-200 bg-white/80 px-4 py-4 text-left shadow-sm transition hover:border-ista-primary/30 hover:bg-white">
+                                <p class="text-xs font-semibold uppercase tracking-[0.22em] text-stone-500">Browser Drive</p>
+                                <p class="mt-2 text-base font-semibold text-stone-900">Pilih file kantor untuk diproses</p>
+                                <p class="mt-2 text-sm text-stone-600">Masuk ke folder root dan kirim file ke pipeline AI tanpa download manual.</p>
+                            </a>
+                        </div>
+                    @endauth
                 </section>
             </main>
 

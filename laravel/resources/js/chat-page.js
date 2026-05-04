@@ -842,6 +842,25 @@ const registerChatPageData = (Alpine) => {
             }
         },
 
+        async saveToGoogleDrive(format) {
+            if (this.loading) {
+                return;
+            }
+
+            this.exportMenuOpen = false;
+            this.loading = true;
+            this.error = '';
+
+            try {
+                await this.$wire.saveToGoogleDrive(format);
+            } catch (error) {
+                console.error('Gagal menyimpan dokumen ke Google Drive', error);
+                this.error = error?.message || 'Gagal menyimpan ke Google Drive.';
+            } finally {
+                this.loading = false;
+            }
+        },
+
         async fullContentHtml() {
             if (this.contentHtml) {
                 return this.contentHtml;
