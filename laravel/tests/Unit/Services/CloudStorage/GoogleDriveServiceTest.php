@@ -37,4 +37,15 @@ class GoogleDriveServiceTest extends TestCase
 
         $this->assertFalse($service->isConfigured());
     }
+
+    public function test_empty_shared_drive_id_is_treated_as_null(): void
+    {
+        config([
+            'services.google_drive.shared_drive_id' => '',
+        ]);
+
+        $service = app(GoogleDriveService::class);
+
+        $this->assertNull($service->sharedDriveId());
+    }
 }

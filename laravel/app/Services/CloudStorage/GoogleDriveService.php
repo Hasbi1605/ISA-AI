@@ -25,12 +25,12 @@ class GoogleDriveService
 
     public function rootFolderId(): ?string
     {
-        return $this->normalizeStringConfig(config('services.google_drive.root_folder_id'));
+        return $this->normalizeNullableStringConfig(config('services.google_drive.root_folder_id'));
     }
 
     public function sharedDriveId(): ?string
     {
-        return $this->normalizeStringConfig(config('services.google_drive.shared_drive_id'));
+        return $this->normalizeNullableStringConfig(config('services.google_drive.shared_drive_id'));
     }
 
     public function defaultUploadFolderName(): string
@@ -67,8 +67,10 @@ class GoogleDriveService
             $options['pageToken'] = $pageToken;
         }
 
-        if ($this->sharedDriveId() !== null) {
-            $options['driveId'] = $this->sharedDriveId();
+        $sharedDriveId = $this->sharedDriveId();
+
+        if ($sharedDriveId !== null) {
+            $options['driveId'] = $sharedDriveId;
             $options['corpora'] = 'drive';
         } else {
             $options['corpora'] = 'user';
@@ -345,7 +347,7 @@ class GoogleDriveService
 
     private function findChildFolderByName(string $parentFolderId, string $folderName): ?string
     {
-        $response = $this->drive()->files->listFiles([
+        $options = [
             'q' => implode(' and ', [
                 'trashed = false',
                 sprintf("mimeType = '%s'", self::GOOGLE_DRIVE_FOLDER_MIME),
@@ -356,9 +358,17 @@ class GoogleDriveService
             'fields' => 'files(id)',
             'supportsAllDrives' => true,
             'includeItemsFromAllDrives' => true,
-            'corpora' => $this->sharedDriveId() !== null ? 'drive' : 'user',
-            'driveId' => $this->sharedDriveId() ?? null,
-        ]);
+        ];
+
+        $sharedDriveId = $this->sharedDriveId();
+        if ($sharedDriveId !== null) {
+            $options['corpora'] = 'drive';
+            $options['driveId'] = $sharedDriveId;
+        } else {
+            $options['corpora'] = 'user';
+        }
+
+        $response = $this->drive()->files->listFiles($options);
 
         $files = $response->getFiles();
 
@@ -390,5 +400,12 @@ class GoogleDriveService
         }
 
         return $normalized === '' ? $default : $normalized;
+    }
+
+    private function normalizeNullableStringConfig(mixed $value): ?string
+    {
+        $normalized = $this->normalizeStringConfig($value);
+
+        return $normalized !== '' ? $normalized : null;
     }
 }
