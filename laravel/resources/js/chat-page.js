@@ -832,6 +832,41 @@ const registerChatPageData = (Alpine) => {
         },
     }));
 
+    Alpine.data('memoWorkspace', () => ({
+        showMemoSidebar: !window.matchMedia('(max-width: 1023px)').matches,
+        isMobile: window.matchMedia('(max-width: 1023px)').matches,
+
+        init() {
+            const mediaQuery = window.matchMedia('(max-width: 1023px)');
+            const syncState = (event) => {
+                this.isMobile = event.matches;
+                this.showMemoSidebar = !event.matches;
+            };
+
+            mediaQuery.addEventListener('change', syncState);
+
+            // Auto-scroll memo chat on new messages
+            this.$watch('$wire.memoChatMessages', () => {
+                this.$nextTick(() => this.scrollMemoChatToBottom());
+            });
+        },
+
+        scrollMemoChatToBottom() {
+            const chatBox = document.getElementById('memo-chat-box');
+
+            if (!chatBox) {
+                return;
+            }
+
+            this.$nextTick(() => {
+                chatBox.scrollTo({
+                    top: chatBox.scrollHeight,
+                    behavior: 'smooth',
+                });
+            });
+        },
+    }));
+
     Alpine.data('documentViewerExport', (config = {}) => ({
         contentUrl: config.contentUrl || '',
         extractUrl: config.extractUrl || '',
