@@ -1,5 +1,5 @@
 {{-- Memo AI Chat Panel (Center Column) --}}
-<div class="flex flex-col w-full lg:w-[420px] xl:w-[520px] flex-shrink-0 border-r border-stone-200/60 dark:border-[#1E293B] bg-transparent dark:bg-gray-900/30 overflow-hidden">
+<div class="flex flex-col w-full lg:w-[460px] xl:w-[560px] flex-shrink-0 border-r border-stone-200/70 dark:border-[#1E293B] bg-stone-50 dark:bg-gray-900 overflow-hidden">
 
     {{-- Header with sidebar toggle, brand, tab toggle, and theme toggle --}}
     <div class="min-h-[61px] flex-shrink-0 flex items-center justify-between gap-2 px-3 sm:px-5 border-b border-stone-200/60 dark:border-[#1E293B]/70 bg-white/85 dark:bg-gray-800/85 backdrop-blur-sm">
@@ -26,9 +26,9 @@
     </div>
 
     {{-- Dynamic Configuration / Chat Area --}}
-    <div class="flex-1 overflow-y-auto px-4 py-4 space-y-4" x-ref="memoChatBox" id="memo-chat-box">
+    <div class="flex-1 overflow-y-auto bg-stone-50/90 px-4 py-4 space-y-4 dark:bg-gray-950/35" x-ref="memoChatBox" id="memo-chat-box">
         @if ($activeMemoId)
-            <div class="rounded-xl border border-stone-200/70 bg-white/80 p-3 shadow-sm dark:border-gray-800 dark:bg-gray-900/70">
+            <div class="rounded-lg border border-stone-200 bg-white p-3 shadow-sm dark:border-gray-800 dark:bg-gray-900">
                 <div class="flex items-start justify-between gap-3">
                     <div class="min-w-0">
                         <p class="text-[10.5px] font-bold uppercase tracking-wider text-stone-400 dark:text-gray-500">Memo aktif</p>
@@ -45,160 +45,184 @@
         @endif
 
         @if (! $activeMemoId || $showMemoConfiguration)
-            <form wire:submit="generateConfiguredMemo" class="chat-form rounded-xl border border-stone-200/70 bg-white/90 p-4 shadow-sm dark:border-gray-800 dark:bg-gray-900/80">
-                <div class="mb-4 flex items-center justify-between gap-3">
-                    <div>
-                        <h2 class="text-[14px] font-bold text-stone-800 dark:text-gray-100">Konfigurasi Memo</h2>
-                        <p class="mt-1 text-[12px] leading-relaxed text-stone-500 dark:text-gray-400">Isi data resmi terlebih dahulu, lalu gunakan chat untuk revisi setelah draft tersedia.</p>
+            <form wire:submit="generateConfiguredMemo" class="chat-form memo-config-panel">
+                <div class="border-b border-stone-100 bg-white px-4 py-4 dark:border-gray-800 dark:bg-gray-900">
+                    <div class="flex items-start justify-between gap-3">
+                        <div class="min-w-0">
+                            <p class="text-[10.5px] font-bold uppercase tracking-[0.08em] text-ista-primary/80 dark:text-rose-300">Dokumen resmi</p>
+                            <h2 class="mt-1 text-[15px] font-bold text-stone-900 dark:text-gray-100">Konfigurasi Memo</h2>
+                            <p class="mt-1 max-w-[34rem] text-[12px] leading-relaxed text-stone-500 dark:text-gray-400">Lengkapi field inti agar AI menulis memo mengikuti format manual. Revisi chat aktif setelah draft pertama tersedia.</p>
+                        </div>
+                        <span class="shrink-0 rounded-md border border-stone-200 bg-stone-50 px-2.5 py-1 text-[10.5px] font-bold uppercase tracking-[0.08em] text-stone-600 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-300">Format resmi</span>
                     </div>
-                    <span class="rounded-md bg-stone-100 px-2 py-1 text-[10.5px] font-bold uppercase tracking-wider text-stone-500 dark:bg-gray-800 dark:text-gray-400">Manual</span>
                 </div>
 
-                <div class="space-y-3">
+                <div class="memo-config-section bg-stone-50/65 dark:bg-gray-950/20">
+                    <div class="mb-3 flex items-center justify-between gap-3">
+                        <p class="text-[11.5px] font-bold text-stone-700 dark:text-gray-200">Identitas memo</p>
+                        <p class="text-[11px] text-stone-400 dark:text-gray-500">Kop dan metadata dokumen</p>
+                    </div>
                     <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
                         <div>
-                            <label class="text-[10.5px] font-bold uppercase tracking-wider text-stone-500 dark:text-gray-400">Jenis</label>
-                            <select wire:model="memoType" class="mt-1 w-full rounded-lg border-stone-200 bg-white py-2 text-[12.5px] focus:border-ista-primary focus:ring-ista-primary/20 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-100">
+                            <label class="memo-config-label">Jenis</label>
+                            <select wire:model="memoType" class="memo-config-control">
                                 @foreach ($memoTypes as $value => $label)
                                     <option value="{{ $value }}">{{ $label }}</option>
                                 @endforeach
                             </select>
-                            @error('memoType') <p class="mt-1 text-[11px] font-semibold text-rose-600">{{ $message }}</p> @enderror
+                            @error('memoType') <p class="memo-config-error">{{ $message }}</p> @enderror
                         </div>
                         <div>
-                            <label class="text-[10.5px] font-bold uppercase tracking-wider text-stone-500 dark:text-gray-400">Format</label>
-                            <select wire:model="memoPageSize" class="mt-1 w-full rounded-lg border-stone-200 bg-white py-2 text-[12.5px] focus:border-ista-primary focus:ring-ista-primary/20 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-100">
+                            <label class="memo-config-label">Format</label>
+                            <select wire:model="memoPageSize" class="memo-config-control">
                                 @foreach ($memoPageSizes as $value => $label)
                                     <option value="{{ $value }}">{{ $label }}</option>
                                 @endforeach
                             </select>
-                            @error('memoPageSize') <p class="mt-1 text-[11px] font-semibold text-rose-600">{{ $message }}</p> @enderror
+                            @error('memoPageSize') <p class="memo-config-error">{{ $message }}</p> @enderror
                         </div>
                     </div>
 
-                    <div>
-                        <label class="text-[10.5px] font-bold uppercase tracking-wider text-stone-500 dark:text-gray-400">Nomor Memo</label>
+                    <div class="mt-3">
+                        <label class="memo-config-label">Nomor Memo</label>
                         <input type="text" wire:model="memoNumber" placeholder="M-02/I-Yog/IT.02/04/2026"
-                               class="mt-1 w-full rounded-lg border-stone-200 bg-white py-2 text-[12.5px] focus:border-ista-primary focus:ring-ista-primary/20 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-100">
-                        @error('memoNumber') <p class="mt-1 text-[11px] font-semibold text-rose-600">{{ $message }}</p> @enderror
+                               class="memo-config-control">
+                        @error('memoNumber') <p class="memo-config-error">{{ $message }}</p> @enderror
                     </div>
 
-                    <div>
-                        <label class="text-[10.5px] font-bold uppercase tracking-wider text-stone-500 dark:text-gray-400">Yth.</label>
+                    <div class="mt-3">
+                        <label class="memo-config-label">Yth.</label>
                         <input type="text" wire:model="memoRecipient" placeholder="Kepala Pusat Pengembangan dan Layanan Sistem Informasi"
-                               class="mt-1 w-full rounded-lg border-stone-200 bg-white py-2 text-[12.5px] focus:border-ista-primary focus:ring-ista-primary/20 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-100">
-                        @error('memoRecipient') <p class="mt-1 text-[11px] font-semibold text-rose-600">{{ $message }}</p> @enderror
+                               class="memo-config-control">
+                        @error('memoRecipient') <p class="memo-config-error">{{ $message }}</p> @enderror
                     </div>
 
-                    <div>
-                        <label class="text-[10.5px] font-bold uppercase tracking-wider text-stone-500 dark:text-gray-400">Dari</label>
+                    <div class="mt-3">
+                        <label class="memo-config-label">Dari</label>
                         <input type="text" wire:model="memoSender"
-                               class="mt-1 w-full rounded-lg border-stone-200 bg-white py-2 text-[12.5px] focus:border-ista-primary focus:ring-ista-primary/20 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-100">
-                        @error('memoSender') <p class="mt-1 text-[11px] font-semibold text-rose-600">{{ $message }}</p> @enderror
+                               class="memo-config-control">
+                        @error('memoSender') <p class="memo-config-error">{{ $message }}</p> @enderror
                     </div>
 
-                    <div class="grid grid-cols-1 gap-3 sm:grid-cols-[1fr_150px]">
+                    <div class="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-[1fr_150px]">
                         <div>
-                            <label class="text-[10.5px] font-bold uppercase tracking-wider text-stone-500 dark:text-gray-400">Hal</label>
+                            <label class="memo-config-label">Hal</label>
                             <input type="text" wire:model="title" placeholder="Penyampaian Nama PIC Aplikasi Virtual Meeting"
-                                   class="mt-1 w-full rounded-lg border-stone-200 bg-white py-2 text-[12.5px] focus:border-ista-primary focus:ring-ista-primary/20 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-100">
-                            @error('title') <p class="mt-1 text-[11px] font-semibold text-rose-600">{{ $message }}</p> @enderror
+                                   class="memo-config-control">
+                            @error('title') <p class="memo-config-error">{{ $message }}</p> @enderror
                         </div>
                         <div>
-                            <label class="text-[10.5px] font-bold uppercase tracking-wider text-stone-500 dark:text-gray-400">Tanggal</label>
+                            <label class="memo-config-label">Tanggal</label>
                             <input type="text" wire:model="memoDate"
-                                   class="mt-1 w-full rounded-lg border-stone-200 bg-white py-2 text-[12.5px] focus:border-ista-primary focus:ring-ista-primary/20 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-100">
-                            @error('memoDate') <p class="mt-1 text-[11px] font-semibold text-rose-600">{{ $message }}</p> @enderror
+                                   class="memo-config-control">
+                            @error('memoDate') <p class="memo-config-error">{{ $message }}</p> @enderror
                         </div>
-                    </div>
-
-                    <div>
-                        <label class="text-[10.5px] font-bold uppercase tracking-wider text-stone-500 dark:text-gray-400">Dasar / Konteks</label>
-                        <textarea wire:model="memoBasis" rows="2" placeholder="Contoh: Menindaklanjuti memorandum Bapak nomor ..."
-                                  class="mt-1 w-full resize-none rounded-lg border-stone-200 bg-white text-[12.5px] focus:border-ista-primary focus:ring-ista-primary/20 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-100"></textarea>
-                        @error('memoBasis') <p class="mt-1 text-[11px] font-semibold text-rose-600">{{ $message }}</p> @enderror
-                    </div>
-
-                    <div>
-                        <label class="text-[10.5px] font-bold uppercase tracking-wider text-stone-500 dark:text-gray-400">Isi / Poin Wajib</label>
-                        <textarea wire:model="memoContent" rows="4" placeholder="Tuliskan data nama, NIP, jabatan, permohonan, pertimbangan, atau poin bernomor yang wajib masuk."
-                                  class="mt-1 w-full resize-none rounded-lg border-stone-200 bg-white text-[12.5px] focus:border-ista-primary focus:ring-ista-primary/20 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-100"></textarea>
-                        @error('memoContent') <p class="mt-1 text-[11px] font-semibold text-rose-600">{{ $message }}</p> @enderror
-                    </div>
-
-                    <div>
-                        <label class="text-[10.5px] font-bold uppercase tracking-wider text-stone-500 dark:text-gray-400">Penutup</label>
-                        <input type="text" wire:model="memoClosing"
-                               class="mt-1 w-full rounded-lg border-stone-200 bg-white py-2 text-[12.5px] focus:border-ista-primary focus:ring-ista-primary/20 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-100">
-                        @error('memoClosing') <p class="mt-1 text-[11px] font-semibold text-rose-600">{{ $message }}</p> @enderror
-                    </div>
-
-                    <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                        <div>
-                            <label class="text-[10.5px] font-bold uppercase tracking-wider text-stone-500 dark:text-gray-400">Penandatangan</label>
-                            <input type="text" wire:model="memoSignatory"
-                                   class="mt-1 w-full rounded-lg border-stone-200 bg-white py-2 text-[12.5px] focus:border-ista-primary focus:ring-ista-primary/20 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-100">
-                            @error('memoSignatory') <p class="mt-1 text-[11px] font-semibold text-rose-600">{{ $message }}</p> @enderror
-                        </div>
-                        <div>
-                            <label class="text-[10.5px] font-bold uppercase tracking-wider text-stone-500 dark:text-gray-400">Tembusan</label>
-                            <textarea wire:model="memoCarbonCopy" rows="2" placeholder="Satu tembusan per baris"
-                                      class="mt-1 w-full resize-none rounded-lg border-stone-200 bg-white text-[12.5px] focus:border-ista-primary focus:ring-ista-primary/20 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-100"></textarea>
-                            @error('memoCarbonCopy') <p class="mt-1 text-[11px] font-semibold text-rose-600">{{ $message }}</p> @enderror
-                        </div>
-                    </div>
-
-                    <div>
-                        <label class="text-[10.5px] font-bold uppercase tracking-wider text-stone-500 dark:text-gray-400">Catatan Tambahan</label>
-                        <textarea wire:model="memoAdditionalInstruction" rows="2" placeholder="Opsional: arahkan nada, panjang, atau detail khusus."
-                                  class="mt-1 w-full resize-none rounded-lg border-stone-200 bg-white text-[12.5px] focus:border-ista-primary focus:ring-ista-primary/20 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-100"></textarea>
-                        @error('memoAdditionalInstruction') <p class="mt-1 text-[11px] font-semibold text-rose-600">{{ $message }}</p> @enderror
                     </div>
                 </div>
 
-                <button type="submit"
-                        wire:loading.attr="disabled"
-                        wire:target="generateConfiguredMemo,generateFromChat"
-                        :disabled="$wire.isGenerating"
-                        class="mt-4 inline-flex w-full items-center justify-center rounded-lg bg-ista-primary px-4 py-2.5 text-[13px] font-semibold text-white transition hover:bg-ista-dark disabled:cursor-not-allowed disabled:opacity-50">
-                    <span wire:loading.remove wire:target="generateConfiguredMemo,generateFromChat">{{ $activeMemoId ? 'Regenerate dari Konfigurasi' : 'Generate Memo' }}</span>
-                    <span wire:loading wire:target="generateConfiguredMemo,generateFromChat">Memproses...</span>
-                </button>
+                <div class="memo-config-section">
+                    <div class="mb-3 flex items-center justify-between gap-3">
+                        <p class="text-[11.5px] font-bold text-stone-700 dark:text-gray-200">Isi memo</p>
+                        <p class="text-[11px] text-stone-400 dark:text-gray-500">Bahan yang akan ditulis AI</p>
+                    </div>
+                    <div>
+                        <label class="memo-config-label">Dasar / Konteks</label>
+                        <textarea wire:model="memoBasis" rows="2" placeholder="Contoh: Menindaklanjuti memorandum Bapak nomor ..."
+                                  class="memo-config-textarea"></textarea>
+                        @error('memoBasis') <p class="memo-config-error">{{ $message }}</p> @enderror
+                    </div>
+
+                    <div class="mt-3">
+                        <label class="memo-config-label">Isi / Poin Wajib</label>
+                        <textarea wire:model="memoContent" rows="3" placeholder="Tuliskan data nama, NIP, jabatan, permohonan, pertimbangan, atau poin bernomor yang wajib masuk."
+                                  class="memo-config-textarea"></textarea>
+                        <p class="memo-config-help">Isi ini menjadi batas aman agar hasil memo tidak melebar dari kebutuhan.</p>
+                        @error('memoContent') <p class="memo-config-error">{{ $message }}</p> @enderror
+                    </div>
+
+                    <div class="mt-3">
+                        <label class="memo-config-label">Penutup</label>
+                        <input type="text" wire:model="memoClosing"
+                               class="memo-config-control">
+                        @error('memoClosing') <p class="memo-config-error">{{ $message }}</p> @enderror
+                    </div>
+                </div>
+
+                <div class="memo-config-section bg-stone-50/50 dark:bg-gray-950/20">
+                    <div class="mb-3 flex items-center justify-between gap-3">
+                        <p class="text-[11.5px] font-bold text-stone-700 dark:text-gray-200">Distribusi dan catatan</p>
+                        <p class="text-[11px] text-stone-400 dark:text-gray-500">Tanda tangan dan tembusan</p>
+                    </div>
+                    <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                        <div>
+                            <label class="memo-config-label">Penandatangan</label>
+                            <input type="text" wire:model="memoSignatory"
+                                   class="memo-config-control">
+                            @error('memoSignatory') <p class="memo-config-error">{{ $message }}</p> @enderror
+                        </div>
+                        <div>
+                            <label class="memo-config-label">Tembusan</label>
+                            <textarea wire:model="memoCarbonCopy" rows="2" placeholder="Satu tembusan per baris"
+                                      class="memo-config-textarea"></textarea>
+                            @error('memoCarbonCopy') <p class="memo-config-error">{{ $message }}</p> @enderror
+                        </div>
+                    </div>
+
+                    <div class="mt-3">
+                        <label class="memo-config-label">Catatan Tambahan</label>
+                        <textarea wire:model="memoAdditionalInstruction" rows="2" placeholder="Opsional: arahkan nada, panjang, atau detail khusus."
+                                  class="memo-config-textarea"></textarea>
+                        @error('memoAdditionalInstruction') <p class="memo-config-error">{{ $message }}</p> @enderror
+                    </div>
+                </div>
+
+                <div class="sticky bottom-0 border-t border-stone-200 bg-white/95 p-3 backdrop-blur dark:border-gray-800 dark:bg-gray-900/95">
+                    <button type="submit"
+                            wire:loading.attr="disabled"
+                            wire:target="generateConfiguredMemo,generateFromChat"
+                            :disabled="$wire.isGenerating"
+                            class="inline-flex h-10 w-full items-center justify-center rounded-md bg-ista-primary px-4 text-[13px] font-semibold text-white shadow-sm transition hover:bg-ista-dark active:translate-y-px disabled:cursor-not-allowed disabled:opacity-50">
+                        <span wire:loading.remove wire:target="generateConfiguredMemo,generateFromChat">{{ $activeMemoId ? 'Regenerate dari Konfigurasi' : 'Generate Memo' }}</span>
+                        <span wire:loading wire:target="generateConfiguredMemo,generateFromChat">Memproses...</span>
+                    </button>
+                </div>
             </form>
         @endif
 
-        @foreach ($memoChatMessages as $index => $msg)
-            @php
-                $isUserMessage = $msg['role'] === 'user';
-            @endphp
+        @if ($activeMemoId || ! $showMemoConfiguration)
+            @foreach ($memoChatMessages as $index => $msg)
+                @php
+                    $isUserMessage = $msg['role'] === 'user';
+                @endphp
 
-            <div wire:key="memo-msg-{{ $index }}" class="flex {{ $isUserMessage ? 'justify-end' : 'justify-start' }}">
-                <div class="w-full flex items-start gap-2.5 {{ $isUserMessage ? 'flex-row-reverse' : '' }}">
-                    <div class="shrink-0 h-8 w-8 rounded-full flex items-center justify-center {{ $isUserMessage ? 'bg-[#E2E8F0] dark:bg-white text-[#62748E] dark:text-black' : 'bg-white border border-stone-200 shadow-sm p-1' }}">
-                        @if ($isUserMessage)
-                            <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M16 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2m12-10a4 4 0 11-8 0 4 4 0 018 0z" />
-                            </svg>
-                        @else
-                            <img src="{{ asset('images/ista/logo.png') }}" alt="ISTA AI" class="h-full w-full object-contain" />
-                        @endif
-                    </div>
-
-                    <div class="flex max-w-[82%] flex-col gap-1 {{ $isUserMessage ? 'items-end text-right' : 'items-start text-left' }}">
-                        <div class="flex items-center gap-2 mb-1 {{ $isUserMessage ? 'justify-end' : 'justify-start' }}">
-                            <span class="text-[13px] font-bold text-stone-800 dark:text-[#F8FAFC]">{{ $isUserMessage ? 'Anda' : 'ISTA AI' }}</span>
-                            <span class="text-[10px] text-gray-400 dark:text-[#64748B]">{{ $msg['timestamp'] }}</span>
+                <div wire:key="memo-msg-{{ $index }}" class="flex {{ $isUserMessage ? 'justify-end' : 'justify-start' }}">
+                    <div class="w-full flex items-start gap-2.5 {{ $isUserMessage ? 'flex-row-reverse' : '' }}">
+                        <div class="shrink-0 h-8 w-8 rounded-full flex items-center justify-center {{ $isUserMessage ? 'bg-[#E2E8F0] dark:bg-white text-[#62748E] dark:text-black' : 'bg-white border border-stone-200 shadow-sm p-1' }}">
+                            @if ($isUserMessage)
+                                <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M16 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2m12-10a4 4 0 11-8 0 4 4 0 018 0z" />
+                                </svg>
+                            @else
+                                <img src="{{ asset('images/ista/logo.png') }}" alt="ISTA AI" class="h-full w-full object-contain" />
+                            @endif
                         </div>
 
-                        <div class="{{ $isUserMessage
-                            ? 'bg-ista-primary text-white rounded-xl rounded-br-md px-4 py-3'
-                            : 'bg-white/80 backdrop-blur-sm dark:bg-gray-800 border border-stone-200/60 dark:border-gray-800 text-stone-700 dark:text-gray-100 rounded-xl rounded-bl-md px-4 py-3' }}">
-                            <p class="text-[14px] leading-relaxed whitespace-pre-wrap">{{ $msg['content'] }}</p>
+                        <div class="flex max-w-[82%] flex-col gap-1 {{ $isUserMessage ? 'items-end text-right' : 'items-start text-left' }}">
+                            <div class="flex items-center gap-2 mb-1 {{ $isUserMessage ? 'justify-end' : 'justify-start' }}">
+                                <span class="text-[13px] font-bold text-stone-800 dark:text-[#F8FAFC]">{{ $isUserMessage ? 'Anda' : 'ISTA AI' }}</span>
+                                <span class="text-[10px] text-gray-400 dark:text-[#64748B]">{{ $msg['timestamp'] }}</span>
+                            </div>
+
+                            <div class="{{ $isUserMessage
+                                ? 'bg-ista-primary text-white rounded-lg rounded-br-sm px-4 py-3'
+                                : 'bg-white/95 backdrop-blur-sm dark:bg-gray-800 border border-stone-200/80 dark:border-gray-800 text-stone-700 dark:text-gray-100 rounded-lg rounded-bl-sm px-4 py-3 shadow-sm' }}">
+                                <p class="text-[14px] leading-relaxed whitespace-pre-wrap">{{ $msg['content'] }}</p>
+                            </div>
                         </div>
                     </div>
                 </div>
-            </div>
-        @endforeach
+            @endforeach
+        @endif
 
         @if ($isGenerating)
             <div class="flex justify-start">

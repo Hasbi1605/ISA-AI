@@ -107,4 +107,32 @@
     .chat-history-item.is-active {
         @apply bg-white/80 shadow-sm border-stone-200 text-stone-800 font-medium dark:bg-[#1E293B] dark:border-[#334155] dark:text-white;
     }
+
+    .memo-config-panel {
+        @apply overflow-hidden rounded-lg border border-stone-200 bg-white shadow-[0_18px_42px_-30px_rgba(28,25,23,0.45)] dark:border-gray-800 dark:bg-gray-900;
+    }
+
+    .memo-config-section {
+        @apply border-t border-stone-100 px-4 py-3.5 dark:border-gray-800;
+    }
+
+    .memo-config-label {
+        @apply mb-1.5 block text-[10.5px] font-bold uppercase tracking-[0.08em] text-stone-500 dark:text-gray-400;
+    }
+
+    .memo-config-control {
+        @apply block w-full rounded-md border border-stone-300 bg-white px-3 py-2 text-[13px] font-medium leading-5 text-stone-800 shadow-[inset_0_1px_0_rgba(28,25,23,0.03)] transition placeholder:text-stone-400 focus:border-ista-primary focus:outline-none focus:ring-2 focus:ring-ista-primary/15 dark:border-gray-700 dark:bg-gray-950 dark:text-gray-100 dark:placeholder:text-gray-500;
+    }
+
+    .memo-config-textarea {
+        @apply block w-full resize-none rounded-md border border-stone-300 bg-white px-3 py-2 text-[13px] font-medium leading-relaxed text-stone-800 shadow-[inset_0_1px_0_rgba(28,25,23,0.03)] transition placeholder:text-stone-400 focus:border-ista-primary focus:outline-none focus:ring-2 focus:ring-ista-primary/15 dark:border-gray-700 dark:bg-gray-950 dark:text-gray-100 dark:placeholder:text-gray-500;
+    }
+
+    .memo-config-help {
+        @apply mt-1.5 text-[11.5px] leading-relaxed text-stone-500 dark:text-gray-500;
+    }
+
+    .memo-config-error {
+        @apply mt-1 text-[11px] font-semibold text-rose-600 dark:text-rose-400;
+    }
 }
