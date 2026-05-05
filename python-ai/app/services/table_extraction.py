@@ -1,12 +1,13 @@
 from __future__ import annotations
 
-import os
+import csv
 import re
 from pathlib import Path
 from typing import Any
 
 import pdfplumber
 from docx import Document as DocxDocument
+from openpyxl import load_workbook
 
 
 def _clean_cell_text(value: Any) -> str:
@@ -81,6 +82,51 @@ def extract_tables_from_docx(file_path: str) -> list[dict[str, Any]]:
     return tables
 
 
+def extract_tables_from_xlsx(file_path: str) -> list[dict[str, Any]]:
+    workbook = load_workbook(file_path, data_only=True, read_only=True)
+    tables: list[dict[str, Any]] = []
+
+    try:
+        for sheet in workbook.worksheets:
+            rows = _compact_rows([
+                [cell for cell in row]
+                for row in sheet.iter_rows(values_only=True)
+            ])
+
+            if not rows:
+                continue
+
+            payload = _table_payload(rows, source="xlsx", page=None)
+            payload["sheet"] = sheet.title
+            tables.append(payload)
+    finally:
+        workbook.close()
+
+    return tables
+
+
+def extract_tables_from_csv(file_path: str) -> list[dict[str, Any]]:
+    rows: list[list[str]] = []
+
+    for encoding in ("utf-8-sig", "utf-8", "latin-1"):
+        try:
+            with open(file_path, newline="", encoding=encoding) as handle:
+                sample = handle.read(4096)
+                handle.seek(0)
+
+                try:
+                    dialect = csv.Sniffer().sniff(sample)
+                except csv.Error:
+                    dialect = csv.excel
+
+                rows = _compact_rows([row for row in csv.reader(handle, dialect)])
+            break
+        except UnicodeDecodeError:
+            continue
+
+    return [_table_payload(rows, source="csv", page=None)] if rows else []
+
+
 def extract_tables_from_file(file_path: str) -> list[dict[str, Any]]:
     suffix = Path(file_path).suffix.lower()
 
@@ -90,5 +136,10 @@ def extract_tables_from_file(file_path: str) -> list[dict[str, Any]]:
     if suffix == ".docx":
         return extract_tables_from_docx(file_path)
 
-    raise ValueError(f"Unsupported file type for table extraction: {suffix or 'unknown'}")
+    if suffix == ".xlsx":
+        return extract_tables_from_xlsx(file_path)
 
+    if suffix == ".csv":
+        return extract_tables_from_csv(file_path)
+
+    raise ValueError(f"Unsupported file type for table extraction: {suffix or 'unknown'}")
