@@ -6,11 +6,11 @@
         <div class="flex items-center gap-1">
             {{-- Preview Tab --}}
             <button type="button"
-                    wire:click="switchPreviewMode('preview')"
-                    :class="$wire.previewMode === 'preview'
-                        ? 'bg-white dark:bg-gray-800 text-stone-800 dark:text-gray-200 shadow-sm border-stone-200 dark:border-gray-700'
-                        : 'text-stone-500 dark:text-gray-400 hover:text-stone-700 dark:hover:text-gray-300 border-transparent'"
-                    class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-[12.5px] font-semibold transition-all">
+                    wire:click="$set('previewMode', 'preview')"
+                    class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-[12.5px] font-semibold transition-all
+                        {{ $previewMode === 'preview'
+                            ? 'bg-white dark:bg-gray-800 text-stone-800 dark:text-gray-200 shadow-sm border-stone-200 dark:border-gray-700'
+                            : 'text-stone-500 dark:text-gray-400 hover:text-stone-700 dark:hover:text-gray-300 border-transparent hover:border-stone-200 dark:hover:border-gray-700' }}">
                 <svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
@@ -19,11 +19,11 @@
             </button>
             {{-- Editor Tab --}}
             <button type="button"
-                    wire:click="switchPreviewMode('editor')"
-                    :class="$wire.previewMode === 'editor'
-                        ? 'bg-white dark:bg-gray-800 text-stone-800 dark:text-gray-200 shadow-sm border-stone-200 dark:border-gray-700'
-                        : 'text-stone-500 dark:text-gray-400 hover:text-stone-700 dark:hover:text-gray-300 border-transparent'"
-                    class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-[12.5px] font-semibold transition-all">
+                    wire:click="$set('previewMode', 'editor')"
+                    class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-[12.5px] font-semibold transition-all
+                        {{ $previewMode === 'editor'
+                            ? 'bg-white dark:bg-gray-800 text-stone-800 dark:text-gray-200 shadow-sm border-stone-200 dark:border-gray-700'
+                            : 'text-stone-500 dark:text-gray-400 hover:text-stone-700 dark:hover:text-gray-300 border-transparent hover:border-stone-200 dark:hover:border-gray-700' }}">
                 <svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
                 </svg>
@@ -42,14 +42,14 @@
                     <span wire:loading.remove wire:target="regenerate">Regenerate</span>
                     <span wire:loading wire:target="regenerate">...</span>
                 </button>
-                <a href="{{ $activeMemoId ? route('memos.download', $activeMemoId) : '#' }}"
+                <a href="{{ route('memos.download', $activeMemoId) }}"
                    class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-stone-200 dark:border-gray-700 text-[12px] font-semibold text-stone-600 dark:text-gray-300 hover:bg-stone-100 dark:hover:bg-gray-800 transition-all">
                     <svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
                     </svg>
                     DOCX
                 </a>
-                <a href="{{ $activeMemoId ? route('memos.export.pdf', $activeMemoId) : '#' }}"
+                <a href="{{ route('memos.export.pdf', $activeMemoId) }}"
                    class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-ista-primary text-[12px] font-semibold text-white hover:bg-ista-dark transition-all">
                     <svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />

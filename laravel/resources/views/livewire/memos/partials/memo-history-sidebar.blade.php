@@ -1,4 +1,4 @@
-{{-- Memo History Sidebar (Left Column ~220px) --}}
+{{-- Memo History Sidebar (Left Column ~240px) --}}
 <aside
     x-show="showMemoSidebar"
     :class="[
@@ -6,10 +6,15 @@
     ]"
     class="flex-shrink-0 flex flex-col border-r border-stone-200/60 dark:border-[#1E293B] bg-white dark:bg-gray-900 overflow-hidden transition-all duration-300"
 >
-    {{-- Header --}}
-    <div class="flex items-center justify-between px-4 pt-4 pb-2">
-        <h2 class="text-[13px] font-bold text-stone-700 dark:text-gray-200 uppercase tracking-wider">Memo</h2>
-        <button type="button" x-show="isMobile" @click="showMemoSidebar = false" class="p-1.5 rounded-md hover:bg-gray-100 dark:hover:bg-gray-800 text-gray-500">
+    {{-- Header: Kembali ke Beranda --}}
+    <div class="flex items-center justify-between px-4 pb-2 pt-3">
+        <a href="{{ route('dashboard') }}" class="inline-flex items-center px-1 py-2.5 font-medium text-[13px] text-gray-700 dark:text-gray-200 hover:text-amber-800 dark:hover:text-amber-300 transition-colors duration-200">
+            <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" />
+            </svg>
+            Kembali ke Beranda
+        </a>
+        <button type="button" x-show="isMobile" @click="showMemoSidebar = false" class="p-1.5 rounded-md hover:bg-gray-100 dark:hover:bg-gray-800 text-gray-500 dark:text-gray-400 transition-colors" aria-label="Tutup sidebar">
             <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
             </svg>
@@ -17,11 +22,11 @@
     </div>
 
     {{-- New Memo Button --}}
-    <div class="px-4 pb-3">
+    <div class="px-4 pb-3 pt-2">
         <button type="button"
                 wire:click="startNewMemo"
-                class="w-full flex items-center justify-center gap-2 px-3 py-2.5 rounded-lg border border-stone-200/60 dark:border-gray-700 bg-white dark:bg-transparent hover:bg-gray-50 dark:hover:bg-white/5 text-[13px] font-semibold text-stone-700 dark:text-gray-200 transition-all shadow-sm">
-            <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                class="w-full flex items-center justify-start gap-2 px-4 py-2.5 rounded-lg border border-stone-200/60 dark:border-[#334155] dark:bg-transparent bg-white hover:bg-gray-50 dark:hover:bg-white/5 text-[13px] font-medium text-gray-700 dark:text-gray-200 transition-all shadow-sm">
+            <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 text-[#64748B] dark:text-gray-300" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M12 5v14m-7-7h14" />
             </svg>
             Buat Memo Baru
@@ -30,6 +35,7 @@
 
     {{-- Memo List --}}
     <div class="flex-1 overflow-y-auto px-3">
+        <h3 class="text-[11.6px] font-bold text-[#64748B] dark:text-[#94A3B8] uppercase tracking-wider mb-2 px-1">Riwayat Memo</h3>
         @forelse ($memos as $memo)
             <button
                 type="button"

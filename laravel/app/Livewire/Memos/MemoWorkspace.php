@@ -7,7 +7,6 @@ use App\Services\Memo\MemoGenerationService;
 use App\Services\OnlyOffice\JwtSigner;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\URL;
-use Livewire\Attributes\On;
 use Livewire\Component;
 
 class MemoWorkspace extends Component
@@ -49,7 +48,7 @@ class MemoWorkspace extends Component
         $this->previewHtml = $memo->searchable_text ? nl2br(e($memo->searchable_text)) : null;
         $this->previewMode = 'preview';
 
-        $this->memoChatMessages = [];
+        // Preserve existing chat history — just append a system message about loading
         $this->addSystemMessage("Memo \"{$memo->title}\" dimuat. Anda bisa meminta revisi atau generate ulang.");
     }
 

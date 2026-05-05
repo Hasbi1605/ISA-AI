@@ -4,7 +4,7 @@
         type="button"
         wire:click="$set('tab', 'chat')"
         :class="$wire.tab === 'chat'
-            ? 'bg-white text-stone-900 shadow-sm dark:bg-gray-700 dark:text-gray-100'
+            ? 'bg-ista-primary text-white shadow-sm'
             : 'text-stone-500 hover:text-stone-700 dark:text-gray-400 dark:hover:text-gray-200'"
         class="inline-flex items-center gap-1.5 rounded-full px-4 py-1.5 text-[13px] font-semibold transition-all duration-200"
     >
