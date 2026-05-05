@@ -144,21 +144,10 @@ class GoogleDrivePicker extends Component
 
     public function render()
     {
-        $defaultUploadFolderName = 'ISTA AI';
-        $sharedDriveId = null;
-
-        if ($this->isConfigured) {
-            $googleDriveService = app(GoogleDriveService::class);
-            $defaultUploadFolderName = $googleDriveService->defaultUploadFolderName();
-            $sharedDriveId = $googleDriveService->sharedDriveId();
-        }
-
         return view('livewire.chat.google-drive-picker', [
             'items' => $this->items,
             'breadcrumb' => $this->breadcrumb,
             'nextPageToken' => $this->nextPageToken,
-            'defaultUploadFolderName' => $defaultUploadFolderName,
-            'sharedDriveId' => $sharedDriveId,
         ]);
     }
 
@@ -193,9 +182,11 @@ class GoogleDrivePicker extends Component
             $this->breadcrumb = [
                 [
                     'id' => $rootFolderId,
-                    'name' => 'Folder root ISTA AI',
+                    'name' => 'ISTA AI',
                 ],
             ];
+        } elseif (isset($this->breadcrumb[0]) && $this->breadcrumb[0]['id'] === $rootFolderId) {
+            $this->breadcrumb[0]['name'] = 'ISTA AI';
         }
 
         $this->loadFiles();

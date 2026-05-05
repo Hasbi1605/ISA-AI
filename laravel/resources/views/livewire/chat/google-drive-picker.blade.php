@@ -12,96 +12,130 @@
              @click="$wire.close()"
              aria-hidden="true"></div>
 
-        <section class="relative flex max-h-[88vh] w-full max-w-4xl flex-col overflow-hidden rounded-2xl border border-stone-200 bg-white shadow-2xl dark:border-gray-800 dark:bg-gray-900">
-            <header class="flex flex-col gap-3 border-b border-stone-200 px-5 py-4 dark:border-gray-800 sm:flex-row sm:items-start sm:justify-between">
-                <div class="min-w-0">
-                    <p class="text-[11px] font-semibold uppercase tracking-[0.22em] text-stone-500 dark:text-gray-400">Google Drive Kantor</p>
-                    <h2 id="google-drive-picker-title" class="mt-1 text-lg font-semibold text-stone-900 dark:text-gray-100">Ambil file untuk chat</h2>
-                    <p class="mt-1 text-sm text-stone-600 dark:text-gray-400">Pilih file dari folder kantor yang diizinkan, lalu ISTA AI akan memasukkannya ke pipeline dokumen chat.</p>
+        <section class="relative flex max-h-[88vh] w-full max-w-5xl flex-col overflow-hidden rounded-[28px] border border-stone-200 bg-white shadow-2xl dark:border-gray-800 dark:bg-gray-900">
+            <header class="border-b border-stone-200 px-5 py-5 dark:border-gray-800 sm:px-6">
+                <div class="flex items-start gap-4">
+                    <div class="mt-0.5 flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-stone-100 text-stone-700 dark:bg-gray-800 dark:text-gray-200">
+                        <svg class="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" aria-hidden="true">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7Z" />
+                        </svg>
+                    </div>
+
+                    <div class="min-w-0 flex-1">
+                        <p class="text-[10px] font-semibold uppercase tracking-[0.28em] text-stone-500 dark:text-gray-400">Drive Kantor</p>
+                        <h2 id="google-drive-picker-title" class="mt-2 text-2xl font-semibold tracking-tight text-stone-900 dark:text-gray-100 sm:text-[28px]">
+                            Pilih file untuk chat
+                        </h2>
+                        <p class="mt-1.5 max-w-2xl text-sm text-stone-600 dark:text-gray-400">
+                            File yang dipilih akan langsung masuk ke dokumen rujukan chat.
+                        </p>
+                    </div>
+
+                    <button type="button"
+                            wire:click="close"
+                            class="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-xl text-stone-500 transition hover:bg-stone-100 hover:text-stone-900 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-gray-100"
+                            aria-label="Tutup Google Drive picker">
+                        <svg class="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" aria-hidden="true">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18 18 6M6 6l12 12" />
+                        </svg>
+                    </button>
                 </div>
-                <button type="button"
-                        wire:click="close"
-                        class="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-stone-500 transition hover:bg-stone-100 hover:text-stone-900 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-gray-100"
-                        aria-label="Tutup Google Drive picker">
-                    <svg class="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" aria-hidden="true">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18 18 6M6 6l12 12" />
-                    </svg>
-                </button>
             </header>
 
-            <div class="min-h-0 flex-1 overflow-y-auto px-5 py-5">
+            <div class="min-h-0 flex-1 overflow-y-auto px-5 py-5 sm:px-6">
                 @if (! $isConfigured)
                     <div class="rounded-2xl border border-amber-200 bg-amber-50 p-5 text-amber-900 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-100">
-                        <p class="font-semibold">Google Drive belum dikonfigurasi</p>
-                        <p class="mt-2 text-sm leading-6">Lengkapi root folder id dan hubungkan akun Google Drive pusat agar picker chat bisa menampilkan daftar Drive kantor.</p>
+                        <p class="font-semibold">Google Drive belum siap</p>
+                        <p class="mt-1 text-sm leading-6">Lengkapi root folder dan hubungkan akun pusat agar file kantor bisa dipilih dari chat.</p>
                     </div>
                 @else
-                    <div class="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-                        <div class="min-w-0">
-                            <p class="text-[11px] font-semibold uppercase tracking-[0.22em] text-stone-500 dark:text-gray-400">Lokasi saat ini</p>
-                            <ol class="mt-2 flex flex-wrap items-center gap-2 text-sm">
-                                @foreach ($breadcrumb as $index => $crumb)
-                                    <li class="flex items-center gap-2">
-                                        @if ($index > 0)
-                                            <span class="text-stone-400 dark:text-gray-500">/</span>
-                                        @endif
-                                        <button type="button"
-                                                wire:click="goToBreadcrumb({{ $index }})"
-                                                class="rounded-full px-3 py-1 font-medium text-stone-600 transition hover:bg-stone-100 hover:text-ista-primary dark:text-gray-300 dark:hover:bg-gray-800 dark:hover:text-white">
-                                            {{ $crumb['name'] }}
-                                        </button>
-                                    </li>
-                                @endforeach
-                            </ol>
-                        </div>
+                    <div class="rounded-2xl border border-stone-200/80 bg-stone-50/80 p-4 dark:border-gray-800 dark:bg-gray-950/60">
+                        <div class="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+                            <div class="min-w-0">
+                                <p class="text-[11px] font-semibold uppercase tracking-[0.22em] text-stone-500 dark:text-gray-400">Folder aktif</p>
+                                <ol class="mt-2 flex flex-wrap items-center gap-2 text-sm">
+                                    @foreach ($breadcrumb as $index => $crumb)
+                                        <li class="flex min-w-0 items-center gap-2">
+                                            @if ($index > 0)
+                                                <svg class="h-3.5 w-3.5 shrink-0 text-stone-400 dark:text-gray-500" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+                                                    <path fill-rule="evenodd" d="M7.22 14.78a.75.75 0 0 1 0-1.06L10.94 10 7.22 6.28a.75.75 0 1 1 1.06-1.06l4.25 4.25a.75.75 0 0 1 0 1.06l-4.25 4.25a.75.75 0 0 1-1.06 0Z" clip-rule="evenodd" />
+                                                </svg>
+                                            @endif
 
-                        <div class="flex flex-wrap items-center gap-2">
-                            <button type="button"
-                                    wire:click="previousPage"
-                                    @disabled(empty($pageTokenStack))
-                                    class="inline-flex items-center justify-center rounded-lg border border-stone-300 px-3 py-2 text-sm font-semibold text-stone-700 transition hover:bg-stone-100 disabled:cursor-not-allowed disabled:opacity-50 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-800">
-                                Sebelumnya
-                            </button>
-                            <button type="button"
-                                    wire:click="nextPage"
-                                    @disabled(blank($nextPageToken))
-                                    class="inline-flex items-center justify-center rounded-lg bg-ista-primary px-3 py-2 text-sm font-semibold text-white transition hover:bg-stone-800 disabled:cursor-not-allowed disabled:opacity-50">
-                                Berikutnya
-                            </button>
+                                            <button type="button"
+                                                    wire:click="goToBreadcrumb({{ $index }})"
+                                                    class="{{ $loop->last ? 'border border-stone-200 bg-white text-stone-900 shadow-sm dark:border-gray-700 dark:bg-gray-900 dark:text-gray-100' : 'bg-transparent text-stone-600 hover:bg-white hover:text-stone-900 dark:text-gray-300 dark:hover:bg-gray-900 dark:hover:text-white' }} inline-flex max-w-full items-center rounded-full px-3 py-1.5 font-medium transition">
+                                                <span class="truncate">{{ $crumb['name'] }}</span>
+                                            </button>
+                                        </li>
+                                    @endforeach
+                                </ol>
+                            </div>
+
+                            <div class="flex items-center gap-2">
+                                <button type="button"
+                                        wire:click="previousPage"
+                                        @disabled(empty($pageTokenStack))
+                                        class="inline-flex h-10 w-10 items-center justify-center rounded-xl border border-stone-300 text-stone-600 transition hover:bg-white hover:text-stone-900 disabled:cursor-not-allowed disabled:opacity-40 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-900 dark:hover:text-white"
+                                        title="Halaman sebelumnya"
+                                        aria-label="Halaman sebelumnya">
+                                    <svg class="h-4 w-4" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+                                        <path fill-rule="evenodd" d="M11.78 14.78a.75.75 0 0 1-1.06 0L6.47 10.53a.75.75 0 0 1 0-1.06l4.25-4.25a.75.75 0 1 1 1.06 1.06L8.06 10l3.72 3.72a.75.75 0 0 1 0 1.06Z" clip-rule="evenodd" />
+                                    </svg>
+                                </button>
+
+                                <button type="button"
+                                        wire:click="nextPage"
+                                        @disabled(blank($nextPageToken))
+                                        class="inline-flex h-10 w-10 items-center justify-center rounded-xl bg-ista-primary text-white transition hover:bg-stone-800 disabled:cursor-not-allowed disabled:bg-stone-200 disabled:text-stone-400 disabled:hover:bg-stone-200 dark:disabled:bg-gray-800 dark:disabled:text-gray-600"
+                                        title="Halaman berikutnya"
+                                        aria-label="Halaman berikutnya">
+                                    <svg class="h-4 w-4" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+                                        <path fill-rule="evenodd" d="M8.22 5.22a.75.75 0 0 1 1.06 0l4.25 4.25a.75.75 0 0 1 0 1.06l-4.25 4.25a.75.75 0 1 1-1.06-1.06L11.94 10 8.22 6.28a.75.75 0 0 1 0-1.06Z" clip-rule="evenodd" />
+                                    </svg>
+                                </button>
+                            </div>
                         </div>
                     </div>
 
                     <div class="mt-5">
-                        <label class="block text-sm font-semibold text-stone-700 dark:text-gray-200" for="chat-google-drive-search">Cari file</label>
-                        <input id="chat-google-drive-search"
-                               type="text"
-                               wire:model.live.debounce.350ms="search"
-                               placeholder="Cari nama file atau folder..."
-                               class="mt-2 w-full rounded-xl border border-stone-300 bg-white px-4 py-3 text-sm outline-none transition focus:border-ista-primary focus:ring-2 focus:ring-ista-primary/15 dark:border-gray-700 dark:bg-gray-950 dark:text-gray-100" />
+                        <label class="sr-only" for="chat-google-drive-search">Cari file atau folder</label>
+                        <div class="relative">
+                            <span class="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-4 text-stone-400 dark:text-gray-500">
+                                <svg class="h-4 w-4" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+                                    <path fill-rule="evenodd" d="M8.5 3a5.5 5.5 0 1 0 3.47 9.77l3.63 3.63a.75.75 0 1 0 1.06-1.06l-3.63-3.63A5.5 5.5 0 0 0 8.5 3ZM4.5 8.5a4 4 0 1 1 8 0 4 4 0 0 1-8 0Z" clip-rule="evenodd" />
+                                </svg>
+                            </span>
+                            <input id="chat-google-drive-search"
+                                   type="text"
+                                   wire:model.live.debounce.350ms="search"
+                                   placeholder="Cari file atau folder"
+                                   class="w-full rounded-2xl border border-stone-300 bg-white py-3 pl-11 pr-4 text-sm outline-none transition focus:border-ista-primary focus:ring-2 focus:ring-ista-primary/15 dark:border-gray-700 dark:bg-gray-950 dark:text-gray-100" />
+                        </div>
                     </div>
 
-                    <div wire:loading.flex class="mt-4 items-center gap-2 rounded-xl border border-stone-200 bg-stone-50 px-4 py-3 text-sm text-stone-600 dark:border-gray-800 dark:bg-gray-950 dark:text-gray-300">
+                    <div wire:loading.flex class="mt-4 items-center gap-2 px-1 text-sm text-stone-500 dark:text-gray-400">
                         <span class="h-4 w-4 rounded-full border-2 border-current border-t-transparent animate-spin"></span>
-                        <span>Memuat Google Drive...</span>
+                        <span>Memuat file...</span>
                     </div>
 
                     @if ($statusMessage || $errorMessage)
                         <div class="mt-5 space-y-3">
                             @if ($statusMessage)
-                                <div class="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-900 dark:border-emerald-500/30 dark:bg-emerald-500/10 dark:text-emerald-100">
+                                <div class="rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-900 dark:border-emerald-500/30 dark:bg-emerald-500/10 dark:text-emerald-100">
                                     {{ $statusMessage }}
                                 </div>
                             @endif
 
                             @if ($errorMessage)
-                                <div class="rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-900 dark:border-rose-500/30 dark:bg-rose-500/10 dark:text-rose-100">
+                                <div class="rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-900 dark:border-rose-500/30 dark:bg-rose-500/10 dark:text-rose-100">
                                     {{ $errorMessage }}
                                 </div>
                             @endif
                         </div>
                     @endif
 
-                    <div class="mt-6 space-y-3">
+                    <div class="mt-6 grid gap-3 lg:grid-cols-2">
                         @forelse ($items as $item)
                             @php
                                 $isFolder = (bool) ($item['is_folder'] ?? false);
@@ -110,14 +144,29 @@
                                 $sizeBytes = $item['size_bytes'] ?? null;
                                 $sizeLabel = $sizeBytes !== null
                                     ? number_format(max(((int) $sizeBytes) / 1024, 0.1), 1).' KB'
-                                    : 'Ukuran tidak tersedia';
-                                $modifiedLabel = ! empty($item['modified_time'])
-                                    ? \Illuminate\Support\Carbon::parse($item['modified_time'])->format('d M Y H:i')
                                     : null;
+                                $modifiedLabel = ! empty($item['modified_time'])
+                                    ? \Illuminate\Support\Carbon::parse($item['modified_time'])->format('d M Y')
+                                    : null;
+                                $extension = strtoupper((string) pathinfo((string) ($item['name'] ?? ''), PATHINFO_EXTENSION));
+                                $metaParts = $isFolder
+                                    ? []
+                                    : [$isWorkspaceFile ? 'Google Workspace' : ($extension !== '' ? $extension : 'File')];
+
+                                if (! $isFolder && $sizeLabel !== null) {
+                                    $metaParts[] = $sizeLabel;
+                                }
+
+                                if ($modifiedLabel !== null) {
+                                    $metaParts[] = $modifiedLabel;
+                                }
+
+                                $metaLabel = implode(' · ', array_filter($metaParts));
                             @endphp
-                            <article class="flex flex-col gap-4 rounded-2xl border border-stone-200 bg-white p-4 shadow-sm transition hover:border-ista-primary/30 dark:border-gray-800 dark:bg-gray-900 md:flex-row md:items-center md:justify-between">
-                                <div class="flex min-w-0 items-start gap-3">
-                                    <div class="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl {{ $isFolder ? 'bg-amber-50 text-amber-600 dark:bg-amber-500/10 dark:text-amber-300' : ($isWorkspaceFile ? 'bg-sky-50 text-sky-600 dark:bg-sky-500/10 dark:text-sky-300' : 'bg-stone-100 text-stone-600 dark:bg-gray-800 dark:text-gray-300') }}">
+
+                            <article class="group flex h-full flex-col justify-between rounded-2xl border border-stone-200 bg-white p-4 shadow-sm shadow-stone-200/50 transition hover:-translate-y-[1px] hover:border-ista-primary/30 dark:border-gray-800 dark:bg-gray-900 dark:shadow-none">
+                                <div class="flex items-start gap-3">
+                                    <div class="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl {{ $isFolder ? 'bg-amber-50 text-amber-600 dark:bg-amber-500/10 dark:text-amber-300' : ($isWorkspaceFile ? 'bg-sky-50 text-sky-600 dark:bg-sky-500/10 dark:text-sky-300' : 'bg-stone-100 text-stone-600 dark:bg-gray-800 dark:text-gray-300') }}">
                                         @if ($isFolder)
                                             <svg class="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" aria-hidden="true">
                                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7Z" />
@@ -131,35 +180,51 @@
                                         @endif
                                     </div>
 
-                                    <div class="min-w-0">
-                                        <div class="flex flex-wrap items-center gap-2">
-                                            <h3 class="truncate text-sm font-semibold text-stone-900 dark:text-gray-100">{{ $item['name'] }}</h3>
-                                            <span class="rounded-full px-2.5 py-1 text-[10px] font-semibold {{ $isFolder ? 'bg-amber-50 text-amber-700 dark:bg-amber-500/10 dark:text-amber-300' : ($isWorkspaceFile ? 'bg-sky-50 text-sky-700 dark:bg-sky-500/10 dark:text-sky-300' : 'bg-stone-100 text-stone-600 dark:bg-gray-800 dark:text-gray-300') }}">
-                                                {{ $isFolder ? 'Folder' : ($isWorkspaceFile ? 'Google Workspace' : 'File') }}
-                                            </span>
-                                        </div>
-                                        <p class="mt-1 text-xs text-stone-500 dark:text-gray-400">
-                                            {{ $sizeLabel }}
-                                            @if ($modifiedLabel)
-                                                <span class="mx-1">·</span>
-                                                {{ $modifiedLabel }}
+                                    <div class="min-w-0 flex-1">
+                                        <div class="flex items-start justify-between gap-3">
+                                            <div class="min-w-0">
+                                                <h3 class="truncate text-[15px] font-semibold text-stone-900 dark:text-gray-100">{{ $item['name'] }}</h3>
+                                                @if ($metaLabel !== '')
+                                                    <p class="mt-1 text-xs text-stone-500 dark:text-gray-400">{{ $metaLabel }}</p>
+                                                @endif
+                                            </div>
+
+                                            @if ($isFolder)
+                                                <span class="shrink-0 rounded-full bg-amber-50 px-2.5 py-1 text-[10px] font-semibold text-amber-700 dark:bg-amber-500/10 dark:text-amber-300">
+                                                    Folder
+                                                </span>
+                                            @elseif ($isWorkspaceFile)
+                                                <span class="shrink-0 rounded-full bg-sky-50 px-2.5 py-1 text-[10px] font-semibold text-sky-700 dark:bg-sky-500/10 dark:text-sky-300">
+                                                    Workspace
+                                                </span>
                                             @endif
-                                        </p>
+                                        </div>
                                     </div>
                                 </div>
 
-                                <div class="flex flex-wrap items-center gap-2">
+                                <div class="mt-4 flex items-center justify-between gap-2">
                                     @if ($isFolder)
+                                        <span class="inline-flex h-10 w-10 shrink-0"></span>
                                         <button type="button"
                                                 wire:click='goToFolder(@js($item["id"]), @js($item["name"]))'
-                                                class="inline-flex items-center justify-center rounded-lg bg-ista-primary px-3 py-2 text-sm font-semibold text-white transition hover:bg-stone-800">
-                                            Buka Folder
+                                                class="inline-flex items-center gap-2 rounded-xl bg-stone-900 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-ista-primary dark:bg-white dark:text-stone-900 dark:hover:bg-stone-200">
+                                            Buka
                                         </button>
                                     @else
                                         @if (! empty($item['web_view_link']))
-                                            <a href="{{ $item['web_view_link'] }}" target="_blank" rel="noreferrer" class="inline-flex items-center justify-center rounded-lg border border-stone-300 px-3 py-2 text-sm font-semibold text-stone-700 transition hover:bg-stone-100 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-800">
-                                                Buka di Drive
+                                            <a href="{{ $item['web_view_link'] }}"
+                                               target="_blank"
+                                               rel="noreferrer"
+                                               class="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-stone-300 text-stone-600 transition hover:bg-stone-100 hover:text-stone-900 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800 dark:hover:text-white"
+                                               title="Buka di Drive"
+                                               aria-label="Buka {{ $item['name'] }} di Google Drive">
+                                                <svg class="h-4 w-4" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+                                                    <path d="M11.5 3.75a.75.75 0 0 0 0 1.5h2.19l-5.97 5.97a.75.75 0 1 0 1.06 1.06l5.97-5.97v2.19a.75.75 0 0 0 1.5 0v-4a.75.75 0 0 0-.75-.75h-4Z" />
+                                                    <path d="M5.75 5A2.75 2.75 0 0 0 3 7.75v6.5A2.75 2.75 0 0 0 5.75 17h6.5A2.75 2.75 0 0 0 15 14.25V11.5a.75.75 0 0 0-1.5 0v2.75c0 .69-.56 1.25-1.25 1.25h-6.5c-.69 0-1.25-.56-1.25-1.25v-6.5c0-.69.56-1.25 1.25-1.25H8.5A.75.75 0 0 0 8.5 5H5.75Z" />
+                                                </svg>
                                             </a>
+                                        @else
+                                            <span class="inline-flex h-10 w-10 shrink-0"></span>
                                         @endif
 
                                         <button type="button"
@@ -167,8 +232,8 @@
                                                 wire:loading.attr="disabled"
                                                 wire:target="processFile"
                                                 @disabled(! $isProcessable)
-                                                class="inline-flex items-center justify-center rounded-lg {{ $isProcessable ? 'bg-ista-primary text-white hover:bg-stone-800' : 'bg-stone-100 text-stone-400 dark:bg-gray-800 dark:text-gray-500' }} px-3 py-2 text-sm font-semibold transition disabled:cursor-not-allowed disabled:opacity-60">
-                                            <span wire:loading.remove wire:target="processFile">Gunakan di Chat</span>
+                                                class="inline-flex min-w-[116px] items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-sm font-semibold transition disabled:cursor-not-allowed disabled:opacity-60 {{ $isProcessable ? 'bg-ista-primary text-white hover:bg-stone-800' : 'bg-stone-100 text-stone-400 dark:bg-gray-800 dark:text-gray-500' }}">
+                                            <span wire:loading.remove wire:target="processFile">{{ $isProcessable ? 'Pakai' : 'Belum bisa' }}</span>
                                             <span wire:loading.inline-flex wire:target="processFile" class="items-center gap-2">
                                                 <span class="h-3.5 w-3.5 rounded-full border-2 border-current border-t-transparent animate-spin"></span>
                                                 Memproses
@@ -178,22 +243,13 @@
                                 </div>
                             </article>
                         @empty
-                            <div class="rounded-2xl border border-dashed border-stone-300 bg-white p-8 text-center text-sm text-stone-500 dark:border-gray-800 dark:bg-gray-900 dark:text-gray-400">
-                                Tidak ada file di folder ini.
+                            <div class="rounded-2xl border border-dashed border-stone-300 bg-white p-10 text-center text-sm text-stone-500 dark:border-gray-800 dark:bg-gray-900 dark:text-gray-400 lg:col-span-2">
+                                Folder ini belum berisi file yang bisa dipakai.
                             </div>
                         @endforelse
                     </div>
                 @endif
             </div>
-
-            @if ($isConfigured)
-                <footer class="flex flex-col gap-2 border-t border-stone-200 px-5 py-3 text-xs text-stone-500 dark:border-gray-800 dark:text-gray-400 sm:flex-row sm:items-center sm:justify-between">
-                    <span>Folder upload default: {{ $defaultUploadFolderName ?? 'ISTA AI' }}</span>
-                    @if ($sharedDriveId)
-                        <span class="break-all">Shared Drive: {{ $sharedDriveId }}</span>
-                    @endif
-                </footer>
-            @endif
         </section>
     </div>
 </div>

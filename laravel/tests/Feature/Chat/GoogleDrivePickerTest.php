@@ -64,12 +64,12 @@ class GoogleDrivePickerTest extends TestCase
             ->test(GoogleDrivePicker::class)
             ->call('open')
             ->assertSet('isOpen', true)
-            ->assertSee('Ambil file untuk chat', false)
-            ->assertSee('Folder root ISTA AI', false)
+            ->assertSee('Pilih file untuk chat', false)
+            ->assertSee('ISTA AI', false)
             ->assertSee('Subfolder', false)
             ->assertSee('arsip.pdf', false)
-            ->assertSee('Buka Folder', false)
-            ->assertSee('Gunakan di Chat', false)
+            ->assertSee('Buka', false)
+            ->assertSee('Pakai', false)
             ->assertSet('nextPageToken', 'page-2');
     }
 }
