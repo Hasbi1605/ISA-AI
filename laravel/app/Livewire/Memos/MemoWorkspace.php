@@ -11,6 +11,8 @@ use Livewire\Component;
 
 class MemoWorkspace extends Component
 {
+    private const DRAFT_THREAD_KEY = 'draft';
+
     public ?int $activeMemoId = null;
 
     public string $memoType = 'memo_internal';
@@ -20,6 +22,8 @@ class MemoWorkspace extends Component
     public string $memoPrompt = '';
 
     public array $memoChatMessages = [];
+
+    public array $memoChatThreads = [];
 
     public bool $isGenerating = false;
 
@@ -34,6 +38,8 @@ class MemoWorkspace extends Component
 
     public function loadMemo(int $memoId): void
     {
+        $this->rememberCurrentThread();
+
         $memo = Memo::where('id', $memoId)
             ->where('user_id', Auth::id())
             ->first();
@@ -48,12 +54,33 @@ class MemoWorkspace extends Component
         $this->previewHtml = $memo->searchable_text ? nl2br(e($memo->searchable_text)) : null;
         $this->previewMode = 'preview';
 
-        // Preserve existing chat history — just append a system message about loading
-        $this->addSystemMessage("Memo \"{$memo->title}\" dimuat. Anda bisa meminta revisi atau generate ulang.");
+        $threadKey = $this->threadKey($memo->id);
+
+        if (! empty($this->memoChatThreads[$threadKey])) {
+            $this->memoChatMessages = $this->memoChatThreads[$threadKey];
+
+            return;
+        }
+
+        $storedThread = $this->normalizeStoredThread($memo->chat_messages ?? []);
+
+        if ($storedThread !== []) {
+            $this->memoChatMessages = $storedThread;
+            $this->rememberCurrentThread();
+
+            return;
+        }
+
+        $this->memoChatMessages = [
+            $this->makeSystemMessage("Memo \"{$memo->title}\" dimuat. Anda bisa meminta revisi atau generate ulang."),
+        ];
+        $this->rememberCurrentThread();
     }
 
     public function startNewMemo(): void
     {
+        $this->rememberCurrentThread();
+
         $this->reset(['activeMemoId', 'memoType', 'title', 'memoPrompt', 'memoChatMessages', 'previewHtml', 'isGenerating']);
         $this->memoType = 'memo_internal';
         $this->previewMode = 'preview';
@@ -74,6 +101,7 @@ class MemoWorkspace extends Component
             'content' => $userMessage,
             'timestamp' => now()->format('H:i'),
         ];
+        $this->rememberCurrentThread();
 
         // If we have enough context, auto-generate
         if ($this->title && $this->memoType) {
@@ -86,7 +114,7 @@ class MemoWorkspace extends Component
     public function generateFromChat(string $context): void
     {
         $this->validate([
-            'memoType' => ['required', 'in:' . implode(',', array_keys(Memo::TYPES))],
+            'memoType' => ['required', 'in:'.implode(',', array_keys(Memo::TYPES))],
             'title' => ['required', 'string', 'max:160'],
         ]);
 
@@ -105,10 +133,11 @@ class MemoWorkspace extends Component
             $this->activeMemoId = $memo->id;
             $this->previewHtml = $memo->searchable_text ? nl2br(e($memo->searchable_text)) : '<p class="text-stone-500">Draft berhasil digenerate. Gunakan tab Editor untuk melihat dokumen lengkap.</p>';
             $this->previewMode = 'preview';
+            $this->rememberCurrentThread();
 
             $this->addSystemMessage("Draft memo \"{$memo->title}\" berhasil digenerate! Anda bisa melihat preview di panel kanan, atau beralih ke Editor untuk mengedit dokumen DOCX secara langsung.\n\nMau saya revisi bagian tertentu?");
         } catch (\Throwable $e) {
-            $this->addSystemMessage('Maaf, terjadi kesalahan saat generate memo: ' . $e->getMessage());
+            $this->addSystemMessage('Maaf, terjadi kesalahan saat generate memo: '.$e->getMessage());
         } finally {
             $this->isGenerating = false;
         }
@@ -156,13 +185,13 @@ class MemoWorkspace extends Component
         $config = [
             'document' => [
                 'fileType' => 'docx',
-                'key' => 'memo-' . $memo->id . '-' . $memo->updated_at?->timestamp,
-                'title' => $memo->title . '.docx',
-                'url' => $laravelInternalUrl . $documentPath,
+                'key' => 'memo-'.$memo->id.'-'.$memo->updated_at?->timestamp,
+                'title' => $memo->title.'.docx',
+                'url' => $laravelInternalUrl.$documentPath,
             ],
             'documentType' => 'word',
             'editorConfig' => [
-                'callbackUrl' => $laravelInternalUrl . $callbackPath,
+                'callbackUrl' => $laravelInternalUrl.$callbackPath,
                 'mode' => 'edit',
                 'lang' => 'id',
                 'user' => [
@@ -186,17 +215,59 @@ class MemoWorkspace extends Component
         return view('livewire.memos.memo-workspace', [
             'memos' => $memos,
             'memoTypes' => Memo::TYPES,
-            'editorConfig' => $this->editorConfig(),
-            'onlyOfficeApiUrl' => rtrim((string) config('services.onlyoffice.public_url', ''), '/') . '/web-apps/apps/api/documents/api.js',
+            'editorConfig' => $this->previewMode === 'editor' ? $this->editorConfig() : null,
+            'onlyOfficeApiUrl' => rtrim((string) config('services.onlyoffice.public_url', ''), '/').'/web-apps/apps/api/documents/api.js',
         ]);
     }
 
     protected function addSystemMessage(string $content): void
     {
-        $this->memoChatMessages[] = [
+        $this->memoChatMessages[] = $this->makeSystemMessage($content);
+        $this->rememberCurrentThread();
+    }
+
+    protected function makeSystemMessage(string $content): array
+    {
+        return [
             'role' => 'assistant',
             'content' => $content,
             'timestamp' => now()->format('H:i'),
         ];
+    }
+
+    protected function rememberCurrentThread(): void
+    {
+        $this->memoChatThreads[$this->threadKey($this->activeMemoId)] = $this->memoChatMessages;
+        $this->persistActiveMemoThread();
+    }
+
+    protected function threadKey(?int $memoId = null): string
+    {
+        return $memoId ? 'memo-'.$memoId : self::DRAFT_THREAD_KEY;
+    }
+
+    protected function persistActiveMemoThread(): void
+    {
+        if (! $this->activeMemoId) {
+            return;
+        }
+
+        Memo::where('id', $this->activeMemoId)
+            ->where('user_id', Auth::id())
+            ->update(['chat_messages' => $this->memoChatMessages]);
+    }
+
+    protected function normalizeStoredThread(array $messages): array
+    {
+        return collect($messages)
+            ->filter(fn ($message) => is_array($message))
+            ->map(fn (array $message) => [
+                'role' => in_array(($message['role'] ?? null), ['assistant', 'user'], true) ? $message['role'] : 'assistant',
+                'content' => (string) ($message['content'] ?? ''),
+                'timestamp' => (string) ($message['timestamp'] ?? now()->format('H:i')),
+            ])
+            ->filter(fn (array $message) => trim($message['content']) !== '')
+            ->values()
+            ->all();
     }
 }

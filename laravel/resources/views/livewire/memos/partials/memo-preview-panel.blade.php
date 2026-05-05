@@ -2,11 +2,18 @@
 <div class="flex-1 flex flex-col min-w-0 bg-stone-50 dark:bg-gray-950 overflow-hidden">
 
     {{-- Preview/Editor Toggle Header --}}
-    <div class="h-[61px] flex-shrink-0 flex items-center justify-between px-5 border-b border-stone-200/60 dark:border-[#1E293B]/70">
-        <div class="flex items-center gap-1">
+    <div class="relative z-30 min-h-[61px] flex-shrink-0 flex items-center justify-between gap-3 px-5 border-b border-stone-200/60 bg-white/85 backdrop-blur-sm dark:border-[#1E293B]/70 dark:bg-gray-950/85">
+        <div class="flex min-w-0 flex-wrap items-center gap-3">
+            <div class="shrink-0">
+                @include('livewire.chat.partials.chat-memo-tab-toggle')
+            </div>
+
+            <div class="hidden h-7 w-px bg-stone-200 dark:bg-gray-800 sm:block"></div>
+
+            <div class="flex items-center gap-1">
             {{-- Preview Tab --}}
             <button type="button"
-                    wire:click="$set('previewMode', 'preview')"
+                    wire:click="switchPreviewMode('preview')"
                     class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-[12.5px] font-semibold transition-all
                         {{ $previewMode === 'preview'
                             ? 'bg-white dark:bg-gray-800 text-stone-800 dark:text-gray-200 shadow-sm border-stone-200 dark:border-gray-700'
@@ -19,7 +26,7 @@
             </button>
             {{-- Editor Tab --}}
             <button type="button"
-                    wire:click="$set('previewMode', 'editor')"
+                    wire:click="switchPreviewMode('editor')"
                     class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-[12.5px] font-semibold transition-all
                         {{ $previewMode === 'editor'
                             ? 'bg-white dark:bg-gray-800 text-stone-800 dark:text-gray-200 shadow-sm border-stone-200 dark:border-gray-700'
@@ -29,11 +36,12 @@
                 </svg>
                 Editor
             </button>
+            </div>
         </div>
 
         {{-- Actions --}}
         @if ($activeMemoId)
-            <div class="flex items-center gap-2">
+            <div class="flex flex-shrink-0 items-center gap-2">
                 <button type="button" wire:click="regenerate" wire:loading.attr="disabled" wire:target="regenerate,generateFromChat"
                         class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-stone-200 dark:border-gray-700 text-[12px] font-semibold text-stone-600 dark:text-gray-300 hover:bg-stone-100 dark:hover:bg-gray-800 transition-all disabled:opacity-50">
                     <svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -102,6 +110,7 @@
             @if ($editorConfig)
                 <div
                     wire:ignore
+                    wire:key="memo-editor-{{ $activeMemoId }}-{{ $previewMode }}"
                     class="h-full min-h-[640px]"
                     x-data="{
                         config: @js($editorConfig),

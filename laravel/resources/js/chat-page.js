@@ -9,7 +9,8 @@ const registerChatPageData = (Alpine) => {
 
     hasRegisteredChatPageData = true;
 
-    Alpine.data('chatLayout', () => ({
+    Alpine.data('chatLayout', (config = {}) => ({
+        activeTab: config.activeTab || 'chat',
         darkMode: isDarkThemeEnabled(),
         isMobile: window.matchMedia('(max-width: 1023px)').matches,
         showLeftSidebar: !window.matchMedia('(max-width: 1023px)').matches,
@@ -43,6 +44,15 @@ const registerChatPageData = (Alpine) => {
             };
 
             mediaQuery.addEventListener('change', syncResponsiveState);
+        },
+
+        setTab(tab) {
+            if (!['chat', 'memo'].includes(tab)) {
+                return;
+            }
+
+            this.activeTab = tab;
+            this.$wire.set('tab', tab);
         },
 
         onDragEnter(event) {

@@ -42,7 +42,10 @@ class ChatUiTest extends TestCase
             ->assertSee('open-google-drive-picker', false)
             ->assertSee('Ambil file dari Google Drive Kantor', false)
             ->assertSee('images/icons/google-drive.svg', false)
-            ->assertSee('Pilih file untuk chat', false);
+            ->assertSee('Pilih file untuk chat', false)
+            ->assertSee('chat-tab-switch', false)
+            ->assertSee('activeTab === \'chat\'', false)
+            ->assertDontSee('wire:click="$set(\'tab\', \'chat\')"', false);
     }
 
     public function test_loading_conversation_dispatches_active_history_event(): void

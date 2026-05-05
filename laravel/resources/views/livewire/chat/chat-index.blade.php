@@ -1,9 +1,10 @@
-<div x-data="chatLayout"
+<div x-data="chatLayout({ activeTab: $wire.entangle('tab').live })"
      x-on:dragenter.window.prevent="onDragEnter($event)"
      x-on:dragover.window.prevent="onDragOver($event)"
      x-on:dragleave.window.prevent="onDragLeave($event)"
      x-on:drop.window.prevent="onDropFile($event)"
      x-on:open-sidebar-right.window="showRightSidebar = true"
+     x-on:chat-tab-switch.window="setTab($event.detail?.tab)"
      x-on:conversation-loading.window="isSwitchingConversation = true"
      x-on:conversation-loaded.window="isSwitchingConversation = false"
      class="chat-viewport flex w-full overflow-hidden text-stone-800 dark:text-gray-100 font-sans transition-colors duration-300 relative ista-display-sans bg-stone-50/50 dark:bg-gray-900" style="background-image: url('{{ asset('images/ista/dashboard-grid.png') }}'); background-size: 8px 8px;"
@@ -27,7 +28,7 @@
     @endphp
 
     {{-- ===== CHAT TAB CONTENT ===== --}}
-    <div x-show="$wire.tab === 'chat'" class="flex w-full h-full overflow-hidden">
+    <div x-show="activeTab === 'chat'" class="flex w-full h-full overflow-hidden">
         <!-- LEFT SIDEBAR: Chat History -->
         @include('livewire.chat.partials.chat-left-sidebar')
 
@@ -96,7 +97,7 @@
     </div>
 
     {{-- ===== MEMO TAB CONTENT ===== --}}
-    <div x-show="$wire.tab === 'memo'" x-cloak class="flex w-full h-full overflow-hidden">
+    <div x-show="activeTab === 'memo'" x-cloak class="flex w-full h-full overflow-hidden">
         <livewire:memos.memo-workspace />
     </div>
 

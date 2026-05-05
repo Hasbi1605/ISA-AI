@@ -2,8 +2,9 @@
 <div class="inline-flex items-center rounded-full border border-stone-200/80 bg-white/80 p-1 shadow-sm backdrop-blur-sm dark:border-gray-700 dark:bg-gray-800/80">
     <button
         type="button"
-        wire:click="$set('tab', 'chat')"
-        :class="$wire.tab === 'chat'
+        @click="$dispatch('chat-tab-switch', { tab: 'chat' })"
+        :aria-pressed="activeTab === 'chat' ? 'true' : 'false'"
+        :class="activeTab === 'chat'
             ? 'bg-ista-primary text-white shadow-sm'
             : 'text-stone-500 hover:text-stone-700 dark:text-gray-400 dark:hover:text-gray-200'"
         class="inline-flex items-center gap-1.5 rounded-full px-4 py-1.5 text-[13px] font-semibold transition-all duration-200"
@@ -15,8 +16,9 @@
     </button>
     <button
         type="button"
-        wire:click="$set('tab', 'memo')"
-        :class="$wire.tab === 'memo'
+        @click="$dispatch('chat-tab-switch', { tab: 'memo' })"
+        :aria-pressed="activeTab === 'memo' ? 'true' : 'false'"
+        :class="activeTab === 'memo'
             ? 'bg-ista-primary text-white shadow-sm'
             : 'text-stone-500 hover:text-stone-700 dark:text-gray-400 dark:hover:text-gray-200'"
         class="inline-flex items-center gap-1.5 rounded-full px-4 py-1.5 text-[13px] font-semibold transition-all duration-200"
