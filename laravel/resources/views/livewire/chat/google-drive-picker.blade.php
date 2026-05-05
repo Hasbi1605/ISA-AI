@@ -206,7 +206,7 @@
                                     @if ($isFolder)
                                         <span class="inline-flex h-10 w-10 shrink-0"></span>
                                         <button type="button"
-                                                wire:click='goToFolder(@js($item["id"]), @js($item["name"]))'
+                                                wire:click="goToFolder(@js($item['id']), @js($item['name']))"
                                                 class="inline-flex items-center gap-2 rounded-xl bg-stone-900 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-ista-primary dark:bg-white dark:text-stone-900 dark:hover:bg-stone-200">
                                             Buka
                                         </button>
@@ -228,7 +228,7 @@
                                         @endif
 
                                         <button type="button"
-                                                wire:click='processFile(@js($item["id"]))'
+                                                wire:click="processFile(@js($item['id']))"
                                                 wire:loading.attr="disabled"
                                                 wire:target="processFile"
                                                 @disabled(! $isProcessable)
