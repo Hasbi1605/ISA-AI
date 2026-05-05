@@ -63,7 +63,7 @@
                                 wire:click="loadMemo({{ $memo->id }})"
                                 data-memo-history-id="{{ $memo->id }}"
                                 :class="{ 'is-active': $wire.activeMemoId === {{ (int) $memo->id }} }"
-                                class="chat-history-item items-start gap-2.5 py-2.5 {{ (int) $activeMemoId === (int) $memo->id ? 'is-active' : '' }}"
+                                class="chat-history-item items-start gap-2.5 py-2.5"
                             >
                                 <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 mt-0.5 flex-shrink-0 text-stone-400 dark:text-gray-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />

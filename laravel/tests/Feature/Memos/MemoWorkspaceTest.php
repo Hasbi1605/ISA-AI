@@ -132,6 +132,28 @@ class MemoWorkspaceTest extends TestCase
             ->assertSet('previewMode', 'preview');
     }
 
+    public function test_editor_config_ignores_tampered_active_memo_id_for_non_owner(): void
+    {
+        $owner = User::factory()->create(['email_verified_at' => now()]);
+        $other = User::factory()->create(['email_verified_at' => now()]);
+
+        $memo = Memo::create([
+            'user_id' => $owner->id,
+            'title' => 'Memo Rahasia Owner',
+            'memo_type' => 'memo_internal',
+            'file_path' => 'memos/'.$owner->id.'/memo-rahasia.docx',
+            'status' => Memo::STATUS_GENERATED,
+        ]);
+
+        Livewire::actingAs($other)
+            ->test(MemoWorkspace::class)
+            ->set('activeMemoId', $memo->id)
+            ->call('switchPreviewMode', 'editor')
+            ->assertSee('Editor belum tersedia', false)
+            ->assertDontSee('Memo Rahasia Owner.docx', false)
+            ->assertDontSee('memos/'.$memo->id.'/signed-file', false);
+    }
+
     public function test_generated_memo_chat_thread_is_restored_when_loading_memo_history(): void
     {
         Storage::fake('local');

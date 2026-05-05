@@ -170,7 +170,9 @@ class MemoWorkspace extends Component
             return null;
         }
 
-        $memo = Memo::find($this->activeMemoId);
+        $memo = Memo::where('id', $this->activeMemoId)
+            ->where('user_id', Auth::id())
+            ->first();
 
         if (! $memo || ! $memo->file_path) {
             return null;

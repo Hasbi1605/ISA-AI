@@ -79,6 +79,7 @@
                         <h1 class="text-xl font-bold text-stone-900 dark:text-gray-100 mb-6">{{ $title ?: 'Untitled' }}</h1>
                         {{-- Content --}}
                         <div class="prose prose-stone dark:prose-invert prose-sm max-w-none leading-relaxed">
+                            {{-- $previewHtml must be escaped or trusted static markup before it reaches this view. --}}
                             {!! $previewHtml !!}
                         </div>
                     </div>
