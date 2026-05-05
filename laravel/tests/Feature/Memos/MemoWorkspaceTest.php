@@ -83,6 +83,41 @@ class MemoWorkspaceTest extends TestCase
             ->assertSee('Memo Lama', false);
     }
 
+    public function test_loading_memo_history_does_not_refresh_timestamp_or_move_sidebar_group(): void
+    {
+        $user = User::factory()->create(['email_verified_at' => now()]);
+        $oldTimestamp = now()->subDays(10)->setTime(9, 0);
+
+        Memo::create([
+            'user_id' => $user->id,
+            'title' => 'Memo Hari Ini',
+            'memo_type' => 'memo_internal',
+            'status' => Memo::STATUS_GENERATED,
+        ]);
+
+        $olderMemo = Memo::create([
+            'user_id' => $user->id,
+            'title' => 'Memo Tetap Lama',
+            'memo_type' => 'memo_internal',
+            'status' => Memo::STATUS_GENERATED,
+        ]);
+        $olderMemo->forceFill([
+            'created_at' => $oldTimestamp,
+            'updated_at' => $oldTimestamp,
+        ])->save();
+
+        Livewire::actingAs($user)
+            ->test(MemoWorkspace::class)
+            ->call('loadMemo', $olderMemo->id)
+            ->assertSee('Older', false)
+            ->assertSee('Memo Tetap Lama', false);
+
+        $this->assertSame(
+            $oldTimestamp->format('Y-m-d H:i:s'),
+            $olderMemo->refresh()->updated_at->format('Y-m-d H:i:s'),
+        );
+    }
+
     public function test_preview_mode_can_switch_back_from_editor_to_preview(): void
     {
         $user = User::factory()->create(['email_verified_at' => now()]);

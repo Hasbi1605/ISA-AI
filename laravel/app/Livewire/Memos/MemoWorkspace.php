@@ -252,9 +252,9 @@ class MemoWorkspace extends Component
             return;
         }
 
-        Memo::where('id', $this->activeMemoId)
+        Memo::withoutTimestamps(fn () => Memo::where('id', $this->activeMemoId)
             ->where('user_id', Auth::id())
-            ->update(['chat_messages' => $this->memoChatMessages]);
+            ->update(['chat_messages' => $this->memoChatMessages]));
     }
 
     protected function normalizeStoredThread(array $messages): array
