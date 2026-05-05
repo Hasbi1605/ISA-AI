@@ -52,18 +52,18 @@
                                 <button
                                     type="button"
                                     @click="toggleMenu()"
-                                    :disabled="loading"
+                                    :disabled="isBusy()"
                                     class="inline-flex h-9 items-center gap-2 rounded-md border border-ista-primary/20 bg-ista-primary px-3 text-[12px] font-semibold text-white shadow-sm transition hover:bg-ista-dark disabled:cursor-wait disabled:opacity-75"
-                                    :aria-label="loading ? 'Menyiapkan ekspor' : 'Ekspor'"
-                                    :title="loading ? 'Menyiapkan ekspor' : 'Ekspor'"
+                                    :aria-label="exportLoadingLabel()"
+                                    :title="exportLoadingLabel()"
                                 >
-                                    <span x-show="loading" class="h-3.5 w-3.5 rounded-full border-2 border-white/70 border-t-transparent animate-spin" aria-hidden="true"></span>
-                                    <svg x-show="!loading" class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" aria-hidden="true">
+                                    <span x-show="isExportLoading()" class="h-3.5 w-3.5 rounded-full border-2 border-white/70 border-t-transparent animate-spin" aria-hidden="true"></span>
+                                    <svg x-show="!isExportLoading()" class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" aria-hidden="true">
                                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.9" d="M12 15V3" />
                                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.9" d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
                                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.9" d="m7 10 5 5 5-5" />
                                     </svg>
-                                    <span class="hidden sm:inline" x-text="loading ? 'Menyiapkan...' : 'Ekspor'">Ekspor</span>
+                                    <span class="hidden sm:inline" x-text="isExportLoading() ? 'Menyiapkan...' : 'Ekspor'">Ekspor</span>
                                 </button>
 
                                 <div
@@ -93,13 +93,13 @@
                                 <button
                                     type="button"
                                     @click="toggleDriveMenu()"
-                                    :disabled="loading || !driveUploadAvailable"
+                                    :disabled="isBusy() || !driveUploadAvailable"
                                     class="inline-flex h-9 items-center gap-2 rounded-md border border-stone-300 bg-white px-3 text-[12px] font-semibold text-stone-700 shadow-sm transition hover:border-ista-primary/30 hover:bg-stone-50 disabled:cursor-not-allowed disabled:opacity-75 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-100 dark:hover:bg-gray-800"
                                     :aria-label="driveButtonLabel()"
                                     :title="driveButtonLabel()"
                                 >
-                                    <span x-show="loading" class="h-3.5 w-3.5 rounded-full border-2 border-current border-t-transparent animate-spin" aria-hidden="true"></span>
-                                    <img x-show="!loading" src="{{ asset('images/icons/google-drive.svg') }}" alt="" class="h-[15px] w-[17px]" />
+                                    <span x-show="isDriveLoading()" class="h-3.5 w-3.5 rounded-full border-2 border-current border-t-transparent animate-spin" aria-hidden="true"></span>
+                                    <img x-show="!isDriveLoading()" src="{{ asset('images/icons/google-drive.svg') }}" alt="" class="h-[15px] w-[17px]" />
                                     <span class="hidden sm:inline">Upload ke GDrive Kantor</span>
                                 </button>
 

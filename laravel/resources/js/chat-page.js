@@ -841,13 +841,25 @@ const registerChatPageData = (Alpine) => {
         driveUploadAvailable: Boolean(config.driveUploadAvailable),
         exportMenuOpen: false,
         driveMenuOpen: false,
-        loading: false,
+        loadingAction: null,
         error: '',
         contentHtml: '',
         tables: null,
 
+        isBusy() {
+            return this.loadingAction !== null;
+        },
+
+        isExportLoading() {
+            return this.loadingAction === 'export';
+        },
+
+        isDriveLoading() {
+            return this.loadingAction === 'drive';
+        },
+
         toggleMenu() {
-            if (this.loading) {
+            if (this.isBusy()) {
                 return;
             }
 
@@ -856,16 +868,20 @@ const registerChatPageData = (Alpine) => {
             this.error = '';
         },
 
+        exportLoadingLabel() {
+            return this.isExportLoading() ? 'Menyiapkan ekspor' : 'Ekspor';
+        },
+
         driveButtonLabel() {
             if (!this.driveUploadAvailable) {
                 return 'Upload Drive perlu koneksi akun pusat';
             }
 
-            return this.loading ? 'Menyiapkan upload ke Google Drive' : 'Upload ke GDrive Kantor';
+            return this.isDriveLoading() ? 'Menyiapkan upload ke Google Drive' : 'Upload ke GDrive Kantor';
         },
 
         toggleDriveMenu() {
-            if (this.loading || !this.driveUploadAvailable) {
+            if (this.isBusy() || !this.driveUploadAvailable) {
                 return;
             }
 
@@ -875,13 +891,13 @@ const registerChatPageData = (Alpine) => {
         },
 
         async exportTablesAs(format) {
-            if (!this.exportUrl || this.loading) {
+            if (!this.exportUrl || this.isBusy()) {
                 return;
             }
 
             this.exportMenuOpen = false;
             this.driveMenuOpen = false;
-            this.loading = true;
+            this.loadingAction = 'export';
             this.error = '';
 
             try {
@@ -915,18 +931,18 @@ const registerChatPageData = (Alpine) => {
                 console.error('Gagal mengekspor dokumen', error);
                 this.error = error?.message || 'Gagal mengekspor dokumen.';
             } finally {
-                this.loading = false;
+                this.loadingAction = null;
             }
         },
 
         async saveToGoogleDrive(format) {
-            if (this.loading || !this.driveUploadAvailable) {
+            if (this.isBusy() || !this.driveUploadAvailable) {
                 return;
             }
 
             this.exportMenuOpen = false;
             this.driveMenuOpen = false;
-            this.loading = true;
+            this.loadingAction = 'drive';
             this.error = '';
 
             try {
@@ -935,7 +951,7 @@ const registerChatPageData = (Alpine) => {
                 console.error('Gagal menyimpan dokumen ke Google Drive', error);
                 this.error = error?.message || 'Gagal menyimpan ke Google Drive.';
             } finally {
-                this.loading = false;
+                this.loadingAction = null;
             }
         },
 
