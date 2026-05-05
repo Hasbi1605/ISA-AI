@@ -30,6 +30,8 @@ class MemoWorkspaceTest extends TestCase
             ->assertSee('images/icons/collapse-left-light.svg', false)
             ->assertSee('chat-form', false)
             ->assertSee('ISTA AI dapat keliru', false)
+            ->assertSee('dark:bg-gray-800/85', false)
+            ->assertDontSee('dark:bg-gray-950/85', false)
             ->assertDontSee('Buat Memo Baru', false)
             ->assertDontSee('wire:click="$set(\'tab\', \'chat\')"', false);
     }

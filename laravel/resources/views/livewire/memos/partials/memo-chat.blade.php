@@ -2,7 +2,7 @@
 <div class="flex flex-col w-full lg:w-[420px] xl:w-[520px] flex-shrink-0 border-r border-stone-200/60 dark:border-[#1E293B] bg-transparent dark:bg-gray-900/30 overflow-hidden">
 
     {{-- Header with sidebar toggle, brand, tab toggle, and theme toggle --}}
-    <div class="min-h-[61px] flex-shrink-0 flex items-center justify-between gap-2 px-3 sm:px-5 border-b border-stone-200/60 dark:border-[#1E293B]/70 bg-white/85 dark:bg-gray-950/85 backdrop-blur-sm">
+    <div class="min-h-[61px] flex-shrink-0 flex items-center justify-between gap-2 px-3 sm:px-5 border-b border-stone-200/60 dark:border-[#1E293B]/70 bg-white/85 dark:bg-gray-800/85 backdrop-blur-sm">
         <div class="flex min-w-0 items-center gap-2">
             <button type="button" @click="showMemoSidebar = !showMemoSidebar" class="p-2 rounded-[10px] hover:bg-[#F1F5F9] dark:hover:bg-gray-800 transition-colors flex-shrink-0" aria-label="Toggle memo sidebar">
                 <img src="{{ asset('images/icons/collapse-left-light.svg') }}" alt="" class="h-5 w-5 dark:hidden transition-transform duration-300 ease-in-out" :class="showMemoSidebar ? 'rotate-0' : 'rotate-180'" />
