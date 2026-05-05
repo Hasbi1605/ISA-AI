@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Controllers\CloudStorage\GoogleDriveOAuthController;
 use App\Http\Controllers\Documents\DocumentExportController;
 use App\Http\Controllers\Documents\DocumentPreviewController;
 use App\Http\Controllers\Memos\MemoFileController;
@@ -63,6 +64,14 @@ Route::middleware(['auth', 'verified'])
         Route::get('/status', [DocumentPreviewController::class, 'status'])->name('status');
         Route::get('/stream', [DocumentPreviewController::class, 'stream'])->name('stream');
         Route::get('/html', [DocumentPreviewController::class, 'html'])->name('html');
+    });
+
+Route::middleware(['auth', 'verified'])
+    ->prefix('chat/google-drive/oauth')
+    ->name('chat.google-drive.oauth.')
+    ->group(function () {
+        Route::get('/connect', [GoogleDriveOAuthController::class, 'connect'])->name('connect');
+        Route::get('/callback', [GoogleDriveOAuthController::class, 'callback'])->name('callback');
     });
 
 require __DIR__.'/auth.php';

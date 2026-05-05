@@ -11,8 +11,11 @@ use RuntimeException;
 class DocumentExportService
 {
     protected string $baseUrl;
+
     protected ?string $token;
+
     protected int $connectTimeout;
+
     protected int $timeout;
 
     public function __construct()
@@ -58,6 +61,38 @@ class DocumentExportService
             'content_type' => $this->mimeTypeForFormat($targetFormat),
             'file_name' => $this->buildFileName($fileName, $targetFormat),
         ];
+    }
+
+    /**
+     * Export a stored document into the requested file format.
+     *
+     * @return array{body: string, content_type: string, file_name: string}
+     */
+    public function exportDocument(Document $document, string $targetFormat, ?string $fileName = null): array
+    {
+        $targetFormat = strtolower(trim($targetFormat));
+        $baseFileName = $this->documentBaseName($document, $fileName);
+
+        if (in_array($targetFormat, ['xlsx', 'csv'], true)) {
+            $tables = $this->extractTables($document);
+
+            if ($tables === []) {
+                throw new RuntimeException('Tidak ada tabel yang bisa diekspor.');
+            }
+
+            $contentHtml = $this->buildTablesHtml($tables, $document->original_name);
+
+            return $this->exportContent($contentHtml, $targetFormat, $baseFileName);
+        }
+
+        $content = $this->extractContent($document);
+        $contentHtml = trim((string) ($content['content_html'] ?? ''));
+
+        if ($contentHtml === '') {
+            throw new RuntimeException('Isi dokumen kosong atau tidak bisa diekstrak.');
+        }
+
+        return $this->exportContent($contentHtml, $targetFormat, $baseFileName);
     }
 
     /**
@@ -126,6 +161,51 @@ class DocumentExportService
         return $response->json() ?: [];
     }
 
+    /**
+     * Render table extraction payload into a standalone HTML document.
+     *
+     * @param  array<int, array<string, mixed>>  $tables
+     */
+    public function buildTablesHtml(array $tables, ?string $title = null): string
+    {
+        $documentTitle = $this->escapeHtml($this->documentBaseNameFromTitle($title));
+        $sections = [];
+
+        foreach (array_values($tables) as $index => $table) {
+            $pageLabel = isset($table['page']) && $table['page'] !== null ? ' - Halaman '.$this->escapeHtml((string) $table['page']) : '';
+            $sectionTitle = 'Tabel '.($index + 1).$pageLabel;
+            $header = is_array($table['header'] ?? null) ? $table['header'] : [];
+            $rows = is_array($table['rows'] ?? null) ? $table['rows'] : [];
+
+            $headerHtml = '';
+            if ($header !== []) {
+                $headerHtml = '<thead><tr>'.implode('', array_map(
+                    fn ($cell) => '<th>'.$this->escapeHtml((string) $cell).'</th>',
+                    $header
+                )).'</tr></thead>';
+            }
+
+            $bodyHtml = implode('', array_map(function ($row) {
+                $cells = is_array($row) ? $row : [];
+
+                return '<tr>'.implode('', array_map(
+                    fn ($cell) => '<td>'.$this->escapeHtml((string) $cell).'</td>',
+                    $cells
+                )).'</tr>';
+            }, $rows));
+
+            $sections[] = '<section>'
+                .'<h2>'.$this->escapeHtml($sectionTitle).'</h2>'
+                .'<table>'
+                .$headerHtml
+                .'<tbody>'.$bodyHtml.'</tbody>'
+                .'</table>'
+                .'</section>';
+        }
+
+        return '<article><h1>'.$documentTitle.'</h1>'.implode('', $sections).'</article>';
+    }
+
     protected function resolveDocumentPath(Document $document): ?string
     {
         $candidates = [
@@ -146,6 +226,26 @@ class DocumentExportService
         }
 
         return null;
+    }
+
+    protected function documentBaseName(Document $document, ?string $fileName = null): string
+    {
+        $candidate = trim((string) ($fileName ?? ''));
+
+        if ($candidate === '') {
+            $candidate = pathinfo((string) ($document->original_name ?: $document->filename), PATHINFO_FILENAME);
+        }
+
+        $candidate = trim($candidate);
+
+        return $candidate !== '' ? $candidate : 'ista-ai-export';
+    }
+
+    protected function documentBaseNameFromTitle(?string $title): string
+    {
+        $candidate = pathinfo(trim((string) $title), PATHINFO_FILENAME);
+
+        return $candidate !== '' ? $candidate : 'Ekstrak Tabel Dokumen';
     }
 
     protected function mimeTypeForFormat(string $targetFormat): string
@@ -196,5 +296,10 @@ class DocumentExportService
         $normalized = $this->normalizeStringConfig($value, (string) $default);
 
         return is_numeric($normalized) ? (int) $normalized : $default;
+    }
+
+    private function escapeHtml(string $value): string
+    {
+        return htmlspecialchars($value, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
     }
 }

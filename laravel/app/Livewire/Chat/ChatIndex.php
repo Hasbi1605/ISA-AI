@@ -2,16 +2,23 @@
 
 namespace App\Livewire\Chat;
 
+use App\Models\CloudStorageFile;
 use App\Models\Conversation;
-use App\Models\Message;
 use App\Models\Document;
+use App\Models\Message;
+use App\Models\User;
 use App\Services\AIService;
 use App\Services\Chat\ChatDocumentStateService;
 use App\Services\ChatOrchestrationService;
+use App\Services\CloudStorage\GoogleDriveService;
+use App\Services\DocumentExportService;
 use App\Services\DocumentLifecycleService;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
 use Livewire\Attributes\Layout;
+use Livewire\Attributes\On;
 use Livewire\Attributes\Url;
 use Livewire\Component;
 use Livewire\WithFileUploads;
@@ -25,22 +32,39 @@ class ChatIndex extends Component
     public $q = '';
 
     public $prompt = '';
+
     public $currentConversationId;
+
     public $messages = [];
+
     public $conversations = [];
+
     public $selectedDocuments = [];
+
     public $conversationDocuments = [];
+
     public $availableDocuments = [];
+
     public $showDocumentSelector = false;
+
     public $sources = [];
+
     public $showOlderChats = false;
+
     public $webSearchMode = false; // false = auto, true = force/on
+
     public $chatAttachment;
+
     public $isUploadingAttachment = false;
+
     public $attachmentUploadStatus = null;
+
     public $attachmentUploadMessage = '';
+
     public $uploadingAttachmentName = null;
+
     public $hasDocumentsInProgress = false;
+
     public $newMessageId = null;
 
     // Maximum chats to show before "Show More"
@@ -67,11 +91,12 @@ class ChatIndex extends Component
 
     public function loadConversations()
     {
-        /** @var \App\Models\User|null $user */
+        /** @var User|null $user */
         $user = Auth::user();
 
-        if (!$user) {
+        if (! $user) {
             $this->conversations = collect();
+
             return;
         }
 
@@ -123,7 +148,7 @@ class ChatIndex extends Component
 
     public function toggleDocumentSelector()
     {
-        $this->showDocumentSelector = !$this->showDocumentSelector;
+        $this->showDocumentSelector = ! $this->showDocumentSelector;
     }
 
     public function toggleDocument($documentId)
@@ -176,8 +201,9 @@ class ChatIndex extends Component
             ->where('user_id', Auth::id())
             ->first();
 
-        if (!$document) {
+        if (! $document) {
             session()->flash('error', 'Dokumen tidak ditemukan atau sudah dihapus.');
+
             return;
         }
 
@@ -191,7 +217,7 @@ class ChatIndex extends Component
             $this->loadAvailableDocuments();
             session()->flash('message', 'Dokumen berhasil dihapus.');
         } catch (\Throwable $e) {
-            session()->flash('error', 'Gagal menghapus dokumen: ' . $e->getMessage());
+            session()->flash('error', 'Gagal menghapus dokumen: '.$e->getMessage());
         }
     }
 
@@ -201,6 +227,7 @@ class ChatIndex extends Component
 
         if (empty($documentIds)) {
             session()->flash('error', 'Pilih dokumen terlebih dahulu.');
+
             return;
         }
 
@@ -220,7 +247,7 @@ class ChatIndex extends Component
             $this->loadAvailableDocuments();
             session()->flash('message', 'Dokumen terpilih berhasil dihapus.');
         } catch (\Throwable $e) {
-            session()->flash('error', 'Gagal menghapus dokumen terpilih: ' . $e->getMessage());
+            session()->flash('error', 'Gagal menghapus dokumen terpilih: '.$e->getMessage());
         }
     }
 
@@ -239,17 +266,17 @@ class ChatIndex extends Component
 
     public function toggleOlderChats()
     {
-        $this->showOlderChats = !$this->showOlderChats;
+        $this->showOlderChats = ! $this->showOlderChats;
     }
 
     public function toggleWebSearch()
     {
-        $this->webSearchMode = !$this->webSearchMode;
+        $this->webSearchMode = ! $this->webSearchMode;
     }
 
     public function updatedChatAttachment()
     {
-        if (!$this->chatAttachment) {
+        if (! $this->chatAttachment) {
             return;
         }
 
@@ -265,8 +292,8 @@ class ChatIndex extends Component
                 'chatAttachment' => [
                     'required',
                     'file',
-                    'mimes:' . implode(',', Document::attachmentFileExtensions()),
-                    'mimetypes:' . implode(',', Document::attachmentMimeTypes()),
+                    'mimes:'.implode(',', Document::attachmentFileExtensions()),
+                    'mimetypes:'.implode(',', Document::attachmentMimeTypes()),
                     'max:51200',
                 ],
             ]);
@@ -287,13 +314,118 @@ class ChatIndex extends Component
             $this->attachmentUploadStatus = 'error';
             $this->attachmentUploadMessage = $message;
         } catch (\Throwable $e) {
-            session()->flash('error', 'Gagal mengunggah dokumen: ' . $e->getMessage());
+            session()->flash('error', 'Gagal mengunggah dokumen: '.$e->getMessage());
             $this->attachmentUploadStatus = 'error';
             $this->attachmentUploadMessage = 'Upload gagal. Periksa format file dan coba lagi.';
         } finally {
             $this->isUploadingAttachment = false;
             $this->uploadingAttachmentName = null;
             $this->reset('chatAttachment');
+        }
+    }
+
+    #[On('google-drive-document-imported')]
+    public function refreshDocumentsAfterGoogleDriveImport(?int $documentId = null): void
+    {
+        $this->loadAvailableDocuments();
+        $this->attachmentUploadStatus = 'success';
+        $this->attachmentUploadMessage = 'File Google Drive berhasil ditambahkan dan sedang diproses.';
+
+        session()->flash('message', 'File Google Drive berhasil ditambahkan dan sedang diproses.');
+    }
+
+    /**
+     * Upload a persisted assistant answer to the office Google Drive in the requested format.
+     *
+     * @return array{ok: bool, message?: string, file_name?: string, web_view_link?: ?string, folder_external_id?: ?string}
+     */
+    public function saveAnswerToGoogleDrive(int $messageId, string $targetFormat): array
+    {
+        $userId = Auth::id();
+
+        if ($userId === null) {
+            return [
+                'ok' => false,
+                'message' => 'Anda harus login terlebih dahulu.',
+            ];
+        }
+
+        $targetFormat = $this->normalizeDriveExportFormat($targetFormat);
+
+        if ($targetFormat === null) {
+            return [
+                'ok' => false,
+                'message' => 'Format upload Google Drive tidak didukung.',
+            ];
+        }
+
+        $message = Message::query()
+            ->whereKey($messageId)
+            ->where('role', 'assistant')
+            ->whereHas('conversation', fn ($query) => $query->where('user_id', $userId))
+            ->first();
+
+        if ($message === null) {
+            return [
+                'ok' => false,
+                'message' => 'Jawaban AI tidak ditemukan.',
+            ];
+        }
+
+        try {
+            $contentHtml = (string) Str::of($message->content)->markdown([
+                'html_input' => 'strip',
+                'allow_unsafe_links' => false,
+            ]);
+
+            $exportService = app(DocumentExportService::class);
+            $artifact = $exportService->exportContent(
+                $contentHtml,
+                $targetFormat,
+                'ista-ai-jawaban-'.$message->id,
+            );
+
+            $tempRelativePath = 'tmp/cloud/google-drive/'.Str::uuid().'.'.$targetFormat;
+            Storage::disk('local')->put($tempRelativePath, $artifact['body']);
+            $tempAbsolutePath = Storage::disk('local')->path($tempRelativePath);
+
+            try {
+                $upload = app(GoogleDriveService::class)->uploadFromPath(
+                    $tempAbsolutePath,
+                    $artifact['file_name'],
+                    $artifact['content_type'],
+                    null,
+                );
+
+                CloudStorageFile::create([
+                    'user_id' => (int) $userId,
+                    'provider' => 'google_drive',
+                    'direction' => CloudStorageFile::DIRECTION_EXPORT,
+                    'local_type' => Message::class,
+                    'local_id' => $message->id,
+                    'external_id' => $upload['external_id'],
+                    'name' => $upload['name'],
+                    'mime_type' => $upload['mime_type'],
+                    'web_view_link' => $upload['web_view_link'],
+                    'folder_external_id' => $upload['folder_external_id'],
+                    'size_bytes' => $upload['size_bytes'],
+                    'synced_at' => now(),
+                ]);
+            } finally {
+                Storage::disk('local')->delete($tempRelativePath);
+            }
+
+            return [
+                'ok' => true,
+                'file_name' => $upload['name'],
+                'web_view_link' => $upload['web_view_link'],
+                'folder_external_id' => $upload['folder_external_id'],
+            ];
+        } catch (\Throwable $e) {
+            return [
+                'ok' => false,
+                'message' => $e->getMessage(),
+            ];
         }
     }
 
@@ -347,14 +479,14 @@ class ChatIndex extends Component
 
         $history = $orchestrator->buildHistory($this->messages);
 
-        $this->stream('assistant-output', "", true);
+        $this->stream('assistant-output', '', true);
 
         $documentFilenames = $orchestrator->getDocumentFilenames($this->conversationDocuments);
         $sourcePolicy = $orchestrator->getSourcePolicy($documentFilenames);
         $allowAutoRealtimeWeb = $orchestrator->shouldAllowAutoRealtimeWeb($documentFilenames);
 
-        $fullResponse = "";
-        $modelName = "AI";
+        $fullResponse = '';
+        $modelName = 'AI';
         $streamBuffer = '';
 
         foreach (
@@ -377,7 +509,7 @@ class ChatIndex extends Component
                 $this->stream('model-name', $modelName);
             }
 
-            if (!empty($parsedSources)) {
+            if (! empty($parsedSources)) {
                 $this->sources = $parsedSources;
                 $this->dispatch('assistant-sources', $this->sources);
             }
@@ -392,7 +524,7 @@ class ChatIndex extends Component
 
         $cleanContent = $orchestrator->cleanResponseContent($fullResponse);
 
-        if (!empty($this->sources)) {
+        if (! empty($this->sources)) {
             $cleanContent .= $orchestrator->sanitizeAndFormatSources($this->sources);
         }
 
@@ -406,6 +538,17 @@ class ChatIndex extends Component
 
     public function render()
     {
-        return view('livewire.chat.chat-index');
+        return view('livewire.chat.chat-index', [
+            'googleDriveUploadAvailable' => app(GoogleDriveService::class)->canUploadWithConfiguredAccount(),
+        ]);
+    }
+
+    private function normalizeDriveExportFormat(string $targetFormat): ?string
+    {
+        $normalized = strtolower(trim($targetFormat));
+
+        return in_array($normalized, ['pdf', 'docx', 'xlsx', 'csv'], true)
+            ? $normalized
+            : null;
     }
 }

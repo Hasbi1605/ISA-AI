@@ -241,13 +241,19 @@ const registerChatPageData = (Alpine) => {
     }));
 
     Alpine.data('chatAnswerActions', (config = {}) => ({
+        messageId: Number(config.messageId || 0),
         html: config.html || '',
         exportUrl: config.exportUrl || '',
         exportFileName: config.exportFileName || 'ista-ai-export',
+        driveUploadAvailable: Boolean(config.driveUploadAvailable),
         exportMenuOpen: false,
+        driveMenuOpen: false,
         copied: false,
         exportLoading: false,
         exportError: '',
+        driveLoading: false,
+        driveError: '',
+        driveResult: null,
 
         plainText() {
             const wrapper = document.createElement('div');
@@ -325,12 +331,31 @@ const registerChatPageData = (Alpine) => {
             return this.copied ? 'Tersalin' : 'Salin';
         },
 
+        driveButtonLabel() {
+            if (!this.driveUploadAvailable) {
+                return 'Upload Drive perlu koneksi akun pusat';
+            }
+
+            return this.driveLoading ? 'Mengupload ke Google Drive' : 'Upload ke Google Drive';
+        },
+
         toggleExportMenu() {
             if (this.exportLoading) {
                 return;
             }
 
+            this.driveMenuOpen = false;
             this.exportMenuOpen = !this.exportMenuOpen;
+        },
+
+        toggleDriveMenu() {
+            if (this.driveLoading || !this.driveUploadAvailable) {
+                return;
+            }
+
+            this.exportMenuOpen = false;
+            this.driveMenuOpen = !this.driveMenuOpen;
+            this.driveError = '';
         },
 
         async copyToClipboard() {
@@ -438,6 +463,32 @@ const registerChatPageData = (Alpine) => {
                 this.exportError = 'Ekspor gagal. Coba lagi.';
             } finally {
                 this.exportLoading = false;
+            }
+        },
+
+        async uploadToGoogleDrive(format) {
+            if (!this.messageId || this.driveLoading || !this.driveUploadAvailable) {
+                return;
+            }
+
+            this.driveMenuOpen = false;
+            this.driveLoading = true;
+            this.driveError = '';
+            this.driveResult = null;
+
+            try {
+                const result = await this.$wire.saveAnswerToGoogleDrive(this.messageId, format);
+
+                if (!result?.ok) {
+                    throw new Error(result?.message || 'Upload ke Google Drive gagal.');
+                }
+
+                this.driveResult = result;
+            } catch (error) {
+                console.error('Gagal mengupload jawaban AI ke Google Drive', error);
+                this.driveError = error?.message || 'Upload ke Google Drive gagal. Coba lagi.';
+            } finally {
+                this.driveLoading = false;
             }
         },
     }));
@@ -696,6 +747,10 @@ const registerChatPageData = (Alpine) => {
             input.click();
         },
 
+        openGoogleDrivePicker() {
+            this.$dispatch('open-google-drive-picker');
+        },
+
         scrollChatToBottom(smooth = false) {
             const chatBox = document.querySelector('[data-chat-box]');
 
@@ -783,28 +838,66 @@ const registerChatPageData = (Alpine) => {
         exportUrl: config.exportUrl || '',
         fileName: config.fileName || 'ista-ai-tabel-dokumen',
         preferTableExtraction: Boolean(config.preferTableExtraction),
+        driveUploadAvailable: Boolean(config.driveUploadAvailable),
         exportMenuOpen: false,
-        loading: false,
+        driveMenuOpen: false,
+        loadingAction: null,
         error: '',
         contentHtml: '',
         tables: null,
 
+        isBusy() {
+            return this.loadingAction !== null;
+        },
+
+        isExportLoading() {
+            return this.loadingAction === 'export';
+        },
+
+        isDriveLoading() {
+            return this.loadingAction === 'drive';
+        },
+
         toggleMenu() {
-            if (this.loading) {
+            if (this.isBusy()) {
                 return;
             }
 
+            this.driveMenuOpen = false;
             this.exportMenuOpen = !this.exportMenuOpen;
             this.error = '';
         },
 
-        async exportTablesAs(format) {
-            if (!this.exportUrl || this.loading) {
+        exportLoadingLabel() {
+            return this.isExportLoading() ? 'Menyiapkan ekspor' : 'Ekspor';
+        },
+
+        driveButtonLabel() {
+            if (!this.driveUploadAvailable) {
+                return 'Upload Drive perlu koneksi akun pusat';
+            }
+
+            return this.isDriveLoading() ? 'Menyiapkan upload ke Google Drive' : 'Upload ke GDrive Kantor';
+        },
+
+        toggleDriveMenu() {
+            if (this.isBusy() || !this.driveUploadAvailable) {
                 return;
             }
 
             this.exportMenuOpen = false;
-            this.loading = true;
+            this.driveMenuOpen = !this.driveMenuOpen;
+            this.error = '';
+        },
+
+        async exportTablesAs(format) {
+            if (!this.exportUrl || this.isBusy()) {
+                return;
+            }
+
+            this.exportMenuOpen = false;
+            this.driveMenuOpen = false;
+            this.loadingAction = 'export';
             this.error = '';
 
             try {
@@ -838,7 +931,27 @@ const registerChatPageData = (Alpine) => {
                 console.error('Gagal mengekspor dokumen', error);
                 this.error = error?.message || 'Gagal mengekspor dokumen.';
             } finally {
-                this.loading = false;
+                this.loadingAction = null;
+            }
+        },
+
+        async saveToGoogleDrive(format) {
+            if (this.isBusy() || !this.driveUploadAvailable) {
+                return;
+            }
+
+            this.exportMenuOpen = false;
+            this.driveMenuOpen = false;
+            this.loadingAction = 'drive';
+            this.error = '';
+
+            try {
+                await this.$wire.saveToGoogleDrive(format);
+            } catch (error) {
+                console.error('Gagal menyimpan dokumen ke Google Drive', error);
+                this.error = error?.message || 'Gagal menyimpan ke Google Drive.';
+            } finally {
+                this.loadingAction = null;
             }
         },
 

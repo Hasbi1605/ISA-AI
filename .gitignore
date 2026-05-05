@@ -17,6 +17,7 @@ vendor/
 node_modules/
 __pycache__/
 chroma_data/
+JSONdrive/
 *.sqlite
 .github/
 .vscode/

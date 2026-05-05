@@ -43,33 +43,34 @@
                                     exportUrl: @js(route('documents.export')),
                                     fileName: @js($exportBaseName),
                                     preferTableExtraction: @js($usesTableExtraction),
+                                    driveUploadAvailable: @js($googleDriveUploadAvailable ?? false),
                                 })"
                                 data-document-export-actions
-                                class="relative"
-                                x-on:click.outside="exportMenuOpen = false"
+                                class="relative flex items-center gap-2"
+                                x-on:click.outside="exportMenuOpen = false; driveMenuOpen = false"
                             >
                                 <button
                                     type="button"
                                     @click="toggleMenu()"
-                                    :disabled="loading"
+                                    :disabled="isBusy()"
                                     class="inline-flex h-9 items-center gap-2 rounded-md border border-ista-primary/20 bg-ista-primary px-3 text-[12px] font-semibold text-white shadow-sm transition hover:bg-ista-dark disabled:cursor-wait disabled:opacity-75"
-                                    :aria-label="loading ? 'Menyiapkan ekspor' : 'Ekspor'"
-                                    :title="loading ? 'Menyiapkan ekspor' : 'Ekspor'"
+                                    :aria-label="exportLoadingLabel()"
+                                    :title="exportLoadingLabel()"
                                 >
-                                    <span x-show="loading" class="h-3.5 w-3.5 rounded-full border-2 border-white/70 border-t-transparent animate-spin" aria-hidden="true"></span>
-                                    <svg x-show="!loading" class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" aria-hidden="true">
+                                    <span x-show="isExportLoading()" class="h-3.5 w-3.5 rounded-full border-2 border-white/70 border-t-transparent animate-spin" aria-hidden="true"></span>
+                                    <svg x-show="!isExportLoading()" class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" aria-hidden="true">
                                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.9" d="M12 15V3" />
                                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.9" d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
                                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.9" d="m7 10 5 5 5-5" />
                                     </svg>
-                                    <span class="hidden sm:inline" x-text="loading ? 'Menyiapkan...' : 'Ekspor'">Ekspor</span>
+                                    <span class="hidden sm:inline" x-text="isExportLoading() ? 'Menyiapkan...' : 'Ekspor'">Ekspor</span>
                                 </button>
 
                                 <div
                                     x-show="exportMenuOpen"
                                     x-transition.opacity
-                                    class="absolute right-0 z-30 mt-2 w-44 overflow-hidden rounded-xl border border-stone-200 bg-white shadow-xl dark:border-gray-700 dark:bg-gray-800"
-                                    style="display: none;"
+                                    class="absolute left-0 z-30 mt-2 w-44 overflow-hidden rounded-xl border border-stone-200 bg-white shadow-xl dark:border-gray-700 dark:bg-gray-800"
+                                    style="display: none; top: 2.5rem;"
                                 >
                                     <button type="button" data-document-export-format="xlsx" @click="exportTablesAs('xlsx')" class="flex w-full items-center justify-between px-4 py-2.5 text-left text-[12px] text-stone-700 transition hover:bg-stone-50 dark:text-gray-100 dark:hover:bg-gray-700/80">
                                         <span>XLSX</span>
@@ -89,6 +90,46 @@
                                     </button>
                                 </div>
 
+                                <button
+                                    type="button"
+                                    @click="toggleDriveMenu()"
+                                    :disabled="isBusy() || !driveUploadAvailable"
+                                    class="inline-flex h-9 items-center gap-2 rounded-md border border-stone-300 bg-white px-3 text-[12px] font-semibold text-stone-700 shadow-sm transition hover:border-ista-primary/30 hover:bg-stone-50 disabled:cursor-not-allowed disabled:opacity-75 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-100 dark:hover:bg-gray-800"
+                                    :aria-label="driveButtonLabel()"
+                                    :title="driveButtonLabel()"
+                                >
+                                    <span x-show="isDriveLoading()" class="h-3.5 w-3.5 rounded-full border-2 border-current border-t-transparent animate-spin" aria-hidden="true"></span>
+                                    <img x-show="!isDriveLoading()" src="{{ asset('images/icons/google-drive.svg') }}" alt="" class="h-[15px] w-[17px]" />
+                                    <span class="hidden sm:inline">Upload ke GDrive Kantor</span>
+                                </button>
+
+                                <div
+                                    x-show="driveMenuOpen"
+                                    x-transition.opacity
+                                    class="absolute right-0 z-30 mt-2 w-52 overflow-hidden rounded-xl border border-stone-200 bg-white shadow-xl dark:border-gray-700 dark:bg-gray-800"
+                                    style="display: none; top: 2.5rem;"
+                                >
+                                    <div class="border-b border-stone-200 bg-stone-50 px-4 py-2 text-[10px] font-semibold uppercase tracking-[0.2em] text-stone-500 dark:border-gray-700 dark:bg-gray-800/80 dark:text-gray-400">
+                                        Upload ke Drive
+                                    </div>
+                                    <button type="button" data-document-drive-format="xlsx" @click="saveToGoogleDrive('xlsx')" class="flex w-full items-center justify-between px-4 py-2.5 text-left text-[12px] text-stone-700 transition hover:bg-stone-50 dark:text-gray-100 dark:hover:bg-gray-700/80">
+                                        <span>XLSX</span>
+                                        <span class="text-[10px] text-[#64748B] dark:text-[#94A3B8]">Drive</span>
+                                    </button>
+                                    <button type="button" data-document-drive-format="csv" @click="saveToGoogleDrive('csv')" class="flex w-full items-center justify-between px-4 py-2.5 text-left text-[12px] text-stone-700 transition hover:bg-stone-50 dark:text-gray-100 dark:hover:bg-gray-700/80">
+                                        <span>CSV</span>
+                                        <span class="text-[10px] text-[#64748B] dark:text-[#94A3B8]">Drive</span>
+                                    </button>
+                                    <button type="button" data-document-drive-format="docx" @click="saveToGoogleDrive('docx')" class="flex w-full items-center justify-between px-4 py-2.5 text-left text-[12px] text-stone-700 transition hover:bg-stone-50 dark:text-gray-100 dark:hover:bg-gray-700/80">
+                                        <span>DOCX</span>
+                                        <span class="text-[10px] text-[#64748B] dark:text-[#94A3B8]">Drive</span>
+                                    </button>
+                                    <button type="button" data-document-drive-format="pdf" @click="saveToGoogleDrive('pdf')" class="flex w-full items-center justify-between px-4 py-2.5 text-left text-[12px] text-stone-700 transition hover:bg-stone-50 dark:text-gray-100 dark:hover:bg-gray-700/80">
+                                        <span>PDF</span>
+                                        <span class="text-[10px] text-[#64748B] dark:text-[#94A3B8]">Drive</span>
+                                    </button>
+                                </div>
+
                                 <p x-show="error" x-transition.opacity class="absolute right-0 top-11 z-30 w-56 rounded-lg border border-rose-200 bg-white px-3 py-2 text-[11px] text-rose-600 shadow-lg dark:border-rose-500/30 dark:bg-gray-800 dark:text-rose-200" x-text="error" style="display: none;"></p>
                             </div>
                         @endif
@@ -103,6 +144,28 @@
                         </button>
                     </div>
                 </div>
+
+                @if ($driveUploadResult)
+                    <div class="border-b border-emerald-200 bg-emerald-50 px-5 py-3 text-[12px] text-emerald-800 dark:border-emerald-500/30 dark:bg-emerald-500/10 dark:text-emerald-100">
+                        <div class="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                            <div>
+                                <p class="font-semibold">Tersimpan ke Google Drive</p>
+                                <p class="mt-0.5 text-[11px] opacity-90">{{ $driveUploadResult['file_name'] ?? 'File' }}</p>
+                            </div>
+                            @if (! empty($driveUploadResult['web_view_link']))
+                                <a href="{{ $driveUploadResult['web_view_link'] }}" target="_blank" rel="noreferrer" class="inline-flex items-center justify-center rounded-lg bg-emerald-700 px-3 py-2 text-[11px] font-semibold text-white transition hover:bg-emerald-800">
+                                    Buka di Drive
+                                </a>
+                            @endif
+                        </div>
+                    </div>
+                @endif
+
+                @if ($driveUploadError)
+                    <div class="border-b border-rose-200 bg-rose-50 px-5 py-3 text-[12px] text-rose-800 dark:border-rose-500/30 dark:bg-rose-500/10 dark:text-rose-100">
+                        {{ $driveUploadError }}
+                    </div>
+                @endif
 
                 <div class="flex-1 overflow-auto bg-stone-50 dark:bg-gray-950">
                     <div x-show="isLoading"

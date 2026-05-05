@@ -83,7 +83,7 @@ class DocumentViewerLivewireTest extends TestCase
         Livewire::actingAs($user)
             ->test(DocumentViewer::class)
             ->call('open', $document->id)
-            ->assertSee('wire:key="document-export-actions-' . $document->id . '"', false)
+            ->assertSee('wire:key="document-export-actions-'.$document->id.'"', false)
             ->assertSee('data-document-export-actions', false)
             ->assertSee(str_replace('/', '\/', route('documents.content-html', $document)), false)
             ->assertSee(str_replace('/', '\/', route('documents.extract-tables', $document)), false)
@@ -91,7 +91,20 @@ class DocumentViewerLivewireTest extends TestCase
             ->assertSee('data-document-export-format="xlsx"', false)
             ->assertSee('data-document-export-format="csv"', false)
             ->assertSee('data-document-export-format="docx"', false)
-            ->assertSee('data-document-export-format="pdf"', false);
+            ->assertSee('data-document-export-format="pdf"', false)
+            ->assertSee('Upload ke GDrive Kantor', false)
+            ->assertSee('images/icons/google-drive.svg', false)
+            ->assertSee('Upload ke Drive', false)
+            ->assertDontSee('Simpan ke Google Drive', false)
+            ->assertSee(':aria-label="exportLoadingLabel()"', false)
+            ->assertSee('x-show="isExportLoading()"', false)
+            ->assertSee('x-show="isDriveLoading()"', false)
+            ->assertSee(':disabled="isBusy()"', false)
+            ->assertSee(':disabled="isBusy() || !driveUploadAvailable"', false)
+            ->assertSee('data-document-drive-format="xlsx"', false)
+            ->assertSee('data-document-drive-format="csv"', false)
+            ->assertSee('data-document-drive-format="docx"', false)
+            ->assertSee('data-document-drive-format="pdf"', false);
     }
 
     public function test_viewer_renders_export_controls_for_xlsx_document(): void
@@ -111,7 +124,7 @@ class DocumentViewerLivewireTest extends TestCase
         Livewire::actingAs($user)
             ->test(DocumentViewer::class)
             ->call('open', $document->id)
-            ->assertSee('wire:key="document-export-actions-' . $document->id . '"', false)
+            ->assertSee('wire:key="document-export-actions-'.$document->id.'"', false)
             ->assertSee('data-document-export-actions', false)
             ->assertSee(str_replace('/', '\/', route('documents.content-html', $document)), false)
             ->assertDontSee(str_replace('/', '\/', route('documents.extract-tables', $document)), false)
@@ -140,7 +153,7 @@ class DocumentViewerLivewireTest extends TestCase
         Livewire::actingAs($user)
             ->test(DocumentViewer::class)
             ->call('open', $document->id)
-            ->assertSee('wire:key="document-export-actions-' . $document->id . '"', false)
+            ->assertSee('wire:key="document-export-actions-'.$document->id.'"', false)
             ->assertSee('data-document-export-actions', false)
             ->assertSee(str_replace('/', '\/', route('documents.content-html', $document)), false)
             ->assertDontSee(str_replace('/', '\/', route('documents.extract-tables', $document)), false)

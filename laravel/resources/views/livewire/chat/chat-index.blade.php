@@ -20,6 +20,7 @@
             'searchDark' => asset('images/icons/search-dark.svg'),
             'uploadLight' => asset('images/icons/upload-light.svg'),
             'uploadDark' => asset('images/icons/upload-dark.svg'),
+            'googleDrive' => asset('images/icons/google-drive.svg'),
             'sendLight' => asset('images/icons/send-light.svg'),
             'sendDark' => asset('images/icons/send-dark.svg'),
         ];
@@ -83,6 +84,8 @@
 
     <!-- RIGHT SIDEBAR: Documents -->
     @include('livewire.chat.partials.chat-right-sidebar')
+
+    <livewire:chat.google-drive-picker />
 
     <!-- Drag & Drop Overlay Visual -->
     <div x-show="isDraggingFile" x-transition.opacity class="fixed inset-0 z-[60] bg-ista-primary/10 backdrop-blur-[2px] flex items-center justify-center pointer-events-none">

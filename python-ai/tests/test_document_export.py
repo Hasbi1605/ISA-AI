@@ -96,6 +96,31 @@ def test_documents_extract_tables_route_reads_upload():
     assert first_table["rows"][0] == ["A", "10"]
 
 
+def test_documents_extract_tables_route_supports_xlsx_upload():
+    html = _sample_html()
+    xlsx_artifact = export_content(html, "xlsx", "sample-table")
+
+    response = client.post(
+        "/api/documents/extract-tables",
+        headers=AUTH_HEADERS,
+        files={
+            "file": (
+                "sample-table.xlsx",
+                xlsx_artifact.content,
+                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            ),
+        },
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["status"] == "success"
+    assert payload["tables"]
+    first_table = payload["tables"][0]
+    assert first_table["header"] == ["Nama", "Nilai"]
+    assert first_table["rows"][0] == ["A", "10"]
+
+
 def test_documents_extract_content_route_returns_full_docx_html():
     document = DocxDocument()
     document.add_paragraph("Paragraf awal dokumen lengkap.")

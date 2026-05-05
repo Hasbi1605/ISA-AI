@@ -4,6 +4,7 @@ namespace Tests\Feature\Chat;
 
 use App\Livewire\Chat\ChatIndex;
 use App\Models\Conversation;
+use App\Models\Document;
 use App\Models\Message;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -36,7 +37,12 @@ class ChatUiTest extends TestCase
             ->assertSee(':disabled="isNavigating"', false)
             ->assertSee('data-chat-history-id=', false)
             ->assertSee('chat-history-item', false)
-            ->assertSee('wire:key="chat-history-visible-', false);
+            ->assertSee('wire:key="chat-history-visible-', false)
+            ->assertSee('openGoogleDrivePicker()', false)
+            ->assertSee('open-google-drive-picker', false)
+            ->assertSee('Ambil file dari Google Drive Kantor', false)
+            ->assertSee('images/icons/google-drive.svg', false)
+            ->assertSee('Pilih file untuk chat', false);
     }
 
     public function test_loading_conversation_dispatches_active_history_event(): void
@@ -76,6 +82,11 @@ class ChatUiTest extends TestCase
             ->assertSee('role="status"', false)
             ->assertSee('Tersalin', false)
             ->assertSee('Bagikan', false)
+            ->assertDontSee('text-[#25D366]', false)
+            ->assertSee('Upload ke Google Drive', false)
+            ->assertSee('images/icons/google-drive.svg', false)
+            ->assertSee('driveButtonLabel()', false)
+            ->assertSee('Upload ke Drive', false)
             ->assertSee('Ekspor', false)
             ->assertSee('PDF', false)
             ->assertSee('DOCX', false)
@@ -106,12 +117,37 @@ class ChatUiTest extends TestCase
         Livewire::actingAs($user)
             ->test(ChatIndex::class)
             ->set('messages', [$firstMessage->toArray(), $secondMessage->toArray()])
-            ->assertSee('wire:key="chat-message-' . $firstMessage->id . '"', false)
-            ->assertSee('wire:key="chat-message-' . $secondMessage->id . '"', false)
-            ->assertSee('wire:key="chat-answer-actions-' . $firstMessage->id . '"', false)
-            ->assertSee('wire:key="chat-answer-actions-' . $secondMessage->id . '"', false)
-            ->assertSee('data-answer-message-id="' . $firstMessage->id . '"', false)
-            ->assertSee('data-answer-message-id="' . $secondMessage->id . '"', false);
+            ->assertSee('wire:key="chat-message-'.$firstMessage->id.'"', false)
+            ->assertSee('wire:key="chat-message-'.$secondMessage->id.'"', false)
+            ->assertSee('wire:key="chat-answer-actions-'.$firstMessage->id.'"', false)
+            ->assertSee('wire:key="chat-answer-actions-'.$secondMessage->id.'"', false)
+            ->assertSee('data-answer-message-id="'.$firstMessage->id.'"', false)
+            ->assertSee('data-answer-message-id="'.$secondMessage->id.'"', false);
+    }
+
+    public function test_google_drive_documents_do_not_show_special_source_badge_in_sidebar(): void
+    {
+        $user = User::factory()->create();
+
+        Document::create([
+            'user_id' => $user->id,
+            'filename' => 'surat-drive.pdf',
+            'original_name' => 'surat-drive.pdf',
+            'file_path' => 'documents/'.$user->id.'/surat-drive.pdf',
+            'source_provider' => 'google_drive',
+            'source_external_id' => 'drive-file-id',
+            'source_synced_at' => now(),
+            'mime_type' => 'application/pdf',
+            'file_size_bytes' => 1234,
+            'status' => 'ready',
+            'preview_status' => Document::PREVIEW_STATUS_READY,
+        ]);
+
+        $component = Livewire::actingAs($user)
+            ->test(ChatIndex::class)
+            ->assertSee('surat-drive.pdf', false);
+
+        $this->assertStringNotContainsString('>Google Drive</span>', $component->html());
     }
 
     public function test_latest_chat_answer_still_renders_actions(): void

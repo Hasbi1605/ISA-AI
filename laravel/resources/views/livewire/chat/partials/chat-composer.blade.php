@@ -104,7 +104,11 @@
                         <span>Web</span>
                     </button>
 
-                    <div class="flex items-center gap-2">
+                    <div class="flex items-center gap-1.5">
+                        <button type="button" @click="openGoogleDrivePicker()" class="h-[34px] w-[34px] rounded-full transition-colors flex items-center justify-center bg-transparent hover:bg-[#F1F5F9] dark:hover:bg-gray-800" title="Ambil file dari Google Drive Kantor" aria-label="Ambil file dari Google Drive Kantor">
+                            <img src="{{ $uiIcons['googleDrive'] }}" alt="" class="h-[18px] w-[18px] object-contain" />
+                        </button>
+
                         <button type="button" @click="openAttachmentPicker()" wire:loading.attr="disabled" wire:target="chatAttachment" class="h-[34px] w-[34px] rounded-full transition-colors flex items-center justify-center bg-transparent hover:bg-[#F1F5F9] dark:hover:bg-gray-800 disabled:opacity-60" title="Lampirkan file">
                             <img src="{{ $uiIcons['uploadLight'] }}" alt="" class="h-[18px] w-[18px] dark:hidden" />
                             <img src="{{ $uiIcons['uploadDark'] }}" alt="" class="h-[18px] w-[18px] hidden dark:block" />
