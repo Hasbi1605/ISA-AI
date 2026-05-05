@@ -175,17 +175,6 @@
                         @error('memoAdditionalInstruction') <p class="memo-config-error">{{ $message }}</p> @enderror
                     </div>
                 </div>
-
-                <div class="sticky bottom-0 border-t border-stone-200 bg-white/95 p-3 backdrop-blur dark:border-gray-800 dark:bg-gray-900/95">
-                    <button type="submit"
-                            wire:loading.attr="disabled"
-                            wire:target="generateConfiguredMemo,generateFromChat"
-                            :disabled="$wire.isGenerating"
-                            class="inline-flex h-10 w-full items-center justify-center rounded-md bg-ista-primary px-4 text-[13px] font-semibold text-white shadow-sm transition hover:bg-ista-dark active:translate-y-px disabled:cursor-not-allowed disabled:opacity-50">
-                        <span wire:loading.remove wire:target="generateConfiguredMemo,generateFromChat">{{ $activeMemoId ? 'Regenerate dari Konfigurasi' : 'Generate Memo' }}</span>
-                        <span wire:loading wire:target="generateConfiguredMemo,generateFromChat">Memproses...</span>
-                    </button>
-                </div>
             </form>
         @endif
 
@@ -246,7 +235,19 @@
 
     {{-- Revision Chat Input --}}
     <div class="chat-composer-safe flex-shrink-0 px-4 pt-2 bg-transparent w-full">
-        @if ($activeMemoId)
+        @if (! $activeMemoId || $showMemoConfiguration)
+            <div class="rounded-lg border border-stone-200 bg-white p-2 shadow-[0_-10px_30px_-24px_rgba(28,25,23,0.45)] dark:border-gray-800 dark:bg-gray-900">
+                <button type="button"
+                        wire:click="generateConfiguredMemo"
+                        wire:loading.attr="disabled"
+                        wire:target="generateConfiguredMemo,generateFromChat"
+                        :disabled="$wire.isGenerating"
+                        class="inline-flex h-10 w-full items-center justify-center rounded-md bg-ista-primary px-4 text-[13px] font-semibold text-white shadow-sm transition hover:bg-ista-dark active:translate-y-px disabled:cursor-not-allowed disabled:opacity-50">
+                    <span wire:loading.remove wire:target="generateConfiguredMemo,generateFromChat">{{ $activeMemoId ? 'Regenerate dari Konfigurasi' : 'Generate Memo' }}</span>
+                    <span wire:loading wire:target="generateConfiguredMemo,generateFromChat">Memproses...</span>
+                </button>
+            </div>
+        @elseif ($activeMemoId)
             <form wire:submit="sendMemoChat" class="chat-form relative rounded-xl shadow-sm bg-white dark:bg-gray-800 border border-stone-200/60 dark:border-gray-700 transition-colors">
                 <div class="px-3 pb-3 pt-3 w-full">
                     <textarea
