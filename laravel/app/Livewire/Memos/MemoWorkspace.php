@@ -21,11 +21,35 @@ class MemoWorkspace extends Component
 
     public string $memoPrompt = '';
 
+    public string $memoNumber = '';
+
+    public string $memoRecipient = '';
+
+    public string $memoSender = 'Kepala Istana Kepresidenan Yogyakarta';
+
+    public string $memoDate = '';
+
+    public string $memoBasis = '';
+
+    public string $memoContent = '';
+
+    public string $memoClosing = '';
+
+    public string $memoSignatory = 'Deni Mulyana';
+
+    public string $memoCarbonCopy = '';
+
+    public string $memoPageSize = 'folio';
+
+    public string $memoAdditionalInstruction = '';
+
     public array $memoChatMessages = [];
 
     public array $memoChatThreads = [];
 
     public bool $isGenerating = false;
+
+    public bool $showMemoConfiguration = true;
 
     public string $previewMode = 'preview'; // 'preview' or 'editor'
 
@@ -33,7 +57,8 @@ class MemoWorkspace extends Component
 
     public function mount(): void
     {
-        $this->addSystemMessage('Halo! Saya siap membantu Anda membuat memo. Silakan isi jenis dan judul memo di atas, lalu ketik instruksi untuk konten memo yang ingin digenerate.');
+        $this->resetMemoConfiguration();
+        $this->addSystemMessage('Lengkapi konfigurasi memo terlebih dahulu. Setelah draft dibuat, kolom revisi akan aktif di panel yang sama.');
     }
 
     public function loadMemo(int $memoId): void
@@ -51,8 +76,11 @@ class MemoWorkspace extends Component
         $this->activeMemoId = $memo->id;
         $this->memoType = $memo->memo_type;
         $this->title = $memo->title;
+        $this->applyMemoConfiguration($memo->configuration ?? []);
         $this->previewHtml = $memo->searchable_text ? nl2br(e($memo->searchable_text)) : null;
         $this->previewMode = 'preview';
+        $this->showMemoConfiguration = false;
+        $this->memoPrompt = '';
 
         $threadKey = $this->threadKey($memo->id);
 
@@ -81,10 +109,29 @@ class MemoWorkspace extends Component
     {
         $this->rememberCurrentThread();
 
-        $this->reset(['activeMemoId', 'memoType', 'title', 'memoPrompt', 'memoChatMessages', 'previewHtml', 'isGenerating']);
-        $this->memoType = 'memo_internal';
+        $this->activeMemoId = null;
+        $this->memoPrompt = '';
+        $this->memoChatMessages = [];
+        $this->previewHtml = null;
+        $this->isGenerating = false;
+        $this->resetMemoConfiguration();
         $this->previewMode = 'preview';
-        $this->addSystemMessage('Halo! Saya siap membantu Anda membuat memo baru. Silakan isi jenis dan judul memo, lalu ketik instruksi.');
+        $this->showMemoConfiguration = true;
+        $this->addSystemMessage('Lengkapi konfigurasi memo baru. Saya akan menjaga struktur, gaya bahasa, dan format memorandum mengikuti contoh manual.');
+    }
+
+    public function generateConfiguredMemo(): void
+    {
+        $this->validateMemoConfiguration();
+
+        $this->memoChatMessages[] = [
+            'role' => 'user',
+            'content' => $this->memoConfigurationSummary(),
+            'timestamp' => now()->format('H:i'),
+        ];
+        $this->rememberCurrentThread();
+
+        $this->generateFromChat($this->memoDraftContext(), true);
     }
 
     public function sendMemoChat(): void
@@ -103,39 +150,44 @@ class MemoWorkspace extends Component
         ];
         $this->rememberCurrentThread();
 
-        // If we have enough context, auto-generate
-        if ($this->title && $this->memoType) {
+        if ($this->activeMemoId) {
             $this->generateFromChat($userMessage);
         } else {
-            $this->addSystemMessage('Silakan lengkapi jenis memo dan judul terlebih dahulu, lalu saya bisa generate draft untuk Anda.');
+            $this->memoContent = trim($this->memoContent."\n".$userMessage);
+            $this->addSystemMessage('Saya simpan instruksi itu sebagai isi/poin memo. Lengkapi konfigurasi utama, lalu tekan Generate Memo.');
         }
     }
 
-    public function generateFromChat(string $context): void
+    public function generateFromChat(string $context, bool $fromConfiguration = false): void
     {
-        $this->validate([
-            'memoType' => ['required', 'in:'.implode(',', array_keys(Memo::TYPES))],
-            'title' => ['required', 'string', 'max:160'],
-        ]);
+        $this->validateMemoConfiguration();
 
         $this->isGenerating = true;
 
         try {
             $generationService = app(MemoGenerationService::class);
+            $configuration = $this->memoConfigurationPayload();
 
             $memo = $generationService->generate(
                 Auth::user(),
                 $this->memoType,
                 $this->title,
                 $context,
+                [],
+                $configuration,
             );
 
             $this->activeMemoId = $memo->id;
             $this->previewHtml = $memo->searchable_text ? nl2br(e($memo->searchable_text)) : '<p class="text-stone-500">Draft berhasil digenerate. Gunakan tab Editor untuk melihat dokumen lengkap.</p>';
             $this->previewMode = 'preview';
+            $this->showMemoConfiguration = false;
             $this->rememberCurrentThread();
 
-            $this->addSystemMessage("Draft memo \"{$memo->title}\" berhasil digenerate! Anda bisa melihat preview di panel kanan, atau beralih ke Editor untuk mengedit dokumen DOCX secara langsung.\n\nMau saya revisi bagian tertentu?");
+            $message = $fromConfiguration
+                ? "Draft memo \"{$memo->title}\" berhasil digenerate dari konfigurasi. Anda bisa meminta revisi spesifik di sini."
+                : "Revisi memo \"{$memo->title}\" berhasil digenerate. Cek preview atau Editor untuk memastikan hasilnya sudah sesuai.";
+
+            $this->addSystemMessage($message);
         } catch (\Throwable $e) {
             $this->addSystemMessage('Maaf, terjadi kesalahan saat generate memo: '.$e->getMessage());
         } finally {
@@ -146,7 +198,7 @@ class MemoWorkspace extends Component
     public function regenerate(): void
     {
         if (! $this->activeMemoId) {
-            $this->addSystemMessage('Belum ada memo aktif untuk di-regenerate. Silakan buat memo baru.');
+            $this->generateConfiguredMemo();
 
             return;
         }
@@ -155,7 +207,7 @@ class MemoWorkspace extends Component
             ->where('role', 'user')
             ->last();
 
-        $context = $lastUserMessage['content'] ?? $this->title;
+        $context = $lastUserMessage['content'] ?? $this->memoDraftContext();
         $this->generateFromChat($context);
     }
 
@@ -217,9 +269,157 @@ class MemoWorkspace extends Component
         return view('livewire.memos.memo-workspace', [
             'memos' => $memos,
             'memoTypes' => Memo::TYPES,
+            'memoPageSizes' => $this->memoPageSizes(),
             'editorConfig' => $this->previewMode === 'editor' ? $this->editorConfig() : null,
             'onlyOfficeApiUrl' => rtrim((string) config('services.onlyoffice.public_url', ''), '/').'/web-apps/apps/api/documents/api.js',
         ]);
+    }
+
+    protected function validateMemoConfiguration(): void
+    {
+        $this->validate([
+            'memoType' => ['required', 'in:'.implode(',', array_keys(Memo::TYPES))],
+            'memoNumber' => ['required', 'string', 'max:80'],
+            'memoRecipient' => ['required', 'string', 'max:500'],
+            'memoSender' => ['required', 'string', 'max:240'],
+            'title' => ['required', 'string', 'max:160'],
+            'memoDate' => ['required', 'string', 'max:80'],
+            'memoBasis' => ['nullable', 'string', 'max:4000'],
+            'memoContent' => ['required', 'string', 'min:8', 'max:8000'],
+            'memoClosing' => ['nullable', 'string', 'max:800'],
+            'memoSignatory' => ['required', 'string', 'max:160'],
+            'memoCarbonCopy' => ['nullable', 'string', 'max:2000'],
+            'memoPageSize' => ['required', 'in:folio,letter'],
+            'memoAdditionalInstruction' => ['nullable', 'string', 'max:2000'],
+        ]);
+    }
+
+    /**
+     * @return array<string, string>
+     */
+    protected function memoConfigurationPayload(): array
+    {
+        return [
+            'number' => trim($this->memoNumber),
+            'recipient' => trim($this->memoRecipient),
+            'sender' => trim($this->memoSender),
+            'subject' => trim($this->title),
+            'date' => trim($this->memoDate),
+            'basis' => trim($this->memoBasis),
+            'content' => trim($this->memoContent),
+            'closing' => trim($this->memoClosing),
+            'signatory' => trim($this->memoSignatory),
+            'carbon_copy' => trim($this->memoCarbonCopy),
+            'page_size' => trim($this->memoPageSize),
+            'additional_instruction' => trim($this->memoAdditionalInstruction),
+        ];
+    }
+
+    protected function memoDraftContext(): string
+    {
+        $sections = [];
+
+        if (trim($this->memoBasis) !== '') {
+            $sections[] = "Dasar/konteks:\n".trim($this->memoBasis);
+        }
+
+        $sections[] = "Isi/poin wajib:\n".trim($this->memoContent);
+
+        if (trim($this->memoAdditionalInstruction) !== '') {
+            $sections[] = "Catatan tambahan:\n".trim($this->memoAdditionalInstruction);
+        }
+
+        return implode("\n\n", $sections);
+    }
+
+    protected function memoConfigurationSummary(): string
+    {
+        $summary = [
+            'Konfigurasi memo:',
+            'Nomor: '.trim($this->memoNumber),
+            'Yth.: '.trim($this->memoRecipient),
+            'Dari: '.trim($this->memoSender),
+            'Hal: '.trim($this->title),
+            'Tanggal: '.trim($this->memoDate),
+            'Penandatangan: '.trim($this->memoSignatory),
+        ];
+
+        if (trim($this->memoCarbonCopy) !== '') {
+            $summary[] = "Tembusan:\n".trim($this->memoCarbonCopy);
+        }
+
+        return implode("\n", $summary);
+    }
+
+    /**
+     * @param  array<string, mixed>  $configuration
+     */
+    protected function applyMemoConfiguration(array $configuration): void
+    {
+        $this->memoNumber = (string) ($configuration['number'] ?? $this->memoNumber);
+        $this->memoRecipient = (string) ($configuration['recipient'] ?? $this->memoRecipient);
+        $this->memoSender = (string) ($configuration['sender'] ?? $this->memoSender);
+        $this->title = (string) ($configuration['subject'] ?? $this->title);
+        $this->memoDate = (string) ($configuration['date'] ?? $this->memoDate);
+        $this->memoBasis = (string) ($configuration['basis'] ?? $this->memoBasis);
+        $this->memoContent = (string) ($configuration['content'] ?? $this->memoContent);
+        $this->memoClosing = (string) ($configuration['closing'] ?? $this->memoClosing);
+        $this->memoSignatory = (string) ($configuration['signatory'] ?? $this->memoSignatory);
+        $this->memoCarbonCopy = (string) ($configuration['carbon_copy'] ?? $this->memoCarbonCopy);
+        $this->memoPageSize = in_array(($configuration['page_size'] ?? null), array_keys($this->memoPageSizes()), true)
+            ? (string) $configuration['page_size']
+            : $this->memoPageSize;
+        $this->memoAdditionalInstruction = (string) ($configuration['additional_instruction'] ?? $this->memoAdditionalInstruction);
+    }
+
+    protected function resetMemoConfiguration(): void
+    {
+        $this->memoType = 'memo_internal';
+        $this->title = '';
+        $this->memoNumber = '';
+        $this->memoRecipient = '';
+        $this->memoSender = 'Kepala Istana Kepresidenan Yogyakarta';
+        $this->memoDate = $this->defaultMemoDate();
+        $this->memoBasis = '';
+        $this->memoContent = '';
+        $this->memoClosing = 'Demikian, mohon arahan lebih lanjut.';
+        $this->memoSignatory = 'Deni Mulyana';
+        $this->memoCarbonCopy = '';
+        $this->memoPageSize = 'folio';
+        $this->memoAdditionalInstruction = '';
+    }
+
+    /**
+     * @return array<string, string>
+     */
+    protected function memoPageSizes(): array
+    {
+        return [
+            'folio' => 'Folio / memo panjang',
+            'letter' => 'Letter / memo pendek',
+        ];
+    }
+
+    protected function defaultMemoDate(): string
+    {
+        $months = [
+            1 => 'Januari',
+            2 => 'Februari',
+            3 => 'Maret',
+            4 => 'April',
+            5 => 'Mei',
+            6 => 'Juni',
+            7 => 'Juli',
+            8 => 'Agustus',
+            9 => 'September',
+            10 => 'Oktober',
+            11 => 'November',
+            12 => 'Desember',
+        ];
+
+        $now = now();
+
+        return $now->format('j').' '.$months[(int) $now->format('n')].' '.$now->format('Y');
     }
 
     protected function addSystemMessage(string $content): void

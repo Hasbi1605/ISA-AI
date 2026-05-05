@@ -29,6 +29,9 @@ class MemoWorkspaceTest extends TestCase
             ->assertSee('darkMode = !darkMode', false)
             ->assertSee('images/icons/collapse-left-light.svg', false)
             ->assertSee('chat-form', false)
+            ->assertSee('Konfigurasi Memo', false)
+            ->assertSee('Nomor Memo', false)
+            ->assertSee('Generate Memo', false)
             ->assertSee('ISTA AI dapat keliru', false)
             ->assertSee('dark:bg-gray-800/85', false)
             ->assertDontSee('dark:bg-gray-950/85', false)
@@ -169,33 +172,50 @@ class MemoWorkspaceTest extends TestCase
         $component = Livewire::actingAs($user)
             ->test(MemoWorkspace::class)
             ->set('memoType', 'memo_internal')
+            ->set('memoNumber', 'M-03/I-Yog/UM.01/05/2026')
+            ->set('memoRecipient', 'Kepala Subbagian Tata Usaha')
+            ->set('memoSender', 'Kepala Istana Kepresidenan Yogyakarta')
             ->set('title', 'Rapat Lingkungan')
-            ->set('memoPrompt', 'Buatkan memo rapat lingkungan')
-            ->call('sendMemoChat')
+            ->set('memoDate', '5 Mei 2026')
+            ->set('memoBasis', 'Menindaklanjuti agenda koordinasi lingkungan.')
+            ->set('memoContent', 'Buatkan memo rapat lingkungan dengan poin peserta dan jadwal.')
+            ->set('memoClosing', 'Demikian, mohon arahan lebih lanjut.')
+            ->set('memoSignatory', 'Deni Mulyana')
+            ->set('memoCarbonCopy', 'Kepala Bagian Tata Usaha')
+            ->set('memoPageSize', 'folio')
+            ->call('generateConfiguredMemo')
             ->assertHasNoErrors()
-            ->assertSee('Buatkan memo rapat lingkungan', false)
+            ->assertSee('Konfigurasi memo:', false)
             ->assertSee('berhasil digenerate', false);
 
         $memo = Memo::firstOrFail();
         $storedMessages = $memo->refresh()->chat_messages;
 
         $this->assertIsArray($storedMessages);
+        $this->assertSame('M-03/I-Yog/UM.01/05/2026', $memo->configuration['number']);
+        $this->assertSame('Kepala Subbagian Tata Usaha', $memo->configuration['recipient']);
+        Http::assertSent(fn ($request) => $request['configuration']['number'] === 'M-03/I-Yog/UM.01/05/2026'
+            && $request['configuration']['recipient'] === 'Kepala Subbagian Tata Usaha'
+            && $request['configuration']['content'] === 'Buatkan memo rapat lingkungan dengan poin peserta dan jadwal.');
         $this->assertTrue(collect($storedMessages)->contains(
             fn (array $message) => $message['role'] === 'user'
-                && $message['content'] === 'Buatkan memo rapat lingkungan'
+                && str_contains($message['content'], 'Nomor: M-03/I-Yog/UM.01/05/2026')
         ));
 
         $component
             ->call('startNewMemo')
-            ->assertDontSee('Buatkan memo rapat lingkungan', false)
+            ->assertDontSee('M-03/I-Yog/UM.01/05/2026', false)
             ->call('loadMemo', $memo->id)
-            ->assertSee('Buatkan memo rapat lingkungan', false)
+            ->assertSet('memoNumber', 'M-03/I-Yog/UM.01/05/2026')
+            ->assertSet('memoRecipient', 'Kepala Subbagian Tata Usaha')
+            ->assertSee('M-03/I-Yog/UM.01/05/2026', false)
             ->assertSee('berhasil digenerate', false);
 
         Livewire::actingAs($user)
             ->test(MemoWorkspace::class)
             ->call('loadMemo', $memo->id)
-            ->assertSee('Buatkan memo rapat lingkungan', false)
+            ->assertSet('memoNumber', 'M-03/I-Yog/UM.01/05/2026')
+            ->assertSee('M-03/I-Yog/UM.01/05/2026', false)
             ->assertSee('berhasil digenerate', false);
     }
 }

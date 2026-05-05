@@ -95,7 +95,7 @@
                         </div>
                         <h3 class="text-[15px] font-semibold text-stone-700 dark:text-gray-300">Belum ada preview</h3>
                         <p class="mt-2 text-[13px] text-stone-500 dark:text-gray-400 leading-relaxed">
-                            Isi form konteks di panel kiri, lalu ketik instruksi di chat untuk membuat draft memo. Preview akan muncul di sini setelah draft digenerate.
+                            Lengkapi konfigurasi memo di panel tengah, lalu generate draft. Preview akan muncul di sini setelah dokumen dibuat.
                         </p>
                     </div>
                 </div>
@@ -134,7 +134,7 @@
                         </div>
                         <h3 class="text-[15px] font-semibold text-stone-700 dark:text-gray-300">Editor belum tersedia</h3>
                         <p class="mt-2 text-[13px] text-stone-500 dark:text-gray-400 leading-relaxed">
-                            Generate draft memo terlebih dahulu melalui chat, kemudian editor OnlyOffice akan tersedia untuk mengedit dokumen DOCX secara langsung.
+                            Generate draft memo terlebih dahulu melalui konfigurasi, kemudian editor OnlyOffice akan tersedia untuk mengedit dokumen DOCX secara langsung.
                         </p>
                     </div>
                 </div>

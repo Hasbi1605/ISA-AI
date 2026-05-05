@@ -3,6 +3,7 @@ import sys
 from io import BytesIO
 
 from docx import Document
+from docx.shared import Inches
 from fastapi.testclient import TestClient
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
@@ -10,26 +11,76 @@ os.environ["AI_SERVICE_TOKEN"] = "test_internal_api_secret"
 
 from app.documents_api import app
 from app.services.memo_generation import MemoDraft
+from app.services.memo_generation import build_memo_prompt
 from app.services.memo_generation import generate_memo_docx
 
 
-def test_generate_memo_docx_builds_valid_word_document():
+def test_generate_memo_docx_builds_official_memorandum_document():
+    configuration = {
+        "number": "M-02/I-Yog/IT.02/04/2026",
+        "recipient": "Kepala Pusat Pengembangan dan Layanan Sistem Informasi",
+        "sender": "Kepala Istana Kepresidenan Yogyakarta",
+        "subject": "Penyampaian Nama PIC Aplikasi Virtual Meeting",
+        "date": "3 April 2026",
+        "basis": "Menindaklanjuti memorandum Bapak nomor M-01/PPLSI/IT.02.00/04/2026.",
+        "content": "Sampaikan nama, NIP, pangkat/gol., dan jabatan PIC.",
+        "closing": "Atas perhatian dan kerja sama Bapak, kami ucapkan terima kasih.",
+        "signatory": "Deni Mulyana",
+        "carbon_copy": "Kepala Subbagian Tata Usaha, Istana Kepresidenan Yogyakarta, Sekretariat Presiden",
+        "page_size": "folio",
+    }
+
     draft = generate_memo_docx(
         memo_type="memo_internal",
-        title="Rapat Koordinasi Mingguan",
-        context="Bahas progres layanan ISTA AI.",
+        title="Penyampaian Nama PIC Aplikasi Virtual Meeting",
+        context="Bahas PIC aplikasi virtual meeting.",
         text_generator=lambda prompt: "Mohon setiap unit menyiapkan laporan progres.\n- Bawa data pendukung.",
+        configuration=configuration,
     )
 
     document = Document(BytesIO(draft.content))
     paragraphs = [paragraph.text for paragraph in document.paragraphs if paragraph.text]
 
-    assert draft.filename == "rapat-koordinasi-mingguan.docx"
-    assert paragraphs[0] == "MEMO INTERNAL"
-    assert "Perihal: Rapat Koordinasi Mingguan" in paragraphs
+    assert draft.filename == "penyampaian-nama-pic-aplikasi-virtual-meeting.docx"
+    assert paragraphs[:3] == [
+        "KEMENTERIAN SEKRETARIAT NEGARA RI",
+        "SEKRETARIAT PRESIDEN",
+        "ISTANA KEPRESIDENAN YOGYAKARTA",
+    ]
+    assert "MEMORANDUM" in paragraphs
+    assert "Nomor M-02/I-Yog/IT.02/04/2026" in paragraphs
     assert "Mohon setiap unit menyiapkan laporan progres." in paragraphs
-    assert "Bawa data pendukung." in paragraphs
-    assert "Rapat Koordinasi Mingguan" in draft.searchable_text
+    assert any("Bawa data pendukung." in paragraph for paragraph in paragraphs)
+    assert "Atas perhatian dan kerja sama Bapak, kami ucapkan terima kasih." in paragraphs
+    assert "Deni Mulyana" in paragraphs
+    assert "Dokumen ini telah ditandatangani secara elektronik" in document.sections[0].footer.paragraphs[0].text
+    assert document.sections[0].page_height == Inches(14)
+    assert document.styles["Normal"].font.name == "Arial"
+    assert document.paragraphs[0].runs[0].font.name == "Arial"
+    assert document.tables[0].cell(0, 2).text == configuration["recipient"]
+    assert document.tables[0].cell(2, 2).text == configuration["subject"]
+    assert document.tables[1].cell(0, 0).text == "QR\nTTE"
+    assert "Penyampaian Nama PIC Aplikasi Virtual Meeting" in draft.searchable_text
+
+
+def test_build_memo_prompt_keeps_ai_inside_body_scope():
+    prompt = build_memo_prompt(
+        memo_type="memo_internal",
+        title="Permohonan Penempatan Jabatan Fungsional Pranata Komputer",
+        context="Mohon penempatan pegawai tetap di Istana Kepresidenan Yogyakarta.",
+        configuration={
+            "number": "M-09/I-Yog/KP/03/2025",
+            "recipient": "Deputi Bidang Administrasi dan Pengelolaan Istana",
+            "sender": "Kepala Istana Kepresidenan Yogyakarta",
+            "date": "17 Maret 2025",
+            "content": "Tulis 3 poin bernomor.",
+        },
+    )
+
+    assert "Nomor: M-09/I-Yog/KP/03/2025" in prompt
+    assert "Yth.: Deputi Bidang Administrasi dan Pengelolaan Istana" in prompt
+    assert "Tulis hanya isi utama memo" in prompt
+    assert "tanpa kop, nomor, Yth., Dari, Hal, Tanggal" in prompt
 
 
 def test_generate_memo_docx_rejects_unknown_type():
@@ -59,7 +110,9 @@ def test_generate_memo_endpoint_requires_token():
 
 
 def test_generate_memo_endpoint_handles_unicode_searchable_text(monkeypatch):
-    def fake_generate_memo_docx(memo_type, title, context):
+    def fake_generate_memo_docx(memo_type, title, context, configuration=None):
+        assert configuration == {"number": "M-01/I-Yog/IT.02/05/2026"}
+
         return MemoDraft(
             filename="memo-unicode.docx",
             content=b"docx-bytes",
@@ -76,6 +129,7 @@ def test_generate_memo_endpoint_handles_unicode_searchable_text(monkeypatch):
             "memo_type": "memo_internal",
             "title": "Judul Unicode",
             "context": "Konteks",
+            "configuration": {"number": "M-01/I-Yog/IT.02/05/2026"},
         },
     )
 

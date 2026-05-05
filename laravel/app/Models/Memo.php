@@ -37,6 +37,7 @@ class Memo extends Model
         'source_document_ids',
         'searchable_text',
         'chat_messages',
+        'configuration',
     ];
 
     protected function casts(): array
@@ -44,6 +45,7 @@ class Memo extends Model
         return [
             'source_document_ids' => 'array',
             'chat_messages' => 'array',
+            'configuration' => 'array',
         ];
     }
 

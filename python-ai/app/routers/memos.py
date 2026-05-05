@@ -14,6 +14,7 @@ class GenerateMemoRequest(BaseModel):
     memo_type: str = Field(..., min_length=1, max_length=60)
     title: str = Field(..., min_length=1, max_length=160)
     context: str = Field(..., min_length=1, max_length=12000)
+    configuration: dict[str, str] | None = None
 
 
 @router.post("/generate-body", dependencies=[Depends(verify_token)])
@@ -23,6 +24,7 @@ async def generate_memo_body(request: GenerateMemoRequest):
             memo_type=request.memo_type,
             title=request.title,
             context=request.context,
+            configuration=request.configuration,
         )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc

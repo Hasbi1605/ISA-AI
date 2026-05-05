@@ -30,8 +30,10 @@ class MemoGenerationService
     /**
      * @param  array<int, int>  $sourceDocumentIds
      */
-    public function generate(User $user, string $memoType, string $title, string $context, array $sourceDocumentIds = []): Memo
+    public function generate(User $user, string $memoType, string $title, string $context, array $sourceDocumentIds = [], array $configuration = []): Memo
     {
+        $configuration = $this->normalizeConfiguration($configuration);
+
         $response = Http::withToken($this->token ?: '')
             ->accept('application/vnd.openxmlformats-officedocument.wordprocessingml.document')
             ->connectTimeout($this->connectTimeout)
@@ -41,6 +43,7 @@ class MemoGenerationService
                 'memo_type' => $memoType,
                 'title' => $title,
                 'context' => $context,
+                'configuration' => $configuration,
             ]);
 
         if (! $response->successful()) {
@@ -53,6 +56,7 @@ class MemoGenerationService
             'memo_type' => $memoType,
             'status' => Memo::STATUS_GENERATED,
             'source_document_ids' => array_values(array_unique(array_map('intval', $sourceDocumentIds))),
+            'configuration' => $configuration,
             'searchable_text' => $this->normalizeSearchableText(
                 $response->header('X-Memo-Searchable-Text-B64') ?: $response->header('X-Memo-Searchable-Text'),
                 $title,
@@ -66,6 +70,40 @@ class MemoGenerationService
         $memo->forceFill(['file_path' => $path])->save();
 
         return $memo;
+    }
+
+    /**
+     * @param  array<string, mixed>  $configuration
+     * @return array<string, string>
+     */
+    protected function normalizeConfiguration(array $configuration): array
+    {
+        $allowedKeys = [
+            'number',
+            'recipient',
+            'sender',
+            'subject',
+            'date',
+            'basis',
+            'content',
+            'closing',
+            'signatory',
+            'carbon_copy',
+            'page_size',
+            'additional_instruction',
+        ];
+
+        $normalized = [];
+
+        foreach ($allowedKeys as $key) {
+            $value = trim((string) ($configuration[$key] ?? ''));
+
+            if ($value !== '') {
+                $normalized[$key] = $value;
+            }
+        }
+
+        return $normalized;
     }
 
     protected function normalizeSearchableText(?string $headerText, string $title, string $context): string
