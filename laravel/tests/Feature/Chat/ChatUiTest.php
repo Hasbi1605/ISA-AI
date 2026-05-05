@@ -125,7 +125,7 @@ class ChatUiTest extends TestCase
             ->assertSee('data-answer-message-id="'.$secondMessage->id.'"', false);
     }
 
-    public function test_google_drive_documents_show_source_label_in_sidebar(): void
+    public function test_google_drive_documents_do_not_show_special_source_badge_in_sidebar(): void
     {
         $user = User::factory()->create();
 
@@ -143,10 +143,11 @@ class ChatUiTest extends TestCase
             'preview_status' => Document::PREVIEW_STATUS_READY,
         ]);
 
-        Livewire::actingAs($user)
+        $component = Livewire::actingAs($user)
             ->test(ChatIndex::class)
-            ->assertSee('Google Drive', false)
             ->assertSee('surat-drive.pdf', false);
+
+        $this->assertStringNotContainsString('>Google Drive</span>', $component->html());
     }
 
     public function test_latest_chat_answer_still_renders_actions(): void
