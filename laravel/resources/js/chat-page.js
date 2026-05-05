@@ -9,7 +9,8 @@ const registerChatPageData = (Alpine) => {
 
     hasRegisteredChatPageData = true;
 
-    Alpine.data('chatLayout', () => ({
+    Alpine.data('chatLayout', (config = {}) => ({
+        activeTab: config.activeTab || 'chat',
         darkMode: isDarkThemeEnabled(),
         isMobile: window.matchMedia('(max-width: 1023px)').matches,
         showLeftSidebar: !window.matchMedia('(max-width: 1023px)').matches,
@@ -43,6 +44,15 @@ const registerChatPageData = (Alpine) => {
             };
 
             mediaQuery.addEventListener('change', syncResponsiveState);
+        },
+
+        setTab(tab) {
+            if (!['chat', 'memo'].includes(tab)) {
+                return;
+            }
+
+            this.activeTab = tab;
+            this.$wire.set('tab', tab);
         },
 
         onDragEnter(event) {
@@ -829,6 +839,41 @@ const registerChatPageData = (Alpine) => {
             this.isLoading = false;
 
             return this.$wire.close();
+        },
+    }));
+
+    Alpine.data('memoWorkspace', () => ({
+        showMemoSidebar: !window.matchMedia('(max-width: 1023px)').matches,
+        isMobile: window.matchMedia('(max-width: 1023px)').matches,
+
+        init() {
+            const mediaQuery = window.matchMedia('(max-width: 1023px)');
+            const syncState = (event) => {
+                this.isMobile = event.matches;
+                this.showMemoSidebar = !event.matches;
+            };
+
+            mediaQuery.addEventListener('change', syncState);
+
+            // Auto-scroll memo chat on new messages
+            this.$watch('$wire.memoChatMessages', () => {
+                this.$nextTick(() => this.scrollMemoChatToBottom());
+            });
+        },
+
+        scrollMemoChatToBottom() {
+            const chatBox = document.getElementById('memo-chat-box');
+
+            if (!chatBox) {
+                return;
+            }
+
+            this.$nextTick(() => {
+                chatBox.scrollTo({
+                    top: chatBox.scrollHeight,
+                    behavior: 'smooth',
+                });
+            });
         },
     }));
 

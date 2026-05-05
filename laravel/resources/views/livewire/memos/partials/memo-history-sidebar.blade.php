@@ -1,0 +1,101 @@
+{{-- Memo History Sidebar (Left Column) --}}
+@php
+    $memoCutoff = now()->subDays(7)->startOfDay();
+    $memoGroups = [
+        'Today' => $memos->filter(fn ($memo) => $memo->updated_at?->isToday()),
+        'Previous 7 Days' => $memos->filter(fn ($memo) => $memo->updated_at && ! $memo->updated_at->isToday() && $memo->updated_at->greaterThanOrEqualTo($memoCutoff)),
+        'Older' => $memos->filter(fn ($memo) => $memo->updated_at && $memo->updated_at->lessThan($memoCutoff)),
+    ];
+@endphp
+
+<aside
+    :class="[
+        showMemoSidebar ? 'opacity-100 translate-x-0' : 'opacity-0 -translate-x-full pointer-events-none',
+        isMobile ? 'fixed left-0 top-0 h-full w-[288px] shadow-2xl border-r border-stone-200/60 dark:border-[#1E293B]' : (showMemoSidebar ? 'relative w-[288px] border-r border-stone-200/60 dark:border-[#1E293B]' : 'relative w-0 border-r border-transparent')
+    ]"
+    @click.stop
+    class="z-50 flex-shrink-0 overflow-hidden bg-white dark:bg-gray-900 flex flex-col transform-gpu will-change-[width,transform,opacity] transition-[width,transform,opacity,border-color] duration-500 ease-[cubic-bezier(0.22,1,0.36,1)]"
+>
+    {{-- Header: Kembali ke Beranda --}}
+    <div class="flex items-center justify-between px-4 pb-2 pt-3">
+        <a href="{{ route('dashboard') }}" @click="showMemoSidebar = false" class="inline-flex items-center px-1 py-2.5 font-medium text-[13px] text-gray-700 dark:text-gray-200 hover:text-amber-800 dark:hover:text-amber-300 transition-colors duration-200">
+            <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" />
+            </svg>
+            Kembali ke Beranda
+        </a>
+        <button type="button" x-show="isMobile" @click="showMemoSidebar = false" class="p-1.5 rounded-md hover:bg-gray-100 dark:hover:bg-gray-800 text-gray-500 dark:text-gray-400 transition-colors" aria-label="Tutup sidebar">
+            <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+            </svg>
+        </button>
+    </div>
+
+    {{-- New Memo Button --}}
+    <div class="p-4 pt-2 pb-5">
+        <button type="button"
+                wire:click="startNewMemo"
+                class="w-full flex items-center justify-start px-4 py-2.5 rounded-lg border border-stone-200/60 dark:border-[#334155] dark:bg-transparent bg-white hover:bg-gray-50 dark:hover:bg-white/5 font-medium text-[13px] text-gray-700 dark:text-gray-200 transition-all duration-200 shadow-sm">
+            <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 mr-2 text-[#64748B] dark:text-gray-300" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M12 5v14m-7-7h14" />
+            </svg>
+            New Memo
+        </button>
+    </div>
+
+    {{-- Memo List --}}
+    <div class="flex-1 overflow-y-auto overflow-x-hidden px-4">
+        @if ($memos->isEmpty())
+            <div class="px-3 py-6 text-center">
+                <p class="text-[12px] text-stone-400 dark:text-gray-500">Belum ada memo</p>
+            </div>
+        @else
+        @foreach ($memoGroups as $groupLabel => $groupMemos)
+            @continue($groupMemos->isEmpty())
+
+            <div class="mb-6">
+                <h3 class="text-[11.6px] font-bold text-[#64748B] dark:text-[#94A3B8] uppercase tracking-wider mb-2">{{ $groupLabel }}</h3>
+                <ul class="space-y-1">
+                    @foreach ($groupMemos as $memo)
+                        <li wire:key="memo-sidebar-{{ $groupLabel }}-{{ $memo->id }}">
+                            <button
+                                type="button"
+                                wire:click="loadMemo({{ $memo->id }})"
+                                data-memo-history-id="{{ $memo->id }}"
+                                :class="{ 'is-active': $wire.activeMemoId === {{ (int) $memo->id }} }"
+                                class="chat-history-item items-start gap-2.5 py-2.5"
+                            >
+                                <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 mt-0.5 flex-shrink-0 text-stone-400 dark:text-gray-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                                </svg>
+                                <span class="min-w-0 flex-1">
+                                    <span class="block truncate text-[13.2px] font-medium" title="{{ $memo->title }}">{{ $memo->title }}</span>
+                                    <span class="mt-1 flex items-center gap-1.5">
+                                        <span class="text-[10.5px] font-medium px-1.5 py-0.5 rounded bg-stone-100 dark:bg-gray-800 text-stone-500 dark:text-gray-400">{{ $memo->type_label }}</span>
+                                        <span class="text-[10.5px] text-stone-400 dark:text-gray-500">{{ $memo->updated_at->diffForHumans(short: true) }}</span>
+                                    </span>
+                                </span>
+                            </button>
+                        </li>
+                    @endforeach
+                </ul>
+            </div>
+        @endforeach
+        @endif
+    </div>
+
+    <div class="px-4 py-6 text-sm flex flex-col gap-2">
+        <a href="/profile" class="flex items-center gap-3 text-gray-700 dark:text-[#F8FAFC] hover:opacity-80 transition-opacity">
+            <div class="h-8 w-8 rounded bg-ista-primary flex items-center justify-center text-white shrink-0">
+                <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                </svg>
+            </div>
+            <div>
+                <h4 class="text-[13.1px] font-medium leading-tight">Pengaturan Akun</h4>
+                <p class="text-[11.3px] text-gray-500 dark:text-gray-400">Kelola profil dan preferensi</p>
+            </div>
+        </a>
+    </div>
+</aside>

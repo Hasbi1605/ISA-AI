@@ -31,6 +31,9 @@ class ChatIndex extends Component
     #[Url]
     public $q = '';
 
+    #[Url]
+    public string $tab = 'chat';
+
     public $prompt = '';
 
     public $currentConversationId;

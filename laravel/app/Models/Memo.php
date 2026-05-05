@@ -36,12 +36,14 @@ class Memo extends Model
         'source_conversation_id',
         'source_document_ids',
         'searchable_text',
+        'chat_messages',
     ];
 
     protected function casts(): array
     {
         return [
             'source_document_ids' => 'array',
+            'chat_messages' => 'array',
         ];
     }
 
