@@ -76,4 +76,30 @@ class GoogleDriveIngestTest extends TestCase
         Queue::assertPushed(ProcessDocument::class, 1);
         Queue::assertPushed(RenderDocumentPreview::class, 1);
     }
+
+    public function test_google_drive_ingest_rejects_files_above_fifty_megabytes(): void
+    {
+        Queue::fake();
+        Storage::fake('local');
+
+        $user = User::factory()->create();
+
+        $googleDriveService = Mockery::mock(GoogleDriveService::class);
+        $googleDriveService->shouldReceive('downloadToTemp')
+            ->once()
+            ->with('drive-file-id')
+            ->andThrow(new \RuntimeException('Ukuran file Google Drive melebihi batas 50 MB.'));
+
+        $this->app->instance(GoogleDriveService::class, $googleDriveService);
+
+        $this->expectException(\RuntimeException::class);
+        $this->expectExceptionMessage('Ukuran file Google Drive melebihi batas 50 MB.');
+
+        try {
+            app(DocumentLifecycleService::class)->ingestFromCloud($user, 'google_drive', 'drive-file-id');
+        } finally {
+            $this->assertDatabaseCount('documents', 0);
+            Queue::assertNothingPushed();
+        }
+    }
 }

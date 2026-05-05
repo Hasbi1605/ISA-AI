@@ -19,6 +19,10 @@ class DocumentLifecycleService
 {
     public const MAX_DOCUMENTS_PER_USER = 10;
 
+    public const MAX_DOCUMENT_SIZE_KILOBYTES = 51_200;
+
+    public const MAX_DOCUMENT_SIZE_BYTES = self::MAX_DOCUMENT_SIZE_KILOBYTES * 1024;
+
     public const SOFT_DELETE_RETENTION_DAYS = 7;
 
     /**
@@ -44,6 +48,14 @@ class DocumentLifecycleService
         if (! in_array($detectedMimeType, Document::attachmentMimeTypes(), true)) {
             throw ValidationException::withMessages([
                 'file' => 'Tipe MIME file tidak valid. Gunakan PDF, DOCX, XLSX, atau CSV.',
+            ]);
+        }
+
+        $fileSizeBytes = $file->getSize();
+
+        if ($fileSizeBytes !== null && $fileSizeBytes > self::MAX_DOCUMENT_SIZE_BYTES) {
+            throw ValidationException::withMessages([
+                'file' => 'Ukuran file melebihi batas 50 MB.',
             ]);
         }
 
@@ -76,7 +88,7 @@ class DocumentLifecycleService
             'source_external_id' => $sourceAttributes['source_external_id'] ?? null,
             'source_synced_at' => $sourceAttributes['source_synced_at'] ?? null,
             'mime_type' => $detectedMimeType,
-            'file_size_bytes' => $file->getSize(),
+            'file_size_bytes' => $fileSizeBytes,
             'status' => 'pending',
         ]);
 

@@ -78,18 +78,44 @@ Tahap 7 menambahkan integrasi Google Drive kantor terpusat untuk import dan expo
 
 ### Setup singkat
 
+#### Jalur utama upload: OAuth pusat
+
+Gunakan jalur ini jika hasil ekspor ISTA AI akan disimpan ke **My Drive** satu akun kantor yang sama untuk semua user.
+
 1. Aktifkan Google Drive API di Google Cloud Console.
-2. Buat service account dan unduh key JSON-nya.
-3. Share folder atau Shared Drive kantor yang dipakai ISTA AI ke email service account tersebut.
+2. Buat OAuth Client jenis **Web application**.
+3. Isi redirect URI produksi:
+   - `https://ista-ai.app/chat/google-drive/oauth/callback`
 4. Isi environment server:
-   - `GOOGLE_DRIVE_SERVICE_ACCOUNT_JSON` atau `GOOGLE_DRIVE_SERVICE_ACCOUNT_PATH`
    - `GOOGLE_DRIVE_ROOT_FOLDER_ID`
    - `GOOGLE_DRIVE_UPLOAD_FOLDER_NAME` jika ingin folder default khusus
+   - `GOOGLE_DRIVE_OAUTH_CLIENT_ID`
+   - `GOOGLE_DRIVE_OAUTH_CLIENT_SECRET`
+   - `GOOGLE_DRIVE_OAUTH_REDIRECT_URI`
+   - `GOOGLE_DRIVE_OAUTH_SETUP_KEY`
+5. Deploy env dan jalankan migration:
+   - `php artisan migrate --force`
+6. Login ke ISTA AI, lalu hubungkan akun Google pusat sekali melalui:
+   - `/chat/google-drive/oauth/connect?setup_key=<GOOGLE_DRIVE_OAUTH_SETUP_KEY>`
+7. Setelah callback berhasil, semua user bisa upload dari `/chat` ke akun Drive pusat yang sama tanpa login Google per user.
+
+#### Jalur browse/import: service account atau Shared Drive
+
+Jalur ini dipakai untuk membaca folder kantor dari tombol Google Drive di `/chat`, dan tetap bisa dipakai sebagai fallback bila organisasi memilih Shared Drive.
+
+1. Buat service account dan unduh key JSON-nya.
+2. Share folder root kantor atau Shared Drive yang dipakai ISTA AI ke email service account tersebut.
+3. Isi environment server:
+   - `GOOGLE_DRIVE_SERVICE_ACCOUNT_JSON` atau `GOOGLE_DRIVE_SERVICE_ACCOUNT_PATH`
+   - `GOOGLE_DRIVE_ROOT_FOLDER_ID`
    - `GOOGLE_DRIVE_SHARED_DRIVE_ID` jika memakai Shared Drive
-5. Buka halaman `/chat`, lalu gunakan tombol logo Google Drive di composer untuk mengambil file dari Drive kantor.
+   - `GOOGLE_DRIVE_IMPERSONATED_USER_EMAIL` jika memakai domain-wide delegation
+4. Folder/file yang bisa di-browse, diunduh, dan dijadikan target upload dibatasi server-side agar tetap berada di bawah `GOOGLE_DRIVE_ROOT_FOLDER_ID`.
 
 ### Perilaku MVP
 
 - File binary PDF, DOCX, XLSX, dan CSV dari folder kantor yang diizinkan bisa di-browse dari modal chat dan diproses ke pipeline ISTA AI.
+- Import Google Drive mengikuti batas ukuran yang sama dengan upload manual: maksimal 50 MB.
 - Jawaban AI dan hasil export dokumen bisa disimpan kembali ke Google Drive kantor.
 - Secret service account tidak disimpan di database dan tidak ditampilkan di UI.
+- Token OAuth pusat disimpan terenkripsi di database dan hanya dibuat lewat route setup teknis di bawah `/chat/google-drive/oauth/*`.

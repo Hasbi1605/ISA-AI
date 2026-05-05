@@ -15,6 +15,10 @@ class GoogleDriveService
 
     private const GOOGLE_DRIVE_SCOPE = 'https://www.googleapis.com/auth/drive';
 
+    public const MAX_IMPORT_FILE_SIZE_BYTES = 52_428_800;
+
+    private const MAX_ANCESTOR_DEPTH = 100;
+
     private ?Client $client = null;
 
     private ?Drive $drive = null;
@@ -87,7 +91,7 @@ class GoogleDriveService
             $options['corpora'] = 'user';
         }
 
-        $response = $this->callDriveApi(fn () => $this->drive()->files->listFiles($options));
+        $response = $this->listDriveFilesResponse($options);
         $items = [];
 
         foreach ($response->getFiles() as $file) {
@@ -123,6 +127,7 @@ class GoogleDriveService
     public function downloadToTemp(string $fileId): array
     {
         $metadata = $this->getFileMetadata($fileId);
+        $this->ensureFileMetadataWithinRoot($metadata);
         $mimeType = (string) ($metadata->getMimeType() ?? '');
 
         if ($mimeType === self::GOOGLE_DRIVE_FOLDER_MIME) {
@@ -132,6 +137,8 @@ class GoogleDriveService
         if (str_starts_with($mimeType, 'application/vnd.google-apps.')) {
             throw new RuntimeException('File Google Docs/Sheets/Slides belum didukung pada MVP ini. Gunakan PDF, DOCX, XLSX, atau CSV yang berupa file binary.');
         }
+
+        $this->ensureFileSizeIsAllowed($metadata->getSize() !== null ? (int) $metadata->getSize() : null);
 
         $directory = Storage::disk('local')->path('tmp/cloud/google-drive');
 
@@ -145,25 +152,15 @@ class GoogleDriveService
             throw new RuntimeException('Gagal membuat file sementara untuk Google Drive.');
         }
 
-        $response = $this->callDriveApi(fn () => $this->drive()->files->get($fileId, [
-            'alt' => 'media',
-            'supportsAllDrives' => true,
-        ]));
-
-        $contents = null;
-
-        if (is_object($response) && method_exists($response, 'getBody')) {
-            $contents = (string) $response->getBody();
-        } elseif (is_string($response)) {
-            $contents = $response;
-        }
-
-        if ($contents === null || $contents === '') {
-            throw new RuntimeException('Gagal mengunduh file dari Google Drive.');
-        }
-
-        if (file_put_contents($tempPath, $contents) === false) {
-            throw new RuntimeException('Gagal menyimpan file sementara Google Drive.');
+        try {
+            $bytesWritten = $this->writeDownloadedFileToPath(
+                $this->downloadDriveBinaryResponse($fileId),
+                $tempPath,
+            );
+            $this->ensureFileSizeIsAllowed($metadata->getSize() !== null ? (int) $metadata->getSize() : $bytesWritten);
+        } catch (\Throwable $e) {
+            @unlink($tempPath);
+            throw $e;
         }
 
         return [
@@ -240,20 +237,17 @@ class GoogleDriveService
             'parents' => [$folderId],
         ]);
 
-        $created = $this->callDriveApi(fn () => $this->drive()->files->create($folder, [
+        $created = $this->createDriveFileRecord($folder, [
             'supportsAllDrives' => true,
             'fields' => 'id',
-        ]));
+        ]);
 
         return (string) $created->getId();
     }
 
     public function getFileMetadata(string $fileId): DriveFile
     {
-        return $this->callDriveApi(fn () => $this->drive()->files->get($fileId, [
-            'fields' => 'id,name,mimeType,size,webViewLink,parents,modifiedTime,shortcutDetails',
-            'supportsAllDrives' => true,
-        ]));
+        return $this->fetchDriveFileRecord($fileId, 'id,name,mimeType,size,webViewLink,parents,modifiedTime,shortcutDetails');
     }
 
     public function describeUploadFailure(\Throwable $throwable): string
@@ -404,10 +398,15 @@ class GoogleDriveService
 
     private function resolveFolderId(?string $folderId = null): string
     {
-        $candidate = $this->normalizeStringConfig($folderId ?? $this->rootFolderId() ?? '');
+        $rootFolderId = $this->rootFolderId();
+        $candidate = $this->normalizeStringConfig($folderId ?? $rootFolderId ?? '');
 
         if ($candidate === '') {
             throw new RuntimeException('Root folder Google Drive belum dikonfigurasi.');
+        }
+
+        if ($rootFolderId !== null && $candidate !== $rootFolderId) {
+            $this->ensureFolderWithinRoot($candidate);
         }
 
         return $candidate;
@@ -436,7 +435,7 @@ class GoogleDriveService
             $options['corpora'] = 'user';
         }
 
-        $response = $this->callDriveApi(fn () => $this->drive()->files->listFiles($options));
+        $response = $this->listDriveFilesResponse($options);
 
         $files = $response->getFiles();
 
@@ -450,6 +449,194 @@ class GoogleDriveService
     private function escapeQueryValue(string $value): string
     {
         return str_replace("'", "\\'", $value);
+    }
+
+    protected function listDriveFilesResponse(array $options): mixed
+    {
+        return $this->callDriveApi(fn () => $this->drive()->files->listFiles($options));
+    }
+
+    protected function fetchDriveFileRecord(string $fileId, string $fields): DriveFile
+    {
+        return $this->callDriveApi(fn () => $this->drive()->files->get($fileId, [
+            'fields' => $fields,
+            'supportsAllDrives' => true,
+        ]));
+    }
+
+    protected function downloadDriveBinaryResponse(string $fileId): mixed
+    {
+        return $this->callDriveApi(fn () => $this->drive()->files->get($fileId, [
+            'alt' => 'media',
+            'supportsAllDrives' => true,
+        ]));
+    }
+
+    protected function createDriveFileRecord(DriveFile $metadata, array $options): DriveFile
+    {
+        return $this->callDriveApi(fn () => $this->drive()->files->create($metadata, $options));
+    }
+
+    private function ensureFolderWithinRoot(string $folderId): void
+    {
+        $metadata = $this->fetchDriveFileRecord($folderId, 'id,mimeType,parents');
+
+        if ((string) ($metadata->getMimeType() ?? '') !== self::GOOGLE_DRIVE_FOLDER_MIME) {
+            throw new RuntimeException('Folder Google Drive tidak valid.');
+        }
+
+        $this->ensureAncestorsLeadToRoot(
+            (string) $metadata->getId(),
+            $metadata->getParents() ?? [],
+            'Folder Google Drive berada di luar folder kantor yang diizinkan.',
+        );
+    }
+
+    private function ensureFileMetadataWithinRoot(DriveFile $metadata): void
+    {
+        $this->ensureAncestorsLeadToRoot(
+            (string) $metadata->getId(),
+            $metadata->getParents() ?? [],
+            'File Google Drive berada di luar folder kantor yang diizinkan.',
+        );
+    }
+
+    /**
+     * @param  array<int, string>  $parentIds
+     */
+    private function ensureAncestorsLeadToRoot(string $itemId, array $parentIds, string $errorMessage): void
+    {
+        $rootFolderId = $this->rootFolderId();
+
+        if ($rootFolderId === null || $rootFolderId === '') {
+            throw new RuntimeException('Root folder Google Drive belum dikonfigurasi.');
+        }
+
+        if ($itemId === $rootFolderId) {
+            return;
+        }
+
+        $queue = array_values(array_filter(array_map(
+            fn (mixed $parentId): string => trim((string) $parentId),
+            $parentIds
+        )));
+        $visited = [$itemId => true];
+        $depth = 0;
+
+        while ($queue !== []) {
+            $parentId = array_shift($queue);
+
+            if ($parentId === $rootFolderId) {
+                return;
+            }
+
+            if ($parentId === '' || isset($visited[$parentId])) {
+                continue;
+            }
+
+            $visited[$parentId] = true;
+            $depth++;
+
+            if ($depth > self::MAX_ANCESTOR_DEPTH) {
+                break;
+            }
+
+            $parentMetadata = $this->fetchDriveFileRecord($parentId, 'id,parents');
+
+            foreach ($parentMetadata->getParents() ?? [] as $ancestorId) {
+                $ancestorId = trim((string) $ancestorId);
+
+                if ($ancestorId !== '' && ! isset($visited[$ancestorId])) {
+                    $queue[] = $ancestorId;
+                }
+            }
+        }
+
+        throw new RuntimeException($errorMessage);
+    }
+
+    private function ensureFileSizeIsAllowed(?int $sizeBytes): void
+    {
+        if ($sizeBytes !== null && $sizeBytes > self::MAX_IMPORT_FILE_SIZE_BYTES) {
+            throw new RuntimeException($this->oversizedFileMessage());
+        }
+    }
+
+    private function oversizedFileMessage(): string
+    {
+        return 'Ukuran file Google Drive melebihi batas 50 MB.';
+    }
+
+    private function writeDownloadedFileToPath(mixed $response, string $tempPath): int
+    {
+        if (is_object($response) && method_exists($response, 'getBody')) {
+            $body = $response->getBody();
+
+            if (is_object($body) && method_exists($body, 'read')) {
+                return $this->writeStreamBodyToPath($body, $tempPath);
+            }
+
+            return $this->writeStringBodyToPath((string) $body, $tempPath);
+        }
+
+        if (is_string($response)) {
+            return $this->writeStringBodyToPath($response, $tempPath);
+        }
+
+        throw new RuntimeException('Gagal mengunduh file dari Google Drive.');
+    }
+
+    private function writeStringBodyToPath(string $contents, string $tempPath): int
+    {
+        if ($contents === '') {
+            throw new RuntimeException('Gagal mengunduh file dari Google Drive.');
+        }
+
+        $this->ensureFileSizeIsAllowed(strlen($contents));
+
+        if (file_put_contents($tempPath, $contents) === false) {
+            throw new RuntimeException('Gagal menyimpan file sementara Google Drive.');
+        }
+
+        return strlen($contents);
+    }
+
+    private function writeStreamBodyToPath(object $stream, string $tempPath): int
+    {
+        $handle = fopen($tempPath, 'wb');
+
+        if ($handle === false) {
+            throw new RuntimeException('Gagal menyimpan file sementara Google Drive.');
+        }
+
+        $written = 0;
+
+        try {
+            while (true) {
+                $chunk = $stream->read(1024 * 1024);
+
+                if (! is_string($chunk) || $chunk === '') {
+                    break;
+                }
+
+                $bytes = fwrite($handle, $chunk);
+
+                if ($bytes === false) {
+                    throw new RuntimeException('Gagal menyimpan file sementara Google Drive.');
+                }
+
+                $written += $bytes;
+                $this->ensureFileSizeIsAllowed($written);
+            }
+        } finally {
+            fclose($handle);
+        }
+
+        if ($written === 0) {
+            throw new RuntimeException('Gagal mengunduh file dari Google Drive.');
+        }
+
+        return $written;
     }
 
     private function normalizeStringConfig(mixed $value, string $default = ''): string

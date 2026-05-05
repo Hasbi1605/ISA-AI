@@ -144,6 +144,45 @@ class GoogleDriveUploadTest extends TestCase
         ]);
     }
 
+    public function test_document_viewer_shows_error_when_upload_target_folder_is_rejected(): void
+    {
+        Storage::fake('local');
+
+        $user = User::factory()->create();
+        $document = $this->createDocument($user);
+
+        $exportService = Mockery::mock(DocumentExportService::class);
+        $exportService->shouldReceive('exportDocument')
+            ->once()
+            ->with(Mockery::on(fn (Document $value) => $value->is($document)), 'pdf', 'surat-keluar')
+            ->andReturn([
+                'body' => '%PDF-1.4 exported',
+                'content_type' => 'application/pdf',
+                'file_name' => 'surat-keluar.pdf',
+            ]);
+
+        $this->app->instance(DocumentExportService::class, $exportService);
+
+        $googleDriveService = Mockery::mock(GoogleDriveService::class);
+        $googleDriveService->shouldReceive('canUploadWithConfiguredAccount')
+            ->byDefault()
+            ->andReturn(true);
+        $googleDriveService->shouldReceive('uploadFromPath')
+            ->once()
+            ->with(Mockery::type('string'), 'surat-keluar.pdf', 'application/pdf', 'outside-folder-id')
+            ->andThrow(new \RuntimeException('Folder Google Drive berada di luar folder kantor yang diizinkan.'));
+
+        $this->app->instance(GoogleDriveService::class, $googleDriveService);
+
+        Livewire::actingAs($user)
+            ->test(DocumentViewer::class)
+            ->call('open', $document->id)
+            ->call('saveToGoogleDrive', 'pdf', 'outside-folder-id')
+            ->assertSee('Folder Google Drive berada di luar folder kantor yang diizinkan.', false);
+
+        $this->assertDatabaseCount('cloud_storage_files', 0);
+    }
+
     private function createDocument(User $user): Document
     {
         return Document::create([
