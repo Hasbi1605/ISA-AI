@@ -4,12 +4,6 @@
     {{-- Preview/Editor Toggle Header --}}
     <div class="relative z-30 min-h-[61px] flex-shrink-0 flex items-center justify-between gap-3 px-5 border-b border-stone-200/60 bg-white/85 backdrop-blur-sm dark:border-[#1E293B]/70 dark:bg-gray-950/85">
         <div class="flex min-w-0 flex-wrap items-center gap-3">
-            <div class="shrink-0">
-                @include('livewire.chat.partials.chat-memo-tab-toggle')
-            </div>
-
-            <div class="hidden h-7 w-px bg-stone-200 dark:bg-gray-800 sm:block"></div>
-
             <div class="flex items-center gap-1">
             {{-- Preview Tab --}}
             <button type="button"

@@ -9,4 +9,12 @@
     {{-- RIGHT: Preview / Editor Panel --}}
     @include('livewire.memos.partials.memo-preview-panel')
 
+    <div
+        x-show="isMobile && showMemoSidebar"
+        x-transition.opacity
+        @click="showMemoSidebar = false"
+        class="fixed inset-0 bg-black/50 z-40"
+        style="display:none;"
+    ></div>
+
 </div>

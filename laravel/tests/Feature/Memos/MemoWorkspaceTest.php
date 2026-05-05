@@ -22,9 +22,65 @@ class MemoWorkspaceTest extends TestCase
         Livewire::actingAs($user)
             ->test(MemoWorkspace::class)
             ->assertSee('Kembali ke Beranda', false)
+            ->assertSee('New Memo', false)
+            ->assertSee('Pengaturan Akun', false)
             ->assertSee('chat-tab-switch', false)
             ->assertSee('activeTab === \'memo\'', false)
+            ->assertSee('darkMode = !darkMode', false)
+            ->assertSee('images/icons/collapse-left-light.svg', false)
+            ->assertSee('chat-form', false)
+            ->assertSee('ISTA AI dapat keliru', false)
+            ->assertDontSee('Buat Memo Baru', false)
             ->assertDontSee('wire:click="$set(\'tab\', \'chat\')"', false);
+    }
+
+    public function test_workspace_sidebar_groups_memo_history_like_chat_sidebar(): void
+    {
+        $user = User::factory()->create(['email_verified_at' => now()]);
+
+        $todayMemo = Memo::create([
+            'user_id' => $user->id,
+            'title' => 'Memo Hari Ini',
+            'memo_type' => 'memo_internal',
+            'status' => Memo::STATUS_GENERATED,
+        ]);
+        $todayMemo->forceFill([
+            'created_at' => now(),
+            'updated_at' => now(),
+        ])->save();
+
+        $recentMemo = Memo::create([
+            'user_id' => $user->id,
+            'title' => 'Memo Minggu Ini',
+            'memo_type' => 'memo_internal',
+            'status' => Memo::STATUS_GENERATED,
+        ]);
+        $recentMemo->forceFill([
+            'created_at' => now()->subDays(3),
+            'updated_at' => now()->subDays(3),
+        ])->save();
+
+        $olderMemo = Memo::create([
+            'user_id' => $user->id,
+            'title' => 'Memo Lama',
+            'memo_type' => 'memo_internal',
+            'status' => Memo::STATUS_GENERATED,
+        ]);
+        $olderMemo->forceFill([
+            'created_at' => now()->subDays(10),
+            'updated_at' => now()->subDays(10),
+        ])->save();
+
+        Livewire::actingAs($user)
+            ->test(MemoWorkspace::class)
+            ->assertSee('Today', false)
+            ->assertSee('Previous 7 Days', false)
+            ->assertSee('Older', false)
+            ->assertSee('chat-history-item', false)
+            ->assertSee('data-memo-history-id=', false)
+            ->assertSee('Memo Hari Ini', false)
+            ->assertSee('Memo Minggu Ini', false)
+            ->assertSee('Memo Lama', false);
     }
 
     public function test_preview_mode_can_switch_back_from_editor_to_preview(): void
