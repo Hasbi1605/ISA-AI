@@ -48,6 +48,20 @@
                         {{ $showMemoConfiguration ? 'Tutup' : 'Edit' }}
                     </button>
                 </div>
+                @if (($activeMemoVersions ?? collect())->count() > 1)
+                    <div class="mt-3 flex items-center gap-2 border-t border-stone-100 pt-3 dark:border-gray-800">
+                        <label for="memo-version-select" class="shrink-0 text-[10.5px] font-bold uppercase tracking-wider text-stone-400 dark:text-gray-500">Versi</label>
+                        <select id="memo-version-select"
+                                wire:change="switchMemoVersion($event.target.value)"
+                                class="min-w-0 flex-1 rounded-md border border-stone-200 bg-white px-2.5 py-1.5 text-[12px] font-semibold text-stone-700 shadow-sm focus:border-ista-primary focus:ring-1 focus:ring-ista-primary dark:border-gray-700 dark:bg-gray-800 dark:text-gray-100">
+                            @foreach ($activeMemoVersions as $version)
+                                <option value="{{ $version->id }}" @selected((int) $activeMemoVersionId === (int) $version->id)>
+                                    Versi {{ $version->version_number }} · {{ $version->created_at?->format('H:i') }}
+                                </option>
+                            @endforeach
+                        </select>
+                    </div>
+                @endif
             </div>
         @endif
 
@@ -204,24 +218,45 @@
             @endforeach
         @endif
 
-        @if ($isGenerating)
-            <div class="flex justify-start">
-                <div class="w-full flex items-start gap-2.5">
-                    <div class="shrink-0 h-8 w-8 rounded-full bg-white border border-stone-200 shadow-sm p-1 flex items-center justify-center">
-                        <img src="{{ asset('images/ista/logo.png') }}" alt="ISTA AI" class="h-full w-full object-contain" />
+        <template x-if="memoRevisionText">
+            <div class="flex justify-end">
+                <div class="w-full flex items-start gap-2.5 flex-row-reverse">
+                    <div class="shrink-0 h-8 w-8 rounded-full flex items-center justify-center bg-[#E2E8F0] dark:bg-white text-[#62748E] dark:text-black">
+                        <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M16 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2m12-10a4 4 0 11-8 0 4 4 0 018 0z" />
+                        </svg>
                     </div>
-                    <div class="flex max-w-[82%] flex-col gap-1 items-start text-left">
-                        <div class="flex items-center gap-2 mb-1">
-                            <span class="text-[13px] font-bold text-stone-800 dark:text-[#F8FAFC]">ISTA AI</span>
-                            <span class="h-3 w-3 rounded-full border border-current border-t-transparent animate-spin text-[#64748B] dark:text-[#94A3B8]"></span>
+                    <div class="flex max-w-[82%] flex-col gap-1 items-end text-right">
+                        <div class="flex items-center gap-2 mb-1 justify-end">
+                            <span class="text-[13px] font-bold text-stone-800 dark:text-[#F8FAFC]">Anda</span>
                         </div>
-                        <div class="bg-white/80 backdrop-blur-sm dark:bg-gray-800 border border-stone-200/60 dark:border-gray-800 rounded-xl rounded-bl-md px-4 py-3">
-                            <p class="text-[14px] text-stone-500 dark:text-gray-400">Sedang membuat draft memo...</p>
+                        <div class="bg-ista-primary text-white rounded-lg rounded-br-sm px-4 py-3">
+                            <p class="text-[14px] leading-relaxed whitespace-pre-wrap" x-text="memoRevisionText"></p>
                         </div>
                     </div>
                 </div>
             </div>
-        @endif
+        </template>
+
+        <div class="flex justify-start" x-show="memoRevisionLoading || $wire.isGenerating" x-cloak>
+            <div class="w-full flex items-start gap-2.5">
+                <div class="shrink-0 h-8 w-8 rounded-full bg-white border border-stone-200 shadow-sm p-1 flex items-center justify-center">
+                    <img src="{{ asset('images/ista/logo.png') }}" alt="ISTA AI" class="h-full w-full object-contain" />
+                </div>
+                <div class="flex max-w-[82%] flex-col gap-1 items-start text-left">
+                    <div class="flex items-center gap-2 mb-1">
+                        <span class="text-[13px] font-bold text-stone-800 dark:text-[#F8FAFC]">ISTA AI</span>
+                    </div>
+                    <div class="inline-flex w-auto items-center rounded-xl rounded-bl-md border border-stone-200/60 bg-white/80 px-4 py-3 backdrop-blur-sm dark:border-gray-800 dark:bg-gray-800">
+                        <div class="flex space-x-1.5 py-1">
+                            <div class="h-2 w-2 bg-gray-400 dark:bg-[#64748B] rounded-full animate-bounce"></div>
+                            <div class="h-2 w-2 bg-gray-400 dark:bg-[#64748B] rounded-full animate-bounce [animation-delay:-0.15s]"></div>
+                            <div class="h-2 w-2 bg-gray-400 dark:bg-[#64748B] rounded-full animate-bounce [animation-delay:-0.3s]"></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
     </div>
 
     {{-- Revision Chat Input --}}
@@ -250,12 +285,12 @@
                 </button>
             </div>
         @elseif ($activeMemoId)
-            <form wire:submit="sendMemoChat" class="chat-form relative rounded-xl shadow-sm bg-white dark:bg-gray-800 border border-stone-200/60 dark:border-gray-700 transition-colors">
+            <form @submit.prevent="submitMemoRevision($wire, $refs.memoInput)" class="chat-form relative rounded-xl shadow-sm bg-white dark:bg-gray-800 border border-stone-200/60 dark:border-gray-700 transition-colors">
                 <div class="px-3 pb-3 pt-3 w-full">
                     <textarea
                         wire:model="memoPrompt"
                         x-ref="memoInput"
-                        @keydown.enter="if(!$event.shiftKey) { $event.preventDefault(); $wire.sendMemoChat(); }"
+                        @keydown.enter="if(!$event.shiftKey) { $event.preventDefault(); submitMemoRevision($wire, $refs.memoInput); }"
                         placeholder="Tulis revisi untuk memo ini..."
                         rows="1"
                         class="chat-input w-full max-h-[120px] min-h-[44px] bg-transparent border-none focus:ring-0 focus:outline-none focus:border-transparent focus-visible:ring-0 focus-visible:outline-none resize-none text-[14px] text-stone-800 dark:text-[#F8FAFC] placeholder-[#94A3B8] dark:placeholder-[#64748B] px-2 py-[10px] hover:bg-transparent focus:bg-transparent"
@@ -266,8 +301,8 @@
                     <div class="mt-2 flex items-center justify-end">
                         <button type="submit"
                                 wire:loading.attr="disabled"
-                                wire:target="sendMemoChat,generateFromChat"
-                                :disabled="$wire.isGenerating"
+                                wire:target="sendMemoChat,generateRevisionFromChat"
+                                :disabled="memoRevisionLoading || $wire.isGenerating"
                                 class="bg-ista-primary hover:bg-ista-dark dark:bg-ista-primary dark:hover:bg-ista-dark disabled:opacity-50 disabled:cursor-not-allowed rounded-full transition-all duration-300 h-[32px] w-[32px] flex items-center justify-center group">
                             <img src="{{ asset('images/icons/send-light.svg') }}" alt="" class="h-[17px] w-[17px] dark:hidden brightness-0 invert" />
                             <img src="{{ asset('images/icons/send-dark.svg') }}" alt="" class="h-[17px] w-[17px] hidden dark:block brightness-0 invert" />

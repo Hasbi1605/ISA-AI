@@ -65,6 +65,12 @@ def build_memo_prompt(
         if config["closing"]
         else "- Jangan menulis kalimat penutup akhir kecuali user mengisinya di field Penutup.\n"
     )
+    revision_rules = (
+        "- Karena ini revisi, pertahankan kalimat, urutan, nomor butir, dan informasi yang tidak diminta berubah secara eksplisit.\n"
+        "- Jangan meregenerasi seluruh memo; ubah hanya bagian yang disebut dalam instruksi revisi.\n"
+        if config["revision_instruction"]
+        else ""
+    )
 
     return (
         "Tulis isi memorandum resmi dalam Bahasa Indonesia dengan gaya naskah dinas.\n"
@@ -86,6 +92,7 @@ def build_memo_prompt(
         "- Gunakan paragraf formal yang singkat, jelas, dan mengikuti contoh memorandum manual.\n"
         "- Jika ada beberapa butir keputusan/permohonan, gunakan daftar bernomor 1., 2., 3.\n"
         "- Awali dengan dasar atau tindak lanjut bila konteks menyediakannya.\n"
+        f"{revision_rules}"
         "- Jangan gunakan markdown, tabel, salam pembuka, atau salam penutup.\n"
         f"{closing_rule}"
     )

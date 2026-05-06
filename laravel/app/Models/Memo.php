@@ -6,6 +6,7 @@ use Illuminate\Database\Eloquent\Casts\Attribute;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\MorphMany;
 use Illuminate\Database\Eloquent\SoftDeletes;
 
@@ -32,6 +33,7 @@ class Memo extends Model
         'title',
         'memo_type',
         'file_path',
+        'current_version_id',
         'status',
         'source_conversation_id',
         'source_document_ids',
@@ -59,6 +61,16 @@ class Memo extends Model
     public function user(): BelongsTo
     {
         return $this->belongsTo(User::class);
+    }
+
+    public function versions(): HasMany
+    {
+        return $this->hasMany(MemoVersion::class);
+    }
+
+    public function currentVersion(): BelongsTo
+    {
+        return $this->belongsTo(MemoVersion::class, 'current_version_id');
     }
 
     public function cloudStorageFiles(): MorphMany

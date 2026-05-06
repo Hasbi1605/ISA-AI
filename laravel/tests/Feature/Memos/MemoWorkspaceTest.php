@@ -4,6 +4,7 @@ namespace Tests\Feature\Memos;
 
 use App\Livewire\Memos\MemoWorkspace;
 use App\Models\Memo;
+use App\Models\MemoVersion;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Http;
@@ -210,6 +211,8 @@ class MemoWorkspaceTest extends TestCase
         $storedMessages = $memo->refresh()->chat_messages;
 
         $this->assertIsArray($storedMessages);
+        $this->assertSame(1, $memo->versions()->count());
+        $this->assertNotNull($memo->current_version_id);
         $this->assertSame('M-03/I-Yog/UM.01/05/2026', $memo->configuration['number']);
         $this->assertSame('Kepala Subbagian Tata Usaha', $memo->configuration['recipient']);
         $this->assertSame('letter', $memo->configuration['page_size']);
@@ -282,14 +285,24 @@ class MemoWorkspaceTest extends TestCase
                 'page_size_mode' => 'auto',
             ],
         ]);
+        $originalVersion = $memo->versions()->create([
+            'version_number' => 1,
+            'label' => 'Versi 1',
+            'file_path' => $memo->file_path,
+            'status' => Memo::STATUS_GENERATED,
+            'configuration' => $memo->configuration,
+            'searchable_text' => $memo->searchable_text,
+        ]);
+        $memo->forceFill(['current_version_id' => $originalVersion->id])->save();
 
-        Livewire::actingAs($user)
+        $component = Livewire::actingAs($user)
             ->test(MemoWorkspace::class)
             ->call('loadMemo', $memo->id)
             ->set('memoPrompt', 'tambahkan tembusan nomor 4, untuk Kepala Istana Kapak')
             ->call('sendMemoChat')
             ->assertHasNoErrors()
             ->assertSee('Revisi memo', false)
+            ->assertSee('Versi 2', false)
             ->assertDispatched('memo-document-ready');
 
         Http::assertSent(fn ($request) => str_ends_with($request->url(), '/api/memos/generate-body')
@@ -298,12 +311,23 @@ class MemoWorkspaceTest extends TestCase
             && str_contains($request['context'], 'Isi memo saat ini')
             && str_contains($request['context'], 'Instruksi revisi wajib diterapkan'));
 
-        $revisedMemo = Memo::where('id', '!=', $memo->id)->firstOrFail();
+        $revisedMemo = $memo->refresh();
 
+        $this->assertSame(1, Memo::count());
+        $this->assertSame(2, MemoVersion::where('memo_id', $memo->id)->count());
         $this->assertSame(
             "1. Kepala Dinas Sekretariat Negara\n2. Kepala IKY\n3. Kepala KOMDIGI\n4. Kepala Istana Kapak",
             $revisedMemo->configuration['carbon_copy'],
         );
         $this->assertSame('tambahkan tembusan nomor 4, untuk Kepala Istana Kapak', $revisedMemo->configuration['revision_instruction']);
+        $this->assertSame($memo->id, $revisedMemo->id);
+        $this->assertNotSame($originalVersion->id, $revisedMemo->current_version_id);
+
+        $component
+            ->call('switchMemoVersion', $originalVersion->id)
+            ->assertSet('activeMemoVersionId', $originalVersion->id)
+            ->assertSet('memoCarbonCopy', "Kepala Dinas Sekretariat Negara\nKepala IKY\nKepala KOMDIGI");
+
+        $this->assertSame($originalVersion->file_path, $memo->refresh()->file_path);
     }
 }

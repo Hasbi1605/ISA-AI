@@ -3,6 +3,7 @@
 namespace App\Livewire\Memos;
 
 use App\Models\Memo;
+use App\Models\MemoVersion;
 use App\Services\Memo\MemoGenerationService;
 use App\Services\OnlyOffice\JwtSigner;
 use Illuminate\Support\Facades\Auth;
@@ -15,6 +16,8 @@ class MemoWorkspace extends Component
     private const DRAFT_THREAD_KEY = 'draft';
 
     public ?int $activeMemoId = null;
+
+    public ?int $activeMemoVersionId = null;
 
     public string $memoType = 'memo_internal';
 
@@ -62,7 +65,8 @@ class MemoWorkspace extends Component
     {
         $this->rememberCurrentThread();
 
-        $memo = Memo::where('id', $memoId)
+        $memo = Memo::with(['currentVersion', 'versions'])
+            ->where('id', $memoId)
             ->where('user_id', Auth::id())
             ->first();
 
@@ -71,9 +75,10 @@ class MemoWorkspace extends Component
         }
 
         $this->activeMemoId = $memo->id;
+        $this->activeMemoVersionId = $this->resolveMemoVersion($memo)?->id;
         $this->memoType = $memo->memo_type;
         $this->title = $memo->title;
-        $this->applyMemoConfiguration($memo->configuration ?? []);
+        $this->applyMemoConfiguration($this->activeMemoConfiguration($memo));
         $this->showMemoConfiguration = false;
         $this->memoPrompt = '';
 
@@ -105,6 +110,7 @@ class MemoWorkspace extends Component
         $this->rememberCurrentThread();
 
         $this->activeMemoId = null;
+        $this->activeMemoVersionId = null;
         $this->memoPrompt = '';
         $this->memoChatMessages = [];
         $this->isGenerating = false;
@@ -129,8 +135,12 @@ class MemoWorkspace extends Component
         $this->generateFromChat($this->memoDraftContext(), true);
     }
 
-    public function sendMemoChat(): void
+    public function sendMemoChat(?string $message = null): void
     {
+        if ($message !== null) {
+            $this->memoPrompt = $message;
+        }
+
         $this->validate([
             'memoPrompt' => 'required|string|min:1',
         ]);
@@ -169,20 +179,27 @@ class MemoWorkspace extends Component
                 'revision_instruction' => trim($instruction),
             ]);
 
-            $memo = $generationService->generate(
-                Auth::user(),
-                $this->memoType,
-                $this->title,
+            $memo = Memo::where('id', $this->activeMemoId)
+                ->where('user_id', Auth::id())
+                ->firstOrFail();
+
+            $version = $generationService->generateRevision(
+                $memo,
                 $this->memoRevisionContext($instruction),
-                [],
                 $configuration,
+                trim($instruction),
             );
 
+            $memo = $version->memo()->firstOrFail();
+
             $this->activeMemoId = $memo->id;
+            $this->activeMemoVersionId = $version->id;
+            $this->title = $memo->title;
+            $this->applyMemoConfiguration($version->configuration ?? []);
             $this->showMemoConfiguration = false;
             $this->rememberCurrentThread();
 
-            $this->addSystemMessage("Revisi memo \"{$memo->title}\" berhasil digenerate. Cek panel Dokumen untuk memastikan hasilnya sudah sesuai.");
+            $this->addSystemMessage("Revisi memo \"{$memo->title}\" berhasil disimpan sebagai Versi {$version->version_number}. Cek panel Dokumen untuk memastikan hasilnya sudah sesuai.");
             $this->dispatch('memo-document-ready', memoId: $memo->id);
         } catch (\Throwable $e) {
             $this->addSystemMessage('Maaf, terjadi kesalahan saat revisi memo: '.$e->getMessage());
@@ -213,6 +230,7 @@ class MemoWorkspace extends Component
             );
 
             $this->activeMemoId = $memo->id;
+            $this->activeMemoVersionId = $memo->current_version_id;
             $this->showMemoConfiguration = false;
             $this->rememberCurrentThread();
 
@@ -237,12 +255,39 @@ class MemoWorkspace extends Component
             return;
         }
 
-        $lastUserMessage = collect($this->memoChatMessages)
-            ->where('role', 'user')
-            ->last();
+        $this->generateRevisionFromChat('Generate ulang memo aktif dari konfigurasi terakhir. Pertahankan metadata, struktur, dan bagian yang tidak perlu diubah.');
+    }
 
-        $context = $lastUserMessage['content'] ?? $this->memoDraftContext();
-        $this->generateFromChat($context);
+    public function switchMemoVersion(int|string $versionId): void
+    {
+        if (! $this->activeMemoId || ! is_numeric($versionId)) {
+            return;
+        }
+
+        $memo = Memo::where('id', $this->activeMemoId)
+            ->where('user_id', Auth::id())
+            ->first();
+
+        if (! $memo) {
+            return;
+        }
+
+        $version = MemoVersion::where('memo_id', $memo->id)
+            ->whereKey((int) $versionId)
+            ->first();
+
+        if (! $version) {
+            return;
+        }
+
+        $memo = app(MemoGenerationService::class)->activateVersion($memo, $version, false);
+
+        $this->activeMemoVersionId = $version->id;
+        $this->title = $memo->title;
+        $this->applyMemoConfiguration($version->configuration ?? []);
+        $this->showMemoConfiguration = false;
+        $this->rememberCurrentThread();
+        $this->dispatch('memo-document-ready', memoId: $memo->id);
     }
 
     public function editorConfig(): ?array
@@ -268,7 +313,7 @@ class MemoWorkspace extends Component
         $config = [
             'document' => [
                 'fileType' => 'docx',
-                'key' => 'memo-'.$memo->id.'-'.$memo->updated_at?->timestamp,
+                'key' => 'memo-'.$memo->id.'-v'.($memo->current_version_id ?: $this->activeMemoVersionId ?: 0).'-'.$memo->updated_at?->timestamp,
                 'title' => $memo->title.'.docx',
                 'url' => $laravelInternalUrl.$documentPath,
             ],
@@ -291,12 +336,21 @@ class MemoWorkspace extends Component
 
     public function render()
     {
-        $memos = Memo::where('user_id', Auth::id())
+        $memos = Memo::with('currentVersion')
+            ->where('user_id', Auth::id())
             ->orderBy('updated_at', 'desc')
             ->get();
 
+        $activeMemoVersions = $this->activeMemoId
+            ? MemoVersion::whereHas('memo', fn ($query) => $query->where('user_id', Auth::id()))
+                ->where('memo_id', $this->activeMemoId)
+                ->orderByDesc('version_number')
+                ->get()
+            : collect();
+
         return view('livewire.memos.memo-workspace', [
             'memos' => $memos,
+            'activeMemoVersions' => $activeMemoVersions,
             'memoTypes' => Memo::TYPES,
             'memoPageSizes' => $this->memoPageSizes(),
             'editorConfig' => $this->editorConfig(),
@@ -387,11 +441,19 @@ class MemoWorkspace extends Component
             "Instruksi revisi wajib diterapkan:\n".trim($instruction),
         ];
 
-        $activeMemoText = $this->activeMemoId
-            ? Memo::where('id', $this->activeMemoId)
+        $activeMemoText = null;
+
+        if ($this->activeMemoVersionId) {
+            $activeMemoText = MemoVersion::whereHas('memo', fn ($query) => $query->where('user_id', Auth::id()))
+                ->whereKey($this->activeMemoVersionId)
+                ->value('searchable_text');
+        }
+
+        if (! $activeMemoText && $this->activeMemoId) {
+            $activeMemoText = Memo::where('id', $this->activeMemoId)
                 ->where('user_id', Auth::id())
-                ->value('searchable_text')
-            : null;
+                ->value('searchable_text');
+        }
 
         if (trim((string) $activeMemoText) !== '') {
             array_unshift($sections, "Isi memo saat ini:\n".trim((string) $activeMemoText));
@@ -422,6 +484,28 @@ class MemoWorkspace extends Component
     protected function applyRevisionInstruction(string $instruction): void
     {
         $this->applyCarbonCopyRevision($instruction);
+        $this->applyCarbonCopyCasingRevision($instruction);
+    }
+
+    protected function resolveMemoVersion(Memo $memo): ?MemoVersion
+    {
+        if ($memo->currentVersion) {
+            return $memo->currentVersion;
+        }
+
+        return $memo->versions
+            ->sortByDesc('version_number')
+            ->first();
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    protected function activeMemoConfiguration(Memo $memo): array
+    {
+        $version = $this->resolveMemoVersion($memo);
+
+        return $version?->configuration ?? $memo->configuration ?? [];
     }
 
     protected function applyCarbonCopyRevision(string $instruction): void
@@ -460,6 +544,57 @@ class MemoWorkspace extends Component
             ->implode("\n");
     }
 
+    protected function applyCarbonCopyCasingRevision(string $instruction): void
+    {
+        if (! preg_match('/\btembusan\b/iu', $instruction)) {
+            return;
+        }
+
+        if (! preg_match('/\b(?:uppercase|huruf\s+besar|kapital)\b/iu', $instruction)) {
+            return;
+        }
+
+        $lines = $this->carbonCopyLines();
+
+        if ($lines === []) {
+            return;
+        }
+
+        $target = '';
+
+        if (preg_match('/(.+?)\s+di\s+tembusan/iu', $instruction, $matches)) {
+            $target = preg_replace('/^\s*(?:ubah|ganti|perbaiki)\s+(?:nama\s+)?/iu', '', (string) $matches[1]) ?? '';
+            $target = $this->normalizeCarbonCopyItem($target);
+        }
+
+        $targetLower = mb_strtolower($target);
+        $changed = false;
+
+        $lines = collect($lines)
+            ->map(function (string $line) use ($targetLower, &$changed): string {
+                $lineLower = mb_strtolower($line);
+                $shouldTitleCase = $targetLower === ''
+                    || $lineLower === $targetLower
+                    || str_contains($lineLower, $targetLower);
+
+                if (! $shouldTitleCase) {
+                    return $line;
+                }
+
+                $changed = true;
+
+                return $this->titleCaseName($line);
+            })
+            ->values()
+            ->all();
+
+        if (! $changed) {
+            return;
+        }
+
+        $this->memoCarbonCopy = $this->formatCarbonCopyLines($lines, $this->carbonCopyIsNumbered());
+    }
+
     /**
      * @return array<int, string>
      */
@@ -479,6 +614,29 @@ class MemoWorkspace extends Component
         $item = preg_replace('/\s+/u', ' ', trim($item)) ?? $item;
 
         return trim($item, " \t\n\r\0\x0B.,;:");
+    }
+
+    /**
+     * @param  array<int, string>  $lines
+     */
+    protected function formatCarbonCopyLines(array $lines, bool $numbered): string
+    {
+        return collect($lines)
+            ->values()
+            ->map(fn (string $line, int $index) => $numbered ? ($index + 1).'. '.$line : $line)
+            ->implode("\n");
+    }
+
+    protected function carbonCopyIsNumbered(): bool
+    {
+        return collect(preg_split('/\R+/', $this->memoCarbonCopy) ?: [])
+            ->filter(fn (string $line) => trim($line) !== '')
+            ->contains(fn (string $line) => preg_match('/^\s*\d+[.)]\s+/u', $line) === 1);
+    }
+
+    protected function titleCaseName(string $value): string
+    {
+        return mb_convert_case(mb_strtolower($value), MB_CASE_TITLE, 'UTF-8');
     }
 
     /**

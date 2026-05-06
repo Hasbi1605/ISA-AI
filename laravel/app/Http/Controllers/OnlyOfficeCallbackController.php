@@ -47,6 +47,16 @@ class OnlyOfficeCallbackController extends Controller
                 'status' => Memo::STATUS_EDITED,
                 'searchable_text' => $memo->searchable_text ?: $memo->title,
             ])->save();
+
+            $currentVersion = $memo->currentVersion()->first();
+
+            if ($currentVersion) {
+                $currentVersion->forceFill([
+                    'file_path' => $path,
+                    'status' => Memo::STATUS_EDITED,
+                    'searchable_text' => $memo->searchable_text ?: $memo->title,
+                ])->save();
+            }
         }
 
         return response()->json(['error' => 0]);

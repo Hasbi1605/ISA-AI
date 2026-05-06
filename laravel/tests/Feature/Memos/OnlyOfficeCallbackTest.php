@@ -58,6 +58,8 @@ class OnlyOfficeCallbackTest extends TestCase
 
         $memo->refresh();
         $this->assertSame(Memo::STATUS_EDITED, $memo->status);
+        $this->assertSame(Memo::STATUS_EDITED, $memo->currentVersion?->status);
+        $this->assertSame($memo->file_path, $memo->currentVersion?->file_path);
         Storage::disk('local')->assertExists($memo->file_path);
         $this->assertSame('updated-docx', Storage::disk('local')->get($memo->file_path));
     }
@@ -273,12 +275,25 @@ class OnlyOfficeCallbackTest extends TestCase
 
     protected function createMemo(User $user): Memo
     {
-        return Memo::create([
+        $memo = Memo::create([
             'user_id' => $user->id,
             'title' => 'Memo Test',
             'memo_type' => 'memo_internal',
             'file_path' => 'memos/'.$user->id.'/memo.docx',
             'status' => Memo::STATUS_GENERATED,
         ]);
+
+        $version = $memo->versions()->create([
+            'version_number' => 1,
+            'label' => 'Versi 1',
+            'file_path' => $memo->file_path,
+            'status' => Memo::STATUS_GENERATED,
+            'configuration' => [],
+            'searchable_text' => $memo->title,
+        ]);
+
+        $memo->forceFill(['current_version_id' => $version->id])->save();
+
+        return $memo->refresh();
     }
 }

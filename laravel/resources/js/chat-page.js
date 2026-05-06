@@ -903,6 +903,8 @@ const registerChatPageData = (Alpine) => {
     Alpine.data('memoWorkspace', () => ({
         showMemoSidebar: !window.matchMedia('(max-width: 1023px)').matches,
         isMobile: window.matchMedia('(max-width: 1023px)').matches,
+        memoRevisionText: '',
+        memoRevisionLoading: false,
 
         init() {
             const mediaQuery = window.matchMedia('(max-width: 1023px)');
@@ -921,6 +923,30 @@ const registerChatPageData = (Alpine) => {
 
         collapseMemoSidebarForDocument() {
             this.showMemoSidebar = false;
+        },
+
+        submitMemoRevision($wire, textarea) {
+            const message = (textarea?.value || '').trim();
+
+            if (!message || this.memoRevisionLoading || $wire.isGenerating) {
+                return;
+            }
+
+            this.memoRevisionText = message;
+            this.memoRevisionLoading = true;
+
+            textarea.value = '';
+            textarea.style.height = 'auto';
+            textarea.dispatchEvent(new Event('input', { bubbles: true }));
+            this.scrollMemoChatToBottom();
+
+            $wire.sendMemoChat(message)
+                .catch(() => {})
+                .finally(() => {
+                    this.memoRevisionText = '';
+                    this.memoRevisionLoading = false;
+                    this.scrollMemoChatToBottom();
+                });
         },
 
         scrollMemoChatToBottom() {

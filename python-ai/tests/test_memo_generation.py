@@ -129,6 +129,8 @@ def test_build_memo_prompt_prioritizes_revision_instruction_and_current_context(
     assert "Isi lama dari konfigurasi." not in prompt
     assert "Instruksi revisi wajib diterapkan:" in prompt
     assert "tambahkan tembusan nomor 3, Kepala C" in prompt
+    assert "Jangan meregenerasi seluruh memo" in prompt
+    assert "ubah hanya bagian yang disebut" in prompt
 
 
 def test_generate_memo_docx_rejects_unknown_type():
