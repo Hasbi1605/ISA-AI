@@ -54,6 +54,12 @@ Generator memo saat ini masih memakai input prompt bebas dan menghasilkan DOCX s
 - Python: jalankan `pytest python-ai/tests/test_memo_generation.py` dari virtualenv.
 - Jika perubahan menyentuh build UI, jalankan minimal `npm run build` di `laravel`.
 
+## Follow-up 2026-05-06: Preview dan Export
+- Preview HTML di panel kanan tidak cukup akurat untuk memo resmi dan perlu diganti dengan satu panel `Dokumen` berbasis OnlyOffice.
+- Tombol `DOCX` harus mengunduh file DOCX dari `memos.file_path` yang sama dengan dokumen OnlyOffice.
+- Tombol `PDF` harus mengonversi DOCX final melalui OnlyOffice Conversion API, bukan membuat PDF dari HTML/searchable text.
+- Tambahkan test agar export PDF tidak lagi memakai preview HTML sebagai sumber dokumen.
+
 ## Kriteria Selesai
 - User mengisi konfigurasi di panel Memo yang sama sebelum draft dibuat.
 - Chat revisi muncul setelah draft memo tersedia.

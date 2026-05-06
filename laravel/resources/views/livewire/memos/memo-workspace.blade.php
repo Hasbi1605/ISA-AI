@@ -6,7 +6,7 @@
     {{-- CENTER: AI Chat Panel --}}
     @include('livewire.memos.partials.memo-chat')
 
-    {{-- RIGHT: Preview / Editor Panel --}}
+    {{-- RIGHT: Document Panel --}}
     @include('livewire.memos.partials.memo-preview-panel')
 
     <div

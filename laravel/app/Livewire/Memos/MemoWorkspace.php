@@ -51,10 +51,6 @@ class MemoWorkspace extends Component
 
     public bool $showMemoConfiguration = true;
 
-    public string $previewMode = 'preview'; // 'preview' or 'editor'
-
-    public ?string $previewHtml = null;
-
     public function mount(): void
     {
         $this->resetMemoConfiguration();
@@ -77,8 +73,6 @@ class MemoWorkspace extends Component
         $this->memoType = $memo->memo_type;
         $this->title = $memo->title;
         $this->applyMemoConfiguration($memo->configuration ?? []);
-        $this->previewHtml = $memo->searchable_text ? nl2br(e($memo->searchable_text)) : null;
-        $this->previewMode = 'preview';
         $this->showMemoConfiguration = false;
         $this->memoPrompt = '';
 
@@ -112,10 +106,8 @@ class MemoWorkspace extends Component
         $this->activeMemoId = null;
         $this->memoPrompt = '';
         $this->memoChatMessages = [];
-        $this->previewHtml = null;
         $this->isGenerating = false;
         $this->resetMemoConfiguration();
-        $this->previewMode = 'preview';
         $this->showMemoConfiguration = true;
         $this->addSystemMessage('Lengkapi konfigurasi memo baru. Saya akan menjaga struktur, gaya bahasa, dan format memorandum mengikuti contoh manual.');
     }
@@ -178,14 +170,12 @@ class MemoWorkspace extends Component
             );
 
             $this->activeMemoId = $memo->id;
-            $this->previewHtml = $memo->searchable_text ? nl2br(e($memo->searchable_text)) : '<p class="text-stone-500">Draft berhasil digenerate. Gunakan tab Editor untuk melihat dokumen lengkap.</p>';
-            $this->previewMode = 'preview';
             $this->showMemoConfiguration = false;
             $this->rememberCurrentThread();
 
             $message = $fromConfiguration
                 ? "Draft memo \"{$memo->title}\" berhasil digenerate dari konfigurasi. Anda bisa meminta revisi spesifik di sini."
-                : "Revisi memo \"{$memo->title}\" berhasil digenerate. Cek preview atau Editor untuk memastikan hasilnya sudah sesuai.";
+                : "Revisi memo \"{$memo->title}\" berhasil digenerate. Cek panel Dokumen untuk memastikan hasilnya sudah sesuai.";
 
             $this->addSystemMessage($message);
         } catch (\Throwable $e) {
@@ -209,11 +199,6 @@ class MemoWorkspace extends Component
 
         $context = $lastUserMessage['content'] ?? $this->memoDraftContext();
         $this->generateFromChat($context);
-    }
-
-    public function switchPreviewMode(string $mode): void
-    {
-        $this->previewMode = in_array($mode, ['preview', 'editor']) ? $mode : 'preview';
     }
 
     public function editorConfig(): ?array
@@ -270,7 +255,7 @@ class MemoWorkspace extends Component
             'memos' => $memos,
             'memoTypes' => Memo::TYPES,
             'memoPageSizes' => $this->memoPageSizes(),
-            'editorConfig' => $this->previewMode === 'editor' ? $this->editorConfig() : null,
+            'editorConfig' => $this->editorConfig(),
             'onlyOfficeApiUrl' => rtrim((string) config('services.onlyoffice.public_url', ''), '/').'/web-apps/apps/api/documents/api.js',
         ]);
     }

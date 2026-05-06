@@ -1,0 +1,117 @@
+<?php
+
+namespace App\Services\OnlyOffice;
+
+use App\Models\Memo;
+use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\URL;
+use RuntimeException;
+
+class DocumentConverter
+{
+    public function memoToPdf(Memo $memo): string
+    {
+        if (! $memo->file_path) {
+            throw new RuntimeException('File memo tidak ditemukan.');
+        }
+
+        $key = 'memo-'.$memo->id.'-'.$memo->updated_at?->timestamp.'-pdf';
+        $payload = [
+            'async' => false,
+            'filetype' => 'docx',
+            'key' => $key,
+            'outputtype' => 'pdf',
+            'title' => $this->fileName($memo, 'docx'),
+            'url' => $this->memoDocumentUrl($memo),
+        ];
+
+        $conversionUrl = $this->conversionUrl($key);
+        $response = Http::acceptJson()
+            ->asJson()
+            ->timeout($this->timeout())
+            ->post($conversionUrl, [
+                'token' => app(JwtSigner::class)->sign($payload),
+            ]);
+
+        if (! $response->successful()) {
+            throw new RuntimeException($response->body() ?: 'Gagal mengonversi memo ke PDF.');
+        }
+
+        $result = $response->json() ?: [];
+
+        if (($result['error'] ?? null) !== null) {
+            throw new RuntimeException('OnlyOffice gagal mengonversi memo. Kode error: '.$result['error']);
+        }
+
+        if (($result['endConvert'] ?? false) !== true || empty($result['fileUrl'])) {
+            throw new RuntimeException('Konversi PDF belum selesai.');
+        }
+
+        $fileUrl = (string) $result['fileUrl'];
+
+        if (! $this->isTrustedOnlyOfficeUrl($fileUrl)) {
+            throw new RuntimeException('URL hasil konversi OnlyOffice tidak dipercaya.');
+        }
+
+        $download = Http::accept('*/*')
+            ->timeout($this->timeout())
+            ->get($fileUrl);
+
+        if (! $download->successful()) {
+            throw new RuntimeException('Gagal mengunduh hasil PDF dari OnlyOffice.');
+        }
+
+        return (string) $download->body();
+    }
+
+    public function fileName(Memo $memo, string $extension): string
+    {
+        $base = preg_replace('/[^A-Za-z0-9_.-]+/', '-', trim($memo->title)) ?: 'memo';
+        $base = trim($base, '-_.') ?: 'memo';
+
+        return $base.'.'.strtolower($extension);
+    }
+
+    protected function memoDocumentUrl(Memo $memo): string
+    {
+        $laravelInternalUrl = rtrim((string) config('services.onlyoffice.laravel_internal_url', config('app.url')), '/');
+        $ttlMinutes = max(1, (int) config('services.onlyoffice.signed_url_ttl_minutes', 30));
+        $documentPath = URL::temporarySignedRoute('memos.file.signed', now()->addMinutes($ttlMinutes), $memo, false);
+
+        return $laravelInternalUrl.$documentPath;
+    }
+
+    protected function conversionUrl(string $key): string
+    {
+        $internalUrl = rtrim((string) config('services.onlyoffice.internal_url', 'http://onlyoffice'), '/');
+
+        return $internalUrl.'/converter?shardkey='.rawurlencode($key);
+    }
+
+    protected function timeout(): int
+    {
+        return max(1, (int) config('services.onlyoffice.conversion_timeout', 120));
+    }
+
+    protected function isTrustedOnlyOfficeUrl(string $url): bool
+    {
+        $candidate = parse_url($url);
+        $trusted = parse_url((string) config('services.onlyoffice.internal_url'));
+
+        if (! is_array($candidate) || ! is_array($trusted)) {
+            return false;
+        }
+
+        if (! in_array($candidate['scheme'] ?? '', ['http', 'https'], true)) {
+            return false;
+        }
+
+        if (($candidate['host'] ?? null) !== ($trusted['host'] ?? null)) {
+            return false;
+        }
+
+        $trustedPort = $trusted['port'] ?? null;
+
+        return $trustedPort === null || ($candidate['port'] ?? null) === $trustedPort;
+    }
+}

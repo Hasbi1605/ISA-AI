@@ -4,7 +4,7 @@ namespace App\Http\Controllers\Memos;
 
 use App\Http\Controllers\Controller;
 use App\Models\Memo;
-use App\Services\DocumentExportService;
+use App\Services\OnlyOffice\DocumentConverter;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Storage;
 use Symfony\Component\HttpFoundation\BinaryFileResponse;
@@ -26,16 +26,15 @@ class MemoFileController extends Controller
         return $this->fileResponse($memo, 'attachment');
     }
 
-    public function exportPdf(Request $request, Memo $memo, DocumentExportService $exportService): Response
+    public function exportPdf(Request $request, Memo $memo, DocumentConverter $converter): Response
     {
         $this->authorizeView($request, $memo);
 
-        $html = '<h1>'.e($memo->title).'</h1><p>'.nl2br(e((string) $memo->searchable_text)).'</p>';
-        $artifact = $exportService->exportContent($html, 'pdf', $memo->title);
+        $pdf = $converter->memoToPdf($memo);
 
-        return response($artifact['body'], Response::HTTP_OK, [
-            'Content-Type' => $artifact['content_type'],
-            'Content-Disposition' => 'attachment; filename="'.$artifact['file_name'].'"',
+        return response($pdf, Response::HTTP_OK, [
+            'Content-Type' => 'application/pdf',
+            'Content-Disposition' => 'attachment; filename="'.$converter->fileName($memo, 'pdf').'"',
             'X-Content-Type-Options' => 'nosniff',
             'Cache-Control' => 'no-store',
         ]);
@@ -48,12 +47,28 @@ class MemoFileController extends Controller
         $absolute = Storage::disk('local')->path($memo->file_path);
         abort_unless(is_file($absolute), Response::HTTP_NOT_FOUND);
 
-        return response()->file($absolute, [
+        $fileName = $this->fileName($memo, 'docx');
+        $headers = [
             'Content-Type' => 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-            'Content-Disposition' => $disposition.'; filename="'.addslashes($memo->title).'.docx"',
             'X-Content-Type-Options' => 'nosniff',
             'Cache-Control' => 'private, max-age=300',
-        ]);
+        ];
+
+        if ($disposition === 'attachment') {
+            return response()->download($absolute, $fileName, $headers);
+        }
+
+        return response()->file($absolute, array_merge($headers, [
+            'Content-Disposition' => 'inline; filename="'.$fileName.'"',
+        ]));
+    }
+
+    protected function fileName(Memo $memo, string $extension): string
+    {
+        $base = preg_replace('/[^A-Za-z0-9_.-]+/', '-', trim($memo->title)) ?: 'memo';
+        $base = trim($base, '-_.') ?: 'memo';
+
+        return $base.'.'.strtolower($extension);
     }
 
     protected function authorizeView(Request $request, Memo $memo): void

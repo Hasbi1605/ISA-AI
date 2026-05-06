@@ -123,18 +123,6 @@ class MemoWorkspaceTest extends TestCase
         );
     }
 
-    public function test_preview_mode_can_switch_back_from_editor_to_preview(): void
-    {
-        $user = User::factory()->create(['email_verified_at' => now()]);
-
-        Livewire::actingAs($user)
-            ->test(MemoWorkspace::class)
-            ->call('switchPreviewMode', 'editor')
-            ->assertSet('previewMode', 'editor')
-            ->call('switchPreviewMode', 'preview')
-            ->assertSet('previewMode', 'preview');
-    }
-
     public function test_editor_config_ignores_tampered_active_memo_id_for_non_owner(): void
     {
         $owner = User::factory()->create(['email_verified_at' => now()]);
@@ -151,8 +139,7 @@ class MemoWorkspaceTest extends TestCase
         Livewire::actingAs($other)
             ->test(MemoWorkspace::class)
             ->set('activeMemoId', $memo->id)
-            ->call('switchPreviewMode', 'editor')
-            ->assertSee('Editor belum tersedia', false)
+            ->assertSee('Dokumen belum tersedia', false)
             ->assertDontSee('Memo Rahasia Owner.docx', false)
             ->assertDontSee('memos/'.$memo->id.'/signed-file', false);
     }
@@ -160,6 +147,10 @@ class MemoWorkspaceTest extends TestCase
     public function test_generated_memo_chat_thread_is_restored_when_loading_memo_history(): void
     {
         Storage::fake('local');
+        config([
+            'services.onlyoffice.jwt_secret' => 'workspace-secret',
+            'services.onlyoffice.laravel_internal_url' => 'http://laravel:8000',
+        ]);
         Http::fake([
             '*/api/memos/generate-body' => Http::response('docx-bytes', 200, [
                 'X-Memo-Searchable-Text-B64' => base64_encode('Isi memo rapat lingkungan'),
