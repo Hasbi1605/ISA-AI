@@ -53,6 +53,11 @@ def build_memo_prompt(
 ) -> str:
     label = SUPPORTED_MEMO_TYPES[normalize_memo_type(memo_type)]
     config = _normalize_configuration(configuration, title, context)
+    closing_rule = (
+        "- Jangan menulis kalimat penutup akhir karena bagian penutup sudah disediakan konfigurasi.\n"
+        if config["closing"]
+        else "- Jangan menulis kalimat penutup akhir kecuali user mengisinya di field Penutup.\n"
+    )
 
     return (
         "Tulis isi memorandum resmi dalam Bahasa Indonesia dengan gaya naskah dinas.\n"
@@ -74,7 +79,7 @@ def build_memo_prompt(
         "- Jika ada beberapa butir keputusan/permohonan, gunakan daftar bernomor 1., 2., 3.\n"
         "- Awali dengan dasar atau tindak lanjut bila konteks menyediakannya.\n"
         "- Jangan gunakan markdown, tabel, salam pembuka, atau salam penutup.\n"
-        "- Jangan menulis kalimat penutup akhir karena bagian penutup sudah disediakan sistem."
+        f"{closing_rule}"
     )
 
 
@@ -480,7 +485,7 @@ def _normalize_configuration(
         "date": _clean_config_value(raw.get("date"), default="-"),
         "basis": _clean_config_value(raw.get("basis")),
         "content": _clean_config_value(raw.get("content"), default=context),
-        "closing": _clean_config_value(raw.get("closing"), default="Demikian, mohon arahan lebih lanjut."),
+        "closing": _clean_config_value(raw.get("closing")),
         "signatory": _clean_config_value(raw.get("signatory"), default="Deni Mulyana"),
         "carbon_copy": _clean_config_value(raw.get("carbon_copy")),
         "page_size": page_size,

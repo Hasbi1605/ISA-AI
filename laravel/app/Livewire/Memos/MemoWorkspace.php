@@ -7,6 +7,7 @@ use App\Services\Memo\MemoGenerationService;
 use App\Services\OnlyOffice\JwtSigner;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\URL;
+use Illuminate\Validation\ValidationException;
 use Livewire\Component;
 
 class MemoWorkspace extends Component
@@ -39,7 +40,7 @@ class MemoWorkspace extends Component
 
     public string $memoCarbonCopy = '';
 
-    public string $memoPageSize = 'folio';
+    public string $memoPageSize = 'auto';
 
     public string $memoAdditionalInstruction = '';
 
@@ -114,7 +115,9 @@ class MemoWorkspace extends Component
 
     public function generateConfiguredMemo(): void
     {
-        $this->validateMemoConfiguration();
+        if (! $this->validateMemoConfiguration()) {
+            return;
+        }
 
         $this->memoChatMessages[] = [
             'role' => 'user',
@@ -152,7 +155,9 @@ class MemoWorkspace extends Component
 
     public function generateFromChat(string $context, bool $fromConfiguration = false): void
     {
-        $this->validateMemoConfiguration();
+        if (! $this->validateMemoConfiguration()) {
+            return;
+        }
 
         $this->isGenerating = true;
 
@@ -261,23 +266,41 @@ class MemoWorkspace extends Component
         ]);
     }
 
-    protected function validateMemoConfiguration(): void
+    protected function validateMemoConfiguration(): bool
     {
-        $this->validate([
-            'memoType' => ['required', 'in:'.implode(',', array_keys(Memo::TYPES))],
-            'memoNumber' => ['required', 'string', 'max:80'],
-            'memoRecipient' => ['required', 'string', 'max:500'],
-            'memoSender' => ['required', 'string', 'max:240'],
-            'title' => ['required', 'string', 'max:160'],
-            'memoDate' => ['required', 'string', 'max:80'],
-            'memoBasis' => ['nullable', 'string', 'max:4000'],
-            'memoContent' => ['required', 'string', 'min:8', 'max:8000'],
-            'memoClosing' => ['nullable', 'string', 'max:800'],
-            'memoSignatory' => ['required', 'string', 'max:160'],
-            'memoCarbonCopy' => ['nullable', 'string', 'max:2000'],
-            'memoPageSize' => ['required', 'in:folio,letter'],
-            'memoAdditionalInstruction' => ['nullable', 'string', 'max:2000'],
-        ]);
+        try {
+            $this->validate([
+                'memoType' => ['required', 'in:'.implode(',', array_keys(Memo::TYPES))],
+                'memoNumber' => ['required', 'string', 'max:80'],
+                'memoRecipient' => ['required', 'string', 'max:500'],
+                'memoSender' => ['required', 'string', 'max:240'],
+                'title' => ['required', 'string', 'max:160'],
+                'memoDate' => ['required', 'string', 'max:80'],
+                'memoBasis' => ['nullable', 'string', 'max:4000'],
+                'memoContent' => ['required', 'string', 'min:8', 'max:8000'],
+                'memoClosing' => ['nullable', 'string', 'max:800'],
+                'memoSignatory' => ['required', 'string', 'max:160'],
+                'memoCarbonCopy' => ['nullable', 'string', 'max:2000'],
+                'memoPageSize' => ['required', 'in:auto,folio,letter'],
+                'memoAdditionalInstruction' => ['nullable', 'string', 'max:2000'],
+            ], [
+                'memoNumber.required' => 'Nomor memo wajib diisi.',
+                'memoRecipient.required' => 'Yth. wajib diisi.',
+                'memoSender.required' => 'Dari wajib diisi.',
+                'title.required' => 'Hal wajib diisi.',
+                'memoDate.required' => 'Tanggal wajib diisi.',
+                'memoContent.required' => 'Isi / poin wajib harus diisi.',
+                'memoContent.min' => 'Isi / poin wajib minimal :min karakter.',
+                'memoSignatory.required' => 'Penandatangan wajib diisi.',
+            ]);
+
+            return true;
+        } catch (ValidationException $exception) {
+            $this->setErrorBag($exception->validator->errors());
+            $this->dispatch('memo-configuration-invalid');
+
+            return false;
+        }
     }
 
     /**
@@ -296,7 +319,8 @@ class MemoWorkspace extends Component
             'closing' => trim($this->memoClosing),
             'signatory' => trim($this->memoSignatory),
             'carbon_copy' => trim($this->memoCarbonCopy),
-            'page_size' => trim($this->memoPageSize),
+            'page_size' => $this->resolveMemoPageSize(),
+            'page_size_mode' => trim($this->memoPageSize),
             'additional_instruction' => trim($this->memoAdditionalInstruction),
         ];
     }
@@ -352,9 +376,11 @@ class MemoWorkspace extends Component
         $this->memoClosing = (string) ($configuration['closing'] ?? $this->memoClosing);
         $this->memoSignatory = (string) ($configuration['signatory'] ?? $this->memoSignatory);
         $this->memoCarbonCopy = (string) ($configuration['carbon_copy'] ?? $this->memoCarbonCopy);
-        $this->memoPageSize = in_array(($configuration['page_size'] ?? null), array_keys($this->memoPageSizes()), true)
-            ? (string) $configuration['page_size']
-            : $this->memoPageSize;
+        $storedPageSizeMode = (string) ($configuration['page_size_mode'] ?? '');
+        $storedPageSize = (string) ($configuration['page_size'] ?? '');
+        $this->memoPageSize = in_array($storedPageSizeMode, array_keys($this->memoPageSizes()), true)
+            ? $storedPageSizeMode
+            : (in_array($storedPageSize, array_keys($this->memoPageSizes()), true) ? $storedPageSize : $this->memoPageSize);
         $this->memoAdditionalInstruction = (string) ($configuration['additional_instruction'] ?? $this->memoAdditionalInstruction);
     }
 
@@ -368,10 +394,10 @@ class MemoWorkspace extends Component
         $this->memoDate = $this->defaultMemoDate();
         $this->memoBasis = '';
         $this->memoContent = '';
-        $this->memoClosing = 'Demikian, mohon arahan lebih lanjut.';
+        $this->memoClosing = '';
         $this->memoSignatory = 'Deni Mulyana';
         $this->memoCarbonCopy = '';
-        $this->memoPageSize = 'folio';
+        $this->memoPageSize = 'auto';
         $this->memoAdditionalInstruction = '';
     }
 
@@ -381,9 +407,24 @@ class MemoWorkspace extends Component
     protected function memoPageSizes(): array
     {
         return [
-            'folio' => 'Folio / memo panjang',
-            'letter' => 'Letter / memo pendek',
+            'auto' => 'Otomatis',
+            'letter' => 'Letter (pendek)',
+            'folio' => 'Folio (panjang)',
         ];
+    }
+
+    protected function resolveMemoPageSize(): string
+    {
+        if ($this->memoPageSize !== 'auto') {
+            return $this->memoPageSize;
+        }
+
+        $body = trim($this->memoBasis."\n".$this->memoContent."\n".$this->memoAdditionalInstruction);
+        $lineCount = collect(preg_split('/\R+/', $body) ?: [])
+            ->filter(fn (string $line) => trim($line) !== '')
+            ->count();
+
+        return strlen($body) <= 900 && $lineCount <= 10 ? 'letter' : 'folio';
     }
 
     protected function defaultMemoDate(): string

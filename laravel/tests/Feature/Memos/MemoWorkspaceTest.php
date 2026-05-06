@@ -31,11 +31,16 @@ class MemoWorkspaceTest extends TestCase
             ->assertSee('chat-form', false)
             ->assertSee('Konfigurasi Memo', false)
             ->assertSee('Nomor Memo', false)
+            ->assertSee('Format dokumen', false)
             ->assertSee('Generate Memo', false)
             ->assertSee('memo-document-ready.window', false)
             ->assertSee('ISTA AI dapat keliru', false)
             ->assertSee('dark:bg-gray-800/85', false)
             ->assertDontSee('dark:bg-gray-950/85', false)
+            ->assertDontSee('Dokumen resmi', false)
+            ->assertDontSee('Format resmi', false)
+            ->assertDontSee('Nota Dinas', false)
+            ->assertDontSee('Arahan', false)
             ->assertDontSee('Buat Memo Baru', false)
             ->assertDontSee('wire:click="$set(\'tab\', \'chat\')"', false);
     }
@@ -145,6 +150,25 @@ class MemoWorkspaceTest extends TestCase
             ->assertDontSee('memos/'.$memo->id.'/signed-file', false);
     }
 
+    public function test_generate_configuration_validation_is_visible_near_generate_button(): void
+    {
+        $user = User::factory()->create(['email_verified_at' => now()]);
+
+        Livewire::actingAs($user)
+            ->test(MemoWorkspace::class)
+            ->set('memoRecipient', 'Kepala Subbagian Tata Usaha')
+            ->set('memoSender', 'Kepala Istana Kepresidenan Yogyakarta')
+            ->set('title', 'Rapat Lingkungan')
+            ->set('memoDate', '5 Mei 2026')
+            ->set('memoContent', 'Buatkan memo rapat lingkungan dengan poin peserta dan jadwal.')
+            ->set('memoSignatory', 'Deni Mulyana')
+            ->call('generateConfiguredMemo')
+            ->assertHasErrors('memoNumber')
+            ->assertDispatched('memo-configuration-invalid')
+            ->assertSee('Belum bisa generate memo.', false)
+            ->assertSee('Nomor memo wajib diisi.', false);
+    }
+
     public function test_generated_memo_chat_thread_is_restored_when_loading_memo_history(): void
     {
         Storage::fake('local');
@@ -171,10 +195,10 @@ class MemoWorkspaceTest extends TestCase
             ->set('memoDate', '5 Mei 2026')
             ->set('memoBasis', 'Menindaklanjuti agenda koordinasi lingkungan.')
             ->set('memoContent', 'Buatkan memo rapat lingkungan dengan poin peserta dan jadwal.')
-            ->set('memoClosing', 'Demikian, mohon arahan lebih lanjut.')
+            ->set('memoClosing', '')
             ->set('memoSignatory', 'Deni Mulyana')
             ->set('memoCarbonCopy', 'Kepala Bagian Tata Usaha')
-            ->set('memoPageSize', 'folio')
+            ->set('memoPageSize', 'auto')
             ->call('generateConfiguredMemo')
             ->assertHasNoErrors()
             ->assertSee('Konfigurasi memo:', false)
@@ -187,9 +211,15 @@ class MemoWorkspaceTest extends TestCase
         $this->assertIsArray($storedMessages);
         $this->assertSame('M-03/I-Yog/UM.01/05/2026', $memo->configuration['number']);
         $this->assertSame('Kepala Subbagian Tata Usaha', $memo->configuration['recipient']);
+        $this->assertSame('letter', $memo->configuration['page_size']);
+        $this->assertSame('auto', $memo->configuration['page_size_mode']);
+        $this->assertArrayNotHasKey('closing', $memo->configuration);
         Http::assertSent(fn ($request) => $request['configuration']['number'] === 'M-03/I-Yog/UM.01/05/2026'
             && $request['configuration']['recipient'] === 'Kepala Subbagian Tata Usaha'
-            && $request['configuration']['content'] === 'Buatkan memo rapat lingkungan dengan poin peserta dan jadwal.');
+            && $request['configuration']['content'] === 'Buatkan memo rapat lingkungan dengan poin peserta dan jadwal.'
+            && $request['configuration']['page_size'] === 'letter'
+            && $request['configuration']['page_size_mode'] === 'auto'
+            && ! array_key_exists('closing', $request['configuration']));
         $this->assertTrue(collect($storedMessages)->contains(
             fn (array $message) => $message['role'] === 'user'
                 && str_contains($message['content'], 'Nomor: M-03/I-Yog/UM.01/05/2026')
@@ -198,9 +228,13 @@ class MemoWorkspaceTest extends TestCase
         $component
             ->call('startNewMemo')
             ->assertDontSee('M-03/I-Yog/UM.01/05/2026', false)
+            ->assertSet('memoClosing', '')
+            ->assertSet('memoPageSize', 'auto')
             ->call('loadMemo', $memo->id)
             ->assertSet('memoNumber', 'M-03/I-Yog/UM.01/05/2026')
             ->assertSet('memoRecipient', 'Kepala Subbagian Tata Usaha')
+            ->assertSet('memoClosing', '')
+            ->assertSet('memoPageSize', 'auto')
             ->assertSee('M-03/I-Yog/UM.01/05/2026', false)
             ->assertSee('berhasil digenerate', false);
 

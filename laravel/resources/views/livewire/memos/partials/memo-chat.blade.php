@@ -1,5 +1,12 @@
 {{-- Memo AI Chat Panel (Center Column) --}}
-<div class="flex flex-col w-full lg:w-[460px] xl:w-[560px] flex-shrink-0 border-r border-stone-200/70 dark:border-[#1E293B] bg-stone-50 dark:bg-gray-900 overflow-hidden">
+<div
+    class="flex flex-col w-full lg:w-[460px] xl:w-[560px] flex-shrink-0 border-r border-stone-200/70 dark:border-[#1E293B] bg-stone-50 dark:bg-gray-900 overflow-hidden"
+    x-on:memo-configuration-invalid.window="$nextTick(() => {
+        const error = $refs.memoChatBox?.querySelector('.memo-config-error');
+        if (! error || ! $refs.memoChatBox) return;
+        $refs.memoChatBox.scrollTo({ top: Math.max(0, error.offsetTop - 96), behavior: 'smooth' });
+    })"
+>
 
     {{-- Header with sidebar toggle, brand, tab toggle, and theme toggle --}}
     <div class="min-h-[61px] flex-shrink-0 flex items-center justify-between gap-2 px-3 sm:px-5 border-b border-stone-200/60 dark:border-[#1E293B]/70 bg-white/85 dark:bg-gray-800/85 backdrop-blur-sm">
@@ -49,57 +56,44 @@
                 <div class="border-b border-stone-100 bg-white px-4 py-4 dark:border-gray-800 dark:bg-gray-900">
                     <div class="flex items-start justify-between gap-3">
                         <div class="min-w-0">
-                            <p class="text-[10.5px] font-bold uppercase tracking-[0.08em] text-ista-primary/80 dark:text-rose-300">Dokumen resmi</p>
                             <h2 class="mt-1 text-[15px] font-bold text-stone-900 dark:text-gray-100">Konfigurasi Memo</h2>
-                            <p class="mt-1 max-w-[34rem] text-[12px] leading-relaxed text-stone-500 dark:text-gray-400">Lengkapi field inti agar AI menulis memo mengikuti format manual. Revisi chat aktif setelah draft pertama tersedia.</p>
+                            <p class="mt-1 max-w-[26rem] text-[12px] leading-relaxed text-stone-500 dark:text-gray-400">Isi data inti untuk membuat draft memorandum.</p>
                         </div>
-                        <span class="shrink-0 rounded-md border border-stone-200 bg-stone-50 px-2.5 py-1 text-[10.5px] font-bold uppercase tracking-[0.08em] text-stone-600 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-300">Format resmi</span>
                     </div>
                 </div>
 
                 <div class="memo-config-section bg-stone-50/65 dark:bg-gray-950/20">
                     <div class="mb-3 flex items-center justify-between gap-3">
                         <p class="text-[11.5px] font-bold text-stone-700 dark:text-gray-200">Identitas memo</p>
-                        <p class="text-[11px] text-stone-400 dark:text-gray-500">Kop dan metadata dokumen</p>
+                        <p class="text-[11px] font-medium text-stone-400 dark:text-gray-500">Memorandum</p>
                     </div>
-                    <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                        <div>
-                            <label class="memo-config-label">Jenis</label>
-                            <select wire:model="memoType" class="memo-config-control">
-                                @foreach ($memoTypes as $value => $label)
-                                    <option value="{{ $value }}">{{ $label }}</option>
-                                @endforeach
-                            </select>
-                            @error('memoType') <p class="memo-config-error">{{ $message }}</p> @enderror
-                        </div>
-                        <div>
-                            <label class="memo-config-label">Format</label>
-                            <select wire:model="memoPageSize" class="memo-config-control">
-                                @foreach ($memoPageSizes as $value => $label)
-                                    <option value="{{ $value }}">{{ $label }}</option>
-                                @endforeach
-                            </select>
-                            @error('memoPageSize') <p class="memo-config-error">{{ $message }}</p> @enderror
-                        </div>
+                    <div>
+                        <label class="memo-config-label">Format dokumen</label>
+                        <select wire:model="memoPageSize" class="memo-config-control">
+                            @foreach ($memoPageSizes as $value => $label)
+                                <option value="{{ $value }}">{{ $label }}</option>
+                            @endforeach
+                        </select>
+                        @error('memoPageSize') <p class="memo-config-error">{{ $message }}</p> @enderror
                     </div>
 
                     <div class="mt-3">
                         <label class="memo-config-label">Nomor Memo</label>
-                        <input type="text" wire:model="memoNumber" placeholder="M-02/I-Yog/IT.02/04/2026"
+                        <input type="text" wire:model="memoNumber" placeholder="Contoh: M-02/I-Yog/IT.02/05/2026"
                                class="memo-config-control">
                         @error('memoNumber') <p class="memo-config-error">{{ $message }}</p> @enderror
                     </div>
 
                     <div class="mt-3">
                         <label class="memo-config-label">Yth.</label>
-                        <input type="text" wire:model="memoRecipient" placeholder="Kepala Pusat Pengembangan dan Layanan Sistem Informasi"
+                        <input type="text" wire:model="memoRecipient" placeholder="Contoh: Kepala Pusat Pengembangan dan Layanan Sistem Informasi"
                                class="memo-config-control">
                         @error('memoRecipient') <p class="memo-config-error">{{ $message }}</p> @enderror
                     </div>
 
                     <div class="mt-3">
                         <label class="memo-config-label">Dari</label>
-                        <input type="text" wire:model="memoSender"
+                        <input type="text" wire:model="memoSender" placeholder="Contoh: Kepala Istana Kepresidenan Yogyakarta"
                                class="memo-config-control">
                         @error('memoSender') <p class="memo-config-error">{{ $message }}</p> @enderror
                     </div>
@@ -107,7 +101,7 @@
                     <div class="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-[1fr_150px]">
                         <div>
                             <label class="memo-config-label">Hal</label>
-                            <input type="text" wire:model="title" placeholder="Penyampaian Nama PIC Aplikasi Virtual Meeting"
+                            <input type="text" wire:model="title" placeholder="Contoh: Penyampaian Nama PIC Aplikasi Virtual Meeting"
                                    class="memo-config-control">
                             @error('title') <p class="memo-config-error">{{ $message }}</p> @enderror
                         </div>
@@ -123,26 +117,24 @@
                 <div class="memo-config-section">
                     <div class="mb-3 flex items-center justify-between gap-3">
                         <p class="text-[11.5px] font-bold text-stone-700 dark:text-gray-200">Isi memo</p>
-                        <p class="text-[11px] text-stone-400 dark:text-gray-500">Bahan yang akan ditulis AI</p>
                     </div>
                     <div>
                         <label class="memo-config-label">Dasar / Konteks</label>
-                        <textarea wire:model="memoBasis" rows="2" placeholder="Contoh: Menindaklanjuti memorandum Bapak nomor ..."
+                        <textarea wire:model="memoBasis" rows="2" placeholder="Contoh: Menindaklanjuti memorandum Bapak/Ibu nomor ..."
                                   class="memo-config-textarea"></textarea>
                         @error('memoBasis') <p class="memo-config-error">{{ $message }}</p> @enderror
                     </div>
 
                     <div class="mt-3">
                         <label class="memo-config-label">Isi / Poin Wajib</label>
-                        <textarea wire:model="memoContent" rows="3" placeholder="Tuliskan data nama, NIP, jabatan, permohonan, pertimbangan, atau poin bernomor yang wajib masuk."
+                        <textarea wire:model="memoContent" rows="3" placeholder="Contoh: Cantumkan nama PIC, NIP, jabatan, unit kerja, nomor kontak, dan batas pengiriman."
                                   class="memo-config-textarea"></textarea>
-                        <p class="memo-config-help">Isi ini menjadi batas aman agar hasil memo tidak melebar dari kebutuhan.</p>
                         @error('memoContent') <p class="memo-config-error">{{ $message }}</p> @enderror
                     </div>
 
                     <div class="mt-3">
                         <label class="memo-config-label">Penutup</label>
-                        <input type="text" wire:model="memoClosing"
+                        <input type="text" wire:model="memoClosing" placeholder="Contoh: Demikian disampaikan, mohon arahan lebih lanjut."
                                class="memo-config-control">
                         @error('memoClosing') <p class="memo-config-error">{{ $message }}</p> @enderror
                     </div>
@@ -151,18 +143,17 @@
                 <div class="memo-config-section bg-stone-50/50 dark:bg-gray-950/20">
                     <div class="mb-3 flex items-center justify-between gap-3">
                         <p class="text-[11.5px] font-bold text-stone-700 dark:text-gray-200">Distribusi dan catatan</p>
-                        <p class="text-[11px] text-stone-400 dark:text-gray-500">Tanda tangan dan tembusan</p>
                     </div>
                     <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
                         <div>
                             <label class="memo-config-label">Penandatangan</label>
-                            <input type="text" wire:model="memoSignatory"
+                            <input type="text" wire:model="memoSignatory" placeholder="Contoh: Deni Mulyana"
                                    class="memo-config-control">
                             @error('memoSignatory') <p class="memo-config-error">{{ $message }}</p> @enderror
                         </div>
                         <div>
                             <label class="memo-config-label">Tembusan</label>
-                            <textarea wire:model="memoCarbonCopy" rows="2" placeholder="Satu tembusan per baris"
+                            <textarea wire:model="memoCarbonCopy" rows="2" placeholder="Opsional: satu tembusan per baris"
                                       class="memo-config-textarea"></textarea>
                             @error('memoCarbonCopy') <p class="memo-config-error">{{ $message }}</p> @enderror
                         </div>
@@ -170,7 +161,7 @@
 
                     <div class="mt-3">
                         <label class="memo-config-label">Catatan Tambahan</label>
-                        <textarea wire:model="memoAdditionalInstruction" rows="2" placeholder="Opsional: arahkan nada, panjang, atau detail khusus."
+                        <textarea wire:model="memoAdditionalInstruction" rows="2" placeholder="Opsional: arahkan nada, panjang, atau detail khusus yang belum masuk."
                                   class="memo-config-textarea"></textarea>
                         @error('memoAdditionalInstruction') <p class="memo-config-error">{{ $message }}</p> @enderror
                     </div>
@@ -237,6 +228,14 @@
     <div class="chat-composer-safe flex-shrink-0 px-4 pt-2 bg-transparent w-full">
         @if (! $activeMemoId || $showMemoConfiguration)
             <div class="rounded-lg border border-stone-200 bg-white p-2 shadow-[0_-10px_30px_-24px_rgba(28,25,23,0.45)] dark:border-gray-800 dark:bg-gray-900">
+                @if ($errors->any())
+                    <div class="mb-2 rounded-md border border-rose-200 bg-rose-50 px-3 py-2 text-left dark:border-rose-900/60 dark:bg-rose-950/30">
+                        <p class="text-[12px] font-semibold text-rose-700 dark:text-rose-300">Belum bisa generate memo.</p>
+                        <p class="mt-0.5 text-[11.5px] leading-relaxed text-rose-600 dark:text-rose-300">
+                            {{ $errors->first() }}
+                        </p>
+                    </div>
+                @endif
                 <button type="button"
                         wire:click="generateConfiguredMemo"
                         wire:loading.attr="disabled"

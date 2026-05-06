@@ -63,6 +63,32 @@ def test_generate_memo_docx_builds_official_memorandum_document():
     assert "Penyampaian Nama PIC Aplikasi Virtual Meeting" in draft.searchable_text
 
 
+def test_generate_memo_docx_does_not_add_default_closing_when_blank():
+    draft = generate_memo_docx(
+        memo_type="memo_internal",
+        title="Permohonan Data Rapat",
+        context="Mohon dibuatkan memo permohonan data rapat.",
+        text_generator=lambda prompt: "Mohon unit terkait menyiapkan data rapat paling lambat 10 Mei 2026.",
+        configuration={
+            "number": "M-04/I-Yog/UM.01/05/2026",
+            "recipient": "Kepala Subbagian Tata Usaha",
+            "sender": "Kepala Istana Kepresidenan Yogyakarta",
+            "subject": "Permohonan Data Rapat",
+            "date": "6 Mei 2026",
+            "content": "Minta data rapat paling lambat 10 Mei 2026.",
+            "signatory": "Deni Mulyana",
+            "page_size": "letter",
+        },
+    )
+
+    document = Document(BytesIO(draft.content))
+    paragraphs = [paragraph.text for paragraph in document.paragraphs if paragraph.text]
+
+    assert "Demikian, mohon arahan lebih lanjut." not in paragraphs
+    assert "Demikian, mohon arahan lebih lanjut." not in draft.searchable_text
+    assert "Deni Mulyana" in paragraphs
+
+
 def test_build_memo_prompt_keeps_ai_inside_body_scope():
     prompt = build_memo_prompt(
         memo_type="memo_internal",
@@ -81,6 +107,7 @@ def test_build_memo_prompt_keeps_ai_inside_body_scope():
     assert "Yth.: Deputi Bidang Administrasi dan Pengelolaan Istana" in prompt
     assert "Tulis hanya isi utama memo" in prompt
     assert "tanpa kop, nomor, Yth., Dari, Hal, Tanggal" in prompt
+    assert "kecuali user mengisinya di field Penutup" in prompt
 
 
 def test_generate_memo_docx_rejects_unknown_type():

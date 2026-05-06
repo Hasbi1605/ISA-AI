@@ -90,6 +90,7 @@ class MemoGenerationService
             'signatory',
             'carbon_copy',
             'page_size',
+            'page_size_mode',
             'additional_instruction',
         ];
 
