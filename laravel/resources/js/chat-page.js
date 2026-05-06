@@ -861,6 +861,10 @@ const registerChatPageData = (Alpine) => {
             });
         },
 
+        collapseMemoSidebarForDocument() {
+            this.showMemoSidebar = false;
+        },
+
         scrollMemoChatToBottom() {
             const chatBox = document.getElementById('memo-chat-box');
 

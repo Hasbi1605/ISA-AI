@@ -32,6 +32,7 @@ class MemoWorkspaceTest extends TestCase
             ->assertSee('Konfigurasi Memo', false)
             ->assertSee('Nomor Memo', false)
             ->assertSee('Generate Memo', false)
+            ->assertSee('memo-document-ready.window', false)
             ->assertSee('ISTA AI dapat keliru', false)
             ->assertSee('dark:bg-gray-800/85', false)
             ->assertDontSee('dark:bg-gray-950/85', false)
@@ -177,7 +178,8 @@ class MemoWorkspaceTest extends TestCase
             ->call('generateConfiguredMemo')
             ->assertHasNoErrors()
             ->assertSee('Konfigurasi memo:', false)
-            ->assertSee('berhasil digenerate', false);
+            ->assertSee('berhasil digenerate', false)
+            ->assertDispatched('memo-document-ready');
 
         $memo = Memo::firstOrFail();
         $storedMessages = $memo->refresh()->chat_messages;

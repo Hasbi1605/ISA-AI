@@ -1,4 +1,8 @@
-<div x-data="memoWorkspace" class="flex w-full h-full overflow-hidden">
+<div
+    x-data="memoWorkspace"
+    x-on:memo-document-ready.window="collapseMemoSidebarForDocument()"
+    class="flex w-full h-full overflow-hidden"
+>
 
     {{-- LEFT SIDEBAR: Memo History --}}
     @include('livewire.memos.partials.memo-history-sidebar')

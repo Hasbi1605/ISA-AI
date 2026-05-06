@@ -66,6 +66,10 @@ Generator memo saat ini masih memakai input prompt bebas dan menghasilkan DOCX s
 - Perbaikan minimal: aktifkan `PHP_CLI_SERVER_WORKERS=4` pada service Laravel compose agar request export dan signed-file internal bisa berjalan paralel.
 - Perbaikan tambahan: callback/save OnlyOffice perlu menerima URL public OnlyOffice yang sah selain host internal, karena Document Server dapat mengirim URL cache public saat menyimpan hasil edit.
 
+## Follow-up 2026-05-06: Fokus Editor OnlyOffice
+- Setelah draft atau revisi memo berhasil dibuat, sidebar history kiri perlu auto-collapse agar toolbar OnlyOffice memiliki ruang horizontal penuh.
+- Toggle manual tetap tersedia supaya user bisa membuka sidebar lagi saat ingin berpindah memo.
+
 ## Kriteria Selesai
 - User mengisi konfigurasi di panel Memo yang sama sebelum draft dibuat.
 - Chat revisi muncul setelah draft memo tersedia.

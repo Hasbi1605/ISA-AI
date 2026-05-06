@@ -178,6 +178,7 @@ class MemoWorkspace extends Component
                 : "Revisi memo \"{$memo->title}\" berhasil digenerate. Cek panel Dokumen untuk memastikan hasilnya sudah sesuai.";
 
             $this->addSystemMessage($message);
+            $this->dispatch('memo-document-ready', memoId: $memo->id);
         } catch (\Throwable $e) {
             $this->addSystemMessage('Maaf, terjadi kesalahan saat generate memo: '.$e->getMessage());
         } finally {
