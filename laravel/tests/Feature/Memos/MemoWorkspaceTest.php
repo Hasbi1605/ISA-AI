@@ -91,7 +91,8 @@ class MemoWorkspaceTest extends TestCase
             ->assertSee('data-memo-history-id=', false)
             ->assertSee('Memo Hari Ini', false)
             ->assertSee('Memo Minggu Ini', false)
-            ->assertSee('Memo Lama', false);
+            ->assertSee('Memo Lama', false)
+            ->assertDontSee('Memo Internal', false);
     }
 
     public function test_loading_memo_history_does_not_refresh_timestamp_or_move_sidebar_group(): void
@@ -244,5 +245,65 @@ class MemoWorkspaceTest extends TestCase
             ->assertSet('memoNumber', 'M-03/I-Yog/UM.01/05/2026')
             ->assertSee('M-03/I-Yog/UM.01/05/2026', false)
             ->assertSee('berhasil digenerate', false);
+    }
+
+    public function test_revision_chat_applies_carbon_copy_instruction_before_regenerating(): void
+    {
+        Storage::fake('local');
+        config([
+            'services.onlyoffice.jwt_secret' => 'workspace-secret',
+            'services.onlyoffice.laravel_internal_url' => 'http://laravel:8000',
+        ]);
+        Http::fake([
+            '*/api/memos/generate-body' => Http::response('revised-docx-bytes', 200, [
+                'X-Memo-Searchable-Text-B64' => base64_encode('Memo revisi dengan tembusan baru'),
+                'Content-Type' => 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+            ]),
+        ]);
+
+        $user = User::factory()->create(['email_verified_at' => now()]);
+        $memo = Memo::create([
+            'user_id' => $user->id,
+            'title' => 'Penyampaian Keberatan Untuk Keperluan tersebut',
+            'memo_type' => 'memo_internal',
+            'file_path' => 'memos/'.$user->id.'/memo-awal.docx',
+            'status' => Memo::STATUS_GENERATED,
+            'searchable_text' => "Isi memo saat ini.\nTembusan:\n1. Kepala Dinas Sekretariat Negara\n2. Kepala IKY\n3. Kepala KOMDIGI",
+            'configuration' => [
+                'number' => 'M/2312/22D/409L/YK',
+                'recipient' => 'Kepala Komdigi',
+                'sender' => 'Kepala Istana Kepresidenan Yogyakarta',
+                'subject' => 'Penyampaian Keberatan Untuk Keperluan tersebut',
+                'date' => '6 Mei 2026',
+                'content' => 'Menindaklanjuti proses pemindahan pegawai IT.',
+                'signatory' => 'Deni Mulyana',
+                'carbon_copy' => "Kepala Dinas Sekretariat Negara\nKepala IKY\nKepala KOMDIGI",
+                'page_size' => 'letter',
+                'page_size_mode' => 'auto',
+            ],
+        ]);
+
+        Livewire::actingAs($user)
+            ->test(MemoWorkspace::class)
+            ->call('loadMemo', $memo->id)
+            ->set('memoPrompt', 'tambahkan tembusan nomor 4, untuk Kepala Istana Kapak')
+            ->call('sendMemoChat')
+            ->assertHasNoErrors()
+            ->assertSee('Revisi memo', false)
+            ->assertDispatched('memo-document-ready');
+
+        Http::assertSent(fn ($request) => str_ends_with($request->url(), '/api/memos/generate-body')
+            && $request['configuration']['carbon_copy'] === "1. Kepala Dinas Sekretariat Negara\n2. Kepala IKY\n3. Kepala KOMDIGI\n4. Kepala Istana Kapak"
+            && $request['configuration']['revision_instruction'] === 'tambahkan tembusan nomor 4, untuk Kepala Istana Kapak'
+            && str_contains($request['context'], 'Isi memo saat ini')
+            && str_contains($request['context'], 'Instruksi revisi wajib diterapkan'));
+
+        $revisedMemo = Memo::where('id', '!=', $memo->id)->firstOrFail();
+
+        $this->assertSame(
+            "1. Kepala Dinas Sekretariat Negara\n2. Kepala IKY\n3. Kepala KOMDIGI\n4. Kepala Istana Kapak",
+            $revisedMemo->configuration['carbon_copy'],
+        );
+        $this->assertSame('tambahkan tembusan nomor 4, untuk Kepala Istana Kapak', $revisedMemo->configuration['revision_instruction']);
     }
 }

@@ -14,7 +14,10 @@
 
         {{-- Actions --}}
         @if ($activeMemoId)
-            <div class="flex flex-shrink-0 items-center gap-2">
+            <div
+                class="flex flex-shrink-0 items-center gap-2"
+                x-data="memoDocumentDownloads"
+            >
                 <button type="button" wire:click="regenerate" wire:loading.attr="disabled" wire:target="regenerate,generateFromChat"
                         class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-stone-200 dark:border-gray-700 text-[12px] font-semibold text-stone-600 dark:text-gray-300 hover:bg-stone-100 dark:hover:bg-gray-800 transition-all disabled:opacity-50">
                     <svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -23,20 +26,30 @@
                     <span wire:loading.remove wire:target="regenerate">Regenerate</span>
                     <span wire:loading wire:target="regenerate">...</span>
                 </button>
-                <a href="{{ route('memos.download', $activeMemoId) }}"
-                   class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-stone-200 dark:border-gray-700 text-[12px] font-semibold text-stone-600 dark:text-gray-300 hover:bg-stone-100 dark:hover:bg-gray-800 transition-all">
-                    <svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <button type="button"
+                        data-download-url="{{ route('memos.download', $activeMemoId) }}"
+                        data-download-filename="{{ e(($title ?: 'memo').'.docx') }}"
+                        @click="downloadMemo($el.dataset.downloadUrl, 'docx', $el.dataset.downloadFilename)"
+                        :disabled="downloadLoading !== null"
+                        class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-stone-200 dark:border-gray-700 text-[12px] font-semibold text-stone-600 dark:text-gray-300 hover:bg-stone-100 dark:hover:bg-gray-800 transition-all disabled:cursor-not-allowed disabled:opacity-60">
+                    <span x-show="downloadLoading === 'docx'" style="display:none;" class="h-3.5 w-3.5 rounded-full border-2 border-current border-t-transparent animate-spin" aria-hidden="true"></span>
+                    <svg x-show="downloadLoading !== 'docx'" xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
                     </svg>
                     DOCX
-                </a>
-                <a href="{{ route('memos.export.pdf', $activeMemoId) }}"
-                   class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-ista-primary text-[12px] font-semibold text-white hover:bg-ista-dark transition-all">
-                    <svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                </button>
+                <button type="button"
+                        data-download-url="{{ route('memos.export.pdf', $activeMemoId) }}"
+                        data-download-filename="{{ e(($title ?: 'memo').'.pdf') }}"
+                        @click="downloadMemo($el.dataset.downloadUrl, 'pdf', $el.dataset.downloadFilename)"
+                        :disabled="downloadLoading !== null"
+                        class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-ista-primary text-[12px] font-semibold text-white hover:bg-ista-dark transition-all disabled:cursor-not-allowed disabled:opacity-70">
+                    <span x-show="downloadLoading === 'pdf'" style="display:none;" class="h-3.5 w-3.5 rounded-full border-2 border-white/70 border-t-transparent animate-spin" aria-hidden="true"></span>
+                    <svg x-show="downloadLoading !== 'pdf'" xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
                     </svg>
                     PDF
-                </a>
+                </button>
             </div>
         @endif
     </div>

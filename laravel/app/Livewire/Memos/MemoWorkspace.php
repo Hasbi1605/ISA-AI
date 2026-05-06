@@ -146,10 +146,48 @@ class MemoWorkspace extends Component
         $this->rememberCurrentThread();
 
         if ($this->activeMemoId) {
-            $this->generateFromChat($userMessage);
+            $this->generateRevisionFromChat($userMessage);
         } else {
             $this->memoContent = trim($this->memoContent."\n".$userMessage);
             $this->addSystemMessage('Saya simpan instruksi itu sebagai isi/poin memo. Lengkapi konfigurasi utama, lalu tekan Generate Memo.');
+        }
+    }
+
+    public function generateRevisionFromChat(string $instruction): void
+    {
+        if (! $this->validateMemoConfiguration()) {
+            return;
+        }
+
+        $this->isGenerating = true;
+
+        try {
+            $this->applyRevisionInstruction($instruction);
+
+            $generationService = app(MemoGenerationService::class);
+            $configuration = array_merge($this->memoConfigurationPayload(), [
+                'revision_instruction' => trim($instruction),
+            ]);
+
+            $memo = $generationService->generate(
+                Auth::user(),
+                $this->memoType,
+                $this->title,
+                $this->memoRevisionContext($instruction),
+                [],
+                $configuration,
+            );
+
+            $this->activeMemoId = $memo->id;
+            $this->showMemoConfiguration = false;
+            $this->rememberCurrentThread();
+
+            $this->addSystemMessage("Revisi memo \"{$memo->title}\" berhasil digenerate. Cek panel Dokumen untuk memastikan hasilnya sudah sesuai.");
+            $this->dispatch('memo-document-ready', memoId: $memo->id);
+        } catch (\Throwable $e) {
+            $this->addSystemMessage('Maaf, terjadi kesalahan saat revisi memo: '.$e->getMessage());
+        } finally {
+            $this->isGenerating = false;
         }
     }
 
@@ -342,6 +380,26 @@ class MemoWorkspace extends Component
         return implode("\n\n", $sections);
     }
 
+    protected function memoRevisionContext(string $instruction): string
+    {
+        $sections = [
+            $this->memoDraftContext(),
+            "Instruksi revisi wajib diterapkan:\n".trim($instruction),
+        ];
+
+        $activeMemoText = $this->activeMemoId
+            ? Memo::where('id', $this->activeMemoId)
+                ->where('user_id', Auth::id())
+                ->value('searchable_text')
+            : null;
+
+        if (trim((string) $activeMemoText) !== '') {
+            array_unshift($sections, "Isi memo saat ini:\n".trim((string) $activeMemoText));
+        }
+
+        return implode("\n\n", array_filter($sections, fn (string $section) => trim($section) !== ''));
+    }
+
     protected function memoConfigurationSummary(): string
     {
         $summary = [
@@ -359,6 +417,68 @@ class MemoWorkspace extends Component
         }
 
         return implode("\n", $summary);
+    }
+
+    protected function applyRevisionInstruction(string $instruction): void
+    {
+        $this->applyCarbonCopyRevision($instruction);
+    }
+
+    protected function applyCarbonCopyRevision(string $instruction): void
+    {
+        if (! preg_match('/\btembusan\b/iu', $instruction)) {
+            return;
+        }
+
+        if (! preg_match('/tembusan(?:\s+(?:nomor|no\.?)\s*(\d+))?\s*[,:\-]?\s*(?:untuk\s+|kepada\s+|ke\s+)?(.+)$/iu', $instruction, $matches)) {
+            return;
+        }
+
+        $item = $this->normalizeCarbonCopyItem((string) ($matches[2] ?? ''));
+
+        if ($item === '') {
+            return;
+        }
+
+        $lines = $this->carbonCopyLines();
+        $normalizedItem = mb_strtolower($item);
+
+        if (collect($lines)->contains(fn (string $line) => mb_strtolower($line) === $normalizedItem)) {
+            return;
+        }
+
+        $position = isset($matches[1]) && is_numeric($matches[1])
+            ? max(1, (int) $matches[1])
+            : count($lines) + 1;
+        $position = min($position, count($lines) + 1);
+
+        array_splice($lines, $position - 1, 0, [$item]);
+
+        $this->memoCarbonCopy = collect($lines)
+            ->values()
+            ->map(fn (string $line, int $index) => ($index + 1).'. '.$line)
+            ->implode("\n");
+    }
+
+    /**
+     * @return array<int, string>
+     */
+    protected function carbonCopyLines(): array
+    {
+        return collect(preg_split('/\R+/', $this->memoCarbonCopy) ?: [])
+            ->map(fn (string $line) => $this->normalizeCarbonCopyItem($line))
+            ->filter()
+            ->values()
+            ->all();
+    }
+
+    protected function normalizeCarbonCopyItem(string $item): string
+    {
+        $item = preg_replace('/^\s*\d+[.)]\s*/u', '', $item) ?? $item;
+        $item = preg_replace('/^(?:nomor|no\.?)\s*\d+\s*[,:\-]?\s*/iu', '', trim($item)) ?? $item;
+        $item = preg_replace('/\s+/u', ' ', trim($item)) ?? $item;
+
+        return trim($item, " \t\n\r\0\x0B.,;:");
     }
 
     /**

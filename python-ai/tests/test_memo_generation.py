@@ -110,6 +110,27 @@ def test_build_memo_prompt_keeps_ai_inside_body_scope():
     assert "kecuali user mengisinya di field Penutup" in prompt
 
 
+def test_build_memo_prompt_prioritizes_revision_instruction_and_current_context():
+    prompt = build_memo_prompt(
+        memo_type="memo_internal",
+        title="Penyampaian Keberatan Untuk Keperluan tersebut",
+        context="Isi memo saat ini:\nTembusan:\n1. Kepala A\n2. Kepala B\n\nInstruksi revisi wajib diterapkan:\ntambahkan tembusan nomor 3, Kepala C",
+        configuration={
+            "number": "M/2312/22D/409L/YK",
+            "recipient": "Kepala Komdigi",
+            "sender": "Kepala Istana Kepresidenan Yogyakarta",
+            "date": "6 Mei 2026",
+            "content": "Isi lama dari konfigurasi.",
+            "revision_instruction": "tambahkan tembusan nomor 3, Kepala C",
+        },
+    )
+
+    assert "Isi memo saat ini:" in prompt
+    assert "Isi lama dari konfigurasi." not in prompt
+    assert "Instruksi revisi wajib diterapkan:" in prompt
+    assert "tambahkan tembusan nomor 3, Kepala C" in prompt
+
+
 def test_generate_memo_docx_rejects_unknown_type():
     try:
         generate_memo_docx(

@@ -70,9 +70,8 @@
                                 </svg>
                                 <span class="min-w-0 flex-1">
                                     <span class="block truncate text-[13.2px] font-medium" title="{{ $memo->title }}">{{ $memo->title }}</span>
-                                    <span class="mt-1 flex items-center gap-1.5">
-                                        <span class="text-[10.5px] font-medium px-1.5 py-0.5 rounded bg-stone-100 dark:bg-gray-800 text-stone-500 dark:text-gray-400">{{ $memo->type_label }}</span>
-                                        <span class="text-[10.5px] text-stone-400 dark:text-gray-500">{{ $memo->updated_at->diffForHumans(short: true) }}</span>
+                                    <span class="mt-1 block text-[10.5px] text-stone-400 dark:text-gray-500">
+                                        {{ $memo->updated_at->diffForHumans(short: true) }}
                                     </span>
                                 </span>
                             </button>

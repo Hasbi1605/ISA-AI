@@ -53,6 +53,13 @@ def build_memo_prompt(
 ) -> str:
     label = SUPPORTED_MEMO_TYPES[normalize_memo_type(memo_type)]
     config = _normalize_configuration(configuration, title, context)
+    content_source = context.strip() if config["revision_instruction"] else (config["content"] or context.strip())
+    revision_section = (
+        "Instruksi revisi wajib diterapkan:\n"
+        f"{config['revision_instruction']}\n\n"
+        if config["revision_instruction"]
+        else ""
+    )
     closing_rule = (
         "- Jangan menulis kalimat penutup akhir karena bagian penutup sudah disediakan konfigurasi.\n"
         if config["closing"]
@@ -70,7 +77,8 @@ def build_memo_prompt(
         "Konteks/dasar:\n"
         f"{config['basis'] or '-'}\n\n"
         "Isi atau poin wajib:\n"
-        f"{config['content'] or context.strip()}\n\n"
+        f"{content_source}\n\n"
+        f"{revision_section}"
         "Catatan tambahan:\n"
         f"{config['additional_instruction'] or '-'}\n\n"
         "Aturan keluaran:\n"
@@ -490,6 +498,7 @@ def _normalize_configuration(
         "carbon_copy": _clean_config_value(raw.get("carbon_copy")),
         "page_size": page_size,
         "additional_instruction": _clean_config_value(raw.get("additional_instruction")),
+        "revision_instruction": _clean_config_value(raw.get("revision_instruction")),
     }
 
 

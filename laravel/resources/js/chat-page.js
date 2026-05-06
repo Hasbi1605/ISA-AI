@@ -842,6 +842,64 @@ const registerChatPageData = (Alpine) => {
         },
     }));
 
+    Alpine.data('memoDocumentDownloads', () => ({
+        downloadLoading: null,
+
+        async downloadMemo(url, type, fallbackName) {
+            if (this.downloadLoading) {
+                return;
+            }
+
+            this.downloadLoading = type;
+
+            try {
+                const response = await fetch(url, {
+                    credentials: 'same-origin',
+                    headers: { 'X-Requested-With': 'XMLHttpRequest' },
+                });
+
+                if (!response.ok) {
+                    throw new Error('Download gagal');
+                }
+
+                const blob = await response.blob();
+                this.downloadBlob(blob, this.fileNameFromDisposition(
+                    response.headers.get('Content-Disposition') || '',
+                    fallbackName,
+                ));
+            } finally {
+                this.downloadLoading = null;
+            }
+        },
+
+        fileNameFromDisposition(disposition, fallbackName) {
+            const utfMatch = disposition.match(/filename\*=UTF-8''([^;]+)/i);
+
+            if (utfMatch) {
+                try {
+                    return decodeURIComponent(utfMatch[1]);
+                } catch (error) {
+                    return fallbackName;
+                }
+            }
+
+            const asciiMatch = disposition.match(/filename="?([^";]+)"?/i);
+
+            return asciiMatch ? asciiMatch[1] : fallbackName;
+        },
+
+        downloadBlob(blob, fileName) {
+            const downloadUrl = window.URL.createObjectURL(blob);
+            const anchor = document.createElement('a');
+            anchor.href = downloadUrl;
+            anchor.download = fileName;
+            document.body.appendChild(anchor);
+            anchor.click();
+            anchor.remove();
+            window.URL.revokeObjectURL(downloadUrl);
+        },
+    }));
+
     Alpine.data('memoWorkspace', () => ({
         showMemoSidebar: !window.matchMedia('(max-width: 1023px)').matches,
         isMobile: window.matchMedia('(max-width: 1023px)').matches,

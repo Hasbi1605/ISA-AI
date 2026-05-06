@@ -92,6 +92,7 @@ class MemoGenerationService
             'page_size',
             'page_size_mode',
             'additional_instruction',
+            'revision_instruction',
         ];
 
         $normalized = [];
