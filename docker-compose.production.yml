@@ -121,12 +121,14 @@ services:
       ONLYOFFICE_INTERNAL_URL: http://onlyoffice
       ONLYOFFICE_LARAVEL_INTERNAL_URL: http://laravel:8000
       PHP_CLI_SERVER_WORKERS: "4"
-    # Laravel tetap berjalan via `artisan serve` di port internal 8000.
+    # Laravel tetap berjalan via PHP built-in server di port internal 8000.
+    # Gunakan wrapper langsung ke `php -S`; `artisan serve` tidak meneruskan
+    # PHP_CLI_SERVER_WORKERS ke proses server sehingga tetap single worker.
     # Worker tambahan diperlukan agar request export OnlyOffice tetap bisa
     # melayani pengambilan file internal dan callback secara paralel.
     # Caddy menjadi reverse proxy publik, sementara Horizon dan scheduler
     # tetap berjalan sebagai service terpisah.
-    command: ["php", "artisan", "serve", "--host=0.0.0.0", "--port=8000"]
+    command: ["ista-serve"]
     volumes:
       - laravel_storage:/var/www/html/storage
     depends_on:
