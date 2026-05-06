@@ -62,6 +62,41 @@ class OnlyOfficeCallbackTest extends TestCase
         $this->assertSame('updated-docx', Storage::disk('local')->get($memo->file_path));
     }
 
+    public function test_callback_accepts_public_onlyoffice_download_url(): void
+    {
+        config([
+            'services.onlyoffice.jwt_secret' => 'callback-secret',
+            'services.onlyoffice.internal_url' => 'http://onlyoffice',
+            'services.onlyoffice.public_url' => 'https://ista-ai.app',
+        ]);
+        Storage::fake('local');
+        Http::fake([
+            'https://ista-ai.app/cache/files/data/output.docx*' => Http::response('public-docx', 200),
+        ]);
+
+        $user = User::factory()->create(['email_verified_at' => now()]);
+        $memo = $this->createMemo($user);
+        $key = 'memo-'.$memo->id.'-public';
+        $url = 'https://ista-ai.app/cache/files/data/output.docx?md5=abc&expires=123';
+        $token = (new JwtSigner('callback-secret'))->sign([
+            'status' => 2,
+            'key' => $key,
+            'url' => $url,
+            'exp' => time() + 60,
+        ]);
+
+        $this->postJson(route('onlyoffice.callback', $memo), [
+            'status' => 2,
+            'key' => $key,
+            'url' => $url,
+            'token' => $token,
+        ])->assertOk()
+            ->assertJson(['error' => 0]);
+
+        Storage::disk('local')->assertExists($memo->refresh()->file_path);
+        $this->assertSame('public-docx', Storage::disk('local')->get($memo->file_path));
+    }
+
     public function test_callback_accepts_onlyoffice_header_payload_wrapper(): void
     {
         config([

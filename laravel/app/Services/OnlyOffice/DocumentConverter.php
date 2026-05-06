@@ -96,9 +96,8 @@ class DocumentConverter
     protected function isTrustedOnlyOfficeUrl(string $url): bool
     {
         $candidate = parse_url($url);
-        $trusted = parse_url((string) config('services.onlyoffice.internal_url'));
 
-        if (! is_array($candidate) || ! is_array($trusted)) {
+        if (! is_array($candidate)) {
             return false;
         }
 
@@ -106,12 +105,37 @@ class DocumentConverter
             return false;
         }
 
-        if (($candidate['host'] ?? null) !== ($trusted['host'] ?? null)) {
-            return false;
+        foreach ($this->trustedOnlyOfficeUrls() as $trustedUrl) {
+            $trusted = parse_url($trustedUrl);
+
+            if (! is_array($trusted)) {
+                continue;
+            }
+
+            if (($candidate['host'] ?? null) !== ($trusted['host'] ?? null)) {
+                continue;
+            }
+
+            $trustedPort = $trusted['port'] ?? null;
+
+            if ($trustedPort !== null && ($candidate['port'] ?? null) !== $trustedPort) {
+                continue;
+            }
+
+            return true;
         }
 
-        $trustedPort = $trusted['port'] ?? null;
+        return false;
+    }
 
-        return $trustedPort === null || ($candidate['port'] ?? null) === $trustedPort;
+    /**
+     * @return array<int, string>
+     */
+    protected function trustedOnlyOfficeUrls(): array
+    {
+        return array_values(array_filter(array_unique([
+            (string) config('services.onlyoffice.internal_url'),
+            (string) config('services.onlyoffice.public_url'),
+        ])));
     }
 }

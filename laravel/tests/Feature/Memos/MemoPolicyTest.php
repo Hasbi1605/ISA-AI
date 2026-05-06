@@ -66,6 +66,7 @@ class MemoPolicyTest extends TestCase
         config([
             'services.onlyoffice.jwt_secret' => 'converter-secret',
             'services.onlyoffice.internal_url' => 'http://onlyoffice',
+            'services.onlyoffice.public_url' => 'https://ista-ai.app',
             'services.onlyoffice.laravel_internal_url' => 'http://laravel:8000',
         ]);
 
@@ -84,12 +85,12 @@ class MemoPolicyTest extends TestCase
                 return Http::response([
                     'endConvert' => true,
                     'fileType' => 'pdf',
-                    'fileUrl' => 'http://onlyoffice/cache/memo.pdf',
+                    'fileUrl' => 'https://ista-ai.app/cache/memo.pdf',
                     'percent' => 100,
                 ], 200);
             }
 
-            if ($request->url() === 'http://onlyoffice/cache/memo.pdf') {
+            if ($request->url() === 'https://ista-ai.app/cache/memo.pdf') {
                 return Http::response('%PDF-from-docx', 200, [
                     'Content-Type' => 'application/pdf',
                 ]);
