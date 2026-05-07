@@ -336,13 +336,17 @@ class MemoWorkspace extends Component
         $signer = app(JwtSigner::class);
         $laravelInternalUrl = rtrim((string) config('services.onlyoffice.laravel_internal_url', config('app.url')), '/');
         $ttlMinutes = max(1, (int) config('services.onlyoffice.signed_url_ttl_minutes', 30));
-        $documentPath = URL::temporarySignedRoute('memos.file.signed', now()->addMinutes($ttlMinutes), $memo, false);
+        $versionId = $this->activeMemoVersionId ?: $memo->current_version_id;
+        $documentPath = URL::temporarySignedRoute('memos.file.signed', now()->addMinutes($ttlMinutes), array_filter([
+            'memo' => $memo,
+            'version_id' => $versionId,
+        ], fn ($value) => filled($value)), false);
         $callbackPath = route('onlyoffice.callback', $memo, false);
 
         $config = [
             'document' => [
                 'fileType' => 'docx',
-                'key' => 'memo-'.$memo->id.'-v'.($memo->current_version_id ?: $this->activeMemoVersionId ?: 0).'-'.$memo->updated_at?->timestamp,
+                'key' => 'memo-'.$memo->id.'-v'.($versionId ?: 0).'-'.$memo->updated_at?->timestamp,
                 'title' => $memo->title.'.docx',
                 'url' => $laravelInternalUrl.$documentPath,
             ],

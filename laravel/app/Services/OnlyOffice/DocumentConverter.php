@@ -3,26 +3,29 @@
 namespace App\Services\OnlyOffice;
 
 use App\Models\Memo;
+use App\Models\MemoVersion;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\URL;
 use RuntimeException;
 
 class DocumentConverter
 {
-    public function memoToPdf(Memo $memo): string
+    public function memoToPdf(Memo $memo, ?MemoVersion $version = null): string
     {
-        if (! $memo->file_path) {
+        $filePath = $version?->file_path ?: $memo->file_path;
+
+        if (! $filePath) {
             throw new RuntimeException('File memo tidak ditemukan.');
         }
 
-        $key = 'memo-'.$memo->id.'-'.$memo->updated_at?->timestamp.'-pdf';
+        $key = $this->conversionKey($memo, $version);
         $payload = [
             'async' => false,
             'filetype' => 'docx',
             'key' => $key,
             'outputtype' => 'pdf',
             'title' => $this->fileName($memo, 'docx'),
-            'url' => $this->memoDocumentUrl($memo),
+            'url' => $this->memoDocumentUrl($memo, $version),
         ];
 
         $conversionUrl = $this->conversionUrl($key);
@@ -72,13 +75,28 @@ class DocumentConverter
         return $base.'.'.strtolower($extension);
     }
 
-    protected function memoDocumentUrl(Memo $memo): string
+    protected function memoDocumentUrl(Memo $memo, ?MemoVersion $version = null): string
     {
         $laravelInternalUrl = rtrim((string) config('services.onlyoffice.laravel_internal_url', config('app.url')), '/');
         $ttlMinutes = max(1, (int) config('services.onlyoffice.signed_url_ttl_minutes', 30));
-        $documentPath = URL::temporarySignedRoute('memos.file.signed', now()->addMinutes($ttlMinutes), $memo, false);
+        $routeParameters = ['memo' => $memo];
+
+        if ($version) {
+            $routeParameters['version_id'] = $version->id;
+        }
+
+        $documentPath = URL::temporarySignedRoute('memos.file.signed', now()->addMinutes($ttlMinutes), $routeParameters, false);
 
         return $laravelInternalUrl.$documentPath;
+    }
+
+    protected function conversionKey(Memo $memo, ?MemoVersion $version = null): string
+    {
+        if ($version) {
+            return 'memo-'.$memo->id.'-v'.$version->id.'-'.$version->updated_at?->timestamp.'-pdf';
+        }
+
+        return 'memo-'.$memo->id.'-current-'.$memo->updated_at?->timestamp.'-pdf';
     }
 
     protected function conversionUrl(string $key): string

@@ -14,6 +14,12 @@
 
         {{-- Actions --}}
         @if ($activeMemoId)
+            @php
+                $memoDownloadRouteParameters = array_filter([
+                    'memo' => $activeMemoId,
+                    'version_id' => $activeMemoVersionId,
+                ], fn ($value) => filled($value));
+            @endphp
             <div
                 class="flex flex-shrink-0 items-center gap-2"
                 x-data="memoDocumentDownloads"
@@ -27,7 +33,7 @@
                     <span wire:loading wire:target="regenerate,generateRevisionFromChat">...</span>
                 </button>
                 <button type="button"
-                        data-download-url="{{ route('memos.download', $activeMemoId) }}"
+                        data-download-url="{{ route('memos.download', $memoDownloadRouteParameters) }}"
                         data-download-filename="{{ e(($title ?: 'memo').'.docx') }}"
                         @click="downloadMemo($el.dataset.downloadUrl, 'docx', $el.dataset.downloadFilename)"
                         :disabled="downloadLoading !== null"
@@ -39,7 +45,7 @@
                     DOCX
                 </button>
                 <button type="button"
-                        data-download-url="{{ route('memos.export.pdf', $activeMemoId) }}"
+                        data-download-url="{{ route('memos.export.pdf', $memoDownloadRouteParameters) }}"
                         data-download-filename="{{ e(($title ?: 'memo').'.pdf') }}"
                         @click="downloadMemo($el.dataset.downloadUrl, 'pdf', $el.dataset.downloadFilename)"
                         :disabled="downloadLoading !== null"
