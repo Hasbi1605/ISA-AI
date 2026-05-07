@@ -1,6 +1,6 @@
 {{-- Memo AI Chat Panel (Center Column) --}}
 <div
-    class="flex flex-col w-full lg:w-[460px] xl:w-[560px] flex-shrink-0 border-r border-stone-200/70 dark:border-[#1E293B] bg-stone-50 dark:bg-gray-900 overflow-hidden"
+    class="flex flex-col w-full lg:w-[460px] xl:w-[560px] flex-shrink-0 border-r border-stone-200/70 dark:border-[#1E293B] bg-transparent overflow-hidden"
     x-on:memo-configuration-invalid.window="$nextTick(() => {
         const error = $refs.memoChatBox?.querySelector('.memo-config-error');
         if (! error || ! $refs.memoChatBox) return;
@@ -15,7 +15,15 @@
                 <img src="{{ asset('images/icons/collapse-left-light.svg') }}" alt="" class="h-5 w-5 dark:hidden transition-transform duration-300 ease-in-out" :class="showMemoSidebar ? 'rotate-0' : 'rotate-180'" />
                 <img src="{{ asset('images/icons/collapse-left-dark.svg') }}" alt="" class="h-5 w-5 hidden dark:block transition-transform duration-300 ease-in-out" :class="showMemoSidebar ? 'rotate-0' : 'rotate-180'" />
             </button>
-            <div class="ista-brand-title text-xl text-ista-primary not-italic transition-transform duration-300">ISTA <span class="font-light italic text-ista-gold">AI</span></div>
+            <button type="button"
+                    wire:click="startNewMemo"
+                    wire:loading.attr="disabled"
+                    wire:target="startNewMemo"
+                    class="group flex min-w-0 items-center"
+                    aria-label="Buat memo baru"
+                    title="Buat memo baru">
+                <span class="ista-brand-title text-xl text-ista-primary not-italic transition-transform duration-300 group-hover:scale-105">ISTA <span class="font-light italic text-ista-gold">AI</span></span>
+            </button>
         </div>
 
         <div class="ml-auto flex shrink-0 items-center gap-2">
@@ -33,7 +41,7 @@
     </div>
 
     {{-- Dynamic Configuration / Chat Area --}}
-    <div class="flex-1 overflow-y-auto bg-stone-50/90 px-4 py-4 space-y-4 dark:bg-gray-950/35" x-ref="memoChatBox" id="memo-chat-box">
+    <div class="flex-1 overflow-y-auto bg-transparent px-4 py-4 space-y-4" x-ref="memoChatBox" id="memo-chat-box">
         @if ($activeMemoId)
             <div class="rounded-lg border border-stone-200 bg-white p-3 shadow-sm dark:border-gray-800 dark:bg-gray-900">
                 <div class="flex items-start justify-between gap-3">

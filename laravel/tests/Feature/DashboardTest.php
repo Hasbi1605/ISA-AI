@@ -2,6 +2,7 @@
 
 namespace Tests\Feature;
 
+use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
 
@@ -14,6 +15,9 @@ class DashboardTest extends TestCase
         $response = $this->get('/');
         $response->assertStatus(200);
         $response->assertSee('Tanya');
+        $response->assertSee('Buka Chat', false);
+        $response->assertSee('Buka Memo', false);
+        $response->assertSee(route('guest-memo'), false);
     }
 
     public function test_guest_chat_redirects_to_login_and_saves_prompt(): void
@@ -29,5 +33,24 @@ class DashboardTest extends TestCase
     {
         $response = $this->get('/chat');
         $response->assertRedirect('/login');
+    }
+
+    public function test_guest_memo_redirects_to_login_and_saves_memo_tab_intended_url(): void
+    {
+        $response = $this->get('/guest-memo');
+
+        $response->assertRedirect(route('login'));
+        $response->assertSessionHas('url.intended', route('chat', ['tab' => 'memo']));
+    }
+
+    public function test_authenticated_dashboard_links_to_memo_tab(): void
+    {
+        $user = User::factory()->create(['email_verified_at' => now()]);
+
+        $response = $this->actingAs($user)->get('/');
+
+        $response->assertStatus(200);
+        $response->assertSee(route('chat'), false);
+        $response->assertSee(route('chat', ['tab' => 'memo']), false);
     }
 }
