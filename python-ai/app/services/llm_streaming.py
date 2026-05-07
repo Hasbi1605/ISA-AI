@@ -3,12 +3,14 @@ import logging
 import requests
 import warnings
 from typing import Callable, Dict, Generator, List
+from urllib.parse import quote
 
 import litellm
 
 from app.env_utils import get_env
 
 logger = logging.getLogger(__name__)
+NATIVE_TEXT_PROVIDERS = {"gemini_native", "bedrock_converse"}
 
 # Suppress verbose litellm output.
 litellm.set_verbose = False
@@ -230,6 +232,83 @@ def _stream_gemini_native(model_name: str, api_key: str, messages: List[Dict[str
                     continue
 
 
+def _build_bedrock_converse_payload(messages: List[Dict[str, str]], model: Dict) -> Dict:
+    bedrock_messages = []
+    system_blocks = []
+
+    for msg in messages:
+        content = (msg.get("content") or "").strip()
+        if not content:
+            continue
+
+        role = msg.get("role", "user")
+        if role == "system":
+            system_blocks.append({"text": content})
+            continue
+
+        bedrock_role = "assistant" if role == "assistant" else "user"
+        bedrock_messages.append({
+            "role": bedrock_role,
+            "content": [{"text": content}],
+        })
+
+    if not bedrock_messages:
+        bedrock_messages.append({
+            "role": "user",
+            "content": [{"text": "Halo"}],
+        })
+
+    inference_config: Dict = {
+        "maxTokens": int(model.get("max_tokens", 512)),
+    }
+    if "temperature" in model:
+        inference_config["temperature"] = float(model["temperature"])
+    if "top_p" in model:
+        inference_config["topP"] = float(model["top_p"])
+    if "stop_sequences" in model:
+        inference_config["stopSequences"] = model["stop_sequences"]
+
+    payload: Dict = {
+        "messages": bedrock_messages,
+        "inferenceConfig": inference_config,
+    }
+    if system_blocks:
+        payload["system"] = system_blocks
+
+    return payload
+
+
+def _stream_bedrock_converse(model: Dict, api_key: str, messages: List[Dict[str, str]]) -> Generator[str, None, None]:
+    """Call Amazon Bedrock Converse API with a bearer API key."""
+    region = model.get("region") or get_env("AWS_BEDROCK_REGION", "us-east-1") or "us-east-1"
+    model_id = model["model_name"]
+    url = f"https://bedrock-runtime.{region}.amazonaws.com/model/{quote(model_id, safe='')}/converse"
+    payload = _build_bedrock_converse_payload(messages, model)
+
+    response = requests.post(
+        url,
+        json=payload,
+        headers={
+            "Accept": "application/json",
+            "Authorization": f"Bearer {api_key}",
+            "Content-Type": "application/json",
+        },
+        timeout=int(model.get("timeout", 60)),
+    )
+    response.raise_for_status()
+
+    data = response.json()
+    content_blocks = (
+        data.get("output", {})
+        .get("message", {})
+        .get("content", [])
+    )
+    for block in content_blocks:
+        text = block.get("text", "")
+        if text:
+            yield text
+
+
 def _run_model(model: dict, messages: List[Dict[str, str]]) -> Generator:
     """Create a streaming generator for the given model config."""
     api_key = get_env(model["api_key_env"])
@@ -238,6 +317,8 @@ def _run_model(model: dict, messages: List[Dict[str, str]]) -> Generator:
 
     if model["provider"] == "gemini_native":
         return _stream_gemini_native(model["model_name"], api_key, messages)
+    if model["provider"] == "bedrock_converse":
+        return _stream_bedrock_converse(model, api_key, messages)
 
     kwargs = {
         "model": model["model_name"],
@@ -274,7 +355,7 @@ def stream_with_cascade(
             active_logger.info("🤖 [%d/%d] Menggunakan: %s", idx, total, label)
             yield f"[MODEL:{label}]\n"
 
-            if model["provider"] == "gemini_native":
+            if model["provider"] in NATIVE_TEXT_PROVIDERS:
                 for chunk in gen:
                     yield chunk
             else:

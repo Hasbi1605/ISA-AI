@@ -63,6 +63,26 @@ lanes:
         model_name: "groq/llama-3.3-70b-versatile"
         api_key_env: "GROQ_API_KEY"
 
+      # Bedrock fallback murah. Secret tidak disimpan di repo; set env:
+      # AWS_BEARER_TOKEN_BEDROCK=<api-key> dan opsional AWS_BEDROCK_REGION=us-east-1.
+      - label: "Amazon Nova Micro (Bedrock)"
+        provider: "bedrock_converse"
+        model_name: "amazon.nova-micro-v1:0"
+        api_key_env: "AWS_BEARER_TOKEN_BEDROCK"
+        region: "us-east-1"
+        max_tokens: 1024
+        temperature: 0.2
+        timeout: 60
+
+      - label: "Amazon Nova Lite (Bedrock)"
+        provider: "bedrock_converse"
+        model_name: "amazon.nova-lite-v1:0"
+        api_key_env: "AWS_BEARER_TOKEN_BEDROCK"
+        region: "us-east-1"
+        max_tokens: 1024
+        temperature: 0.2
+        timeout: 60
+
       # Last resort: Gemini Flash (1M context, tapi preview = kurang stabil)
       - label: "Gemini 3 Flash"
         provider: "gemini_native"
