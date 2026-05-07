@@ -19,11 +19,14 @@ def test_embedding_models_are_loaded_from_yaml_and_match_rag_config():
     from app.services import rag_config
 
     models = config_loader.get_embedding_models()
+    bedrock_models = [model for model in models if model.get("provider") == "bedrock_titan"]
 
     assert models, "Embedding models harus ada di ai_config.yaml"
     assert models == rag_config.EMBEDDING_MODELS
     assert all("dimensions" in model for model in models)
     assert max(int(model["dimensions"]) for model in models) <= rag_config.MAX_EMBEDDING_DIM
+    assert [model["model"] for model in bedrock_models] == ["amazon.titan-embed-text-v2:0"]
+    assert all(model["api_key_env"] == "AWS_BEARER_TOKEN_BEDROCK" for model in bedrock_models)
 
 
 def test_chat_models_include_bedrock_fallback_without_inline_secret():
@@ -31,6 +34,7 @@ def test_chat_models_include_bedrock_fallback_without_inline_secret():
 
     models = config_loader.get_chat_models()
     bedrock_models = [model for model in models if model.get("provider") == "bedrock_converse"]
+    gemini_models = [model for model in models if model.get("provider") == "gemini_native"]
 
     assert [model["model_name"] for model in bedrock_models] == [
         "openai.gpt-oss-120b-1:0",
@@ -40,6 +44,7 @@ def test_chat_models_include_bedrock_fallback_without_inline_secret():
     ]
     assert all(model["api_key_env"] == "AWS_BEARER_TOKEN_BEDROCK" for model in bedrock_models)
     assert all("api_key" not in model for model in bedrock_models)
+    assert gemini_models == []
 
 
 def test_system_prompt_uses_ista_work_assistant_persona():

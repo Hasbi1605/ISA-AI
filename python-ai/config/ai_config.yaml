@@ -102,12 +102,6 @@ lanes:
         temperature: 0.2
         timeout: 60
 
-      # Last resort: Gemini Flash (1M context, tapi preview = kurang stabil)
-      - label: "Gemini 3 Flash"
-        provider: "gemini_native"
-        model_name: "gemini-3-flash-preview"
-        api_key_env: "GEMINI_API_KEY"
-
   # ============================================
   # LANE: REASONING (Model untuk reasoning complex)
   # ============================================
@@ -154,6 +148,18 @@ lanes:
         api_key_env: "GITHUB_TOKEN_2"
         tpm_limit: 500000
         dimensions: 1536
+
+      # Bedrock fallback darurat saat GitHub Models embedding kena limit.
+      # Native dimensi Titan V2 = 1024; service mem-padding ke MAX_EMBEDDING_DIM
+      # agar tetap kompatibel dengan ChromaDB.
+      - name: "Amazon Titan Embeddings V2 (Bedrock)"
+        provider: "bedrock_titan"
+        model: "amazon.titan-embed-text-v2:0"
+        api_key_env: "AWS_BEARER_TOKEN_BEDROCK"
+        region: "us-east-1"
+        dimensions: 1024
+        normalize: true
+        timeout: 30
 
 # ============================================
 # RETRIEVAL
