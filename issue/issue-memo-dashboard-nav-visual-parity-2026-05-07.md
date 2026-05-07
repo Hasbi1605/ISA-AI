@@ -10,6 +10,7 @@ Menyelaraskan akses dan pengalaman visual fitur Memo dengan tab Chat tanpa mengu
 - Untuk guest, sediakan redirect login yang menyimpan intended URL ke `/chat?tab=memo`.
 - Jadikan logo `ISTA AI` di header tab Memo sebagai tombol `New Memo`.
 - Samakan latar panel Memo dengan tekstur dan warna dasar tab Chat.
+- Samakan warna/header toolbar panel Memo dengan header toolbar panel Chat.
 
 ## Non-Scope
 
@@ -25,4 +26,5 @@ Menyelaraskan akses dan pengalaman visual fitur Memo dengan tab Chat tanpa mengu
 
 - Jalankan test dashboard untuk route dan tombol baru.
 - Jalankan test render Memo Workspace untuk logo dan background parity.
+- Pastikan header panel chat Memo tidak lagi memakai background solid `bg-white/85`.
 - Jalankan formatter/check yang relevan untuk file PHP/Blade.
