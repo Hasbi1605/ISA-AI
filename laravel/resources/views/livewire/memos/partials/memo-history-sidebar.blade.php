@@ -57,13 +57,13 @@
                 <h3 class="text-[11.6px] font-bold text-[#64748B] dark:text-[#94A3B8] uppercase tracking-wider mb-2">{{ $groupLabel }}</h3>
                 <ul class="space-y-1">
                     @foreach ($groupMemos as $memo)
-                        <li wire:key="memo-sidebar-{{ $groupLabel }}-{{ $memo->id }}">
+                        <li class="group relative" wire:key="memo-sidebar-{{ $groupLabel }}-{{ $memo->id }}">
                             <button
                                 type="button"
                                 wire:click="loadMemo({{ $memo->id }})"
                                 data-memo-history-id="{{ $memo->id }}"
                                 :class="{ 'is-active': $wire.activeMemoId === {{ (int) $memo->id }} }"
-                                class="chat-history-item items-start gap-2.5 py-2.5"
+                                class="chat-history-item items-start gap-2.5 py-2.5 pr-9"
                             >
                                 <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 mt-0.5 flex-shrink-0 text-stone-400 dark:text-gray-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
@@ -74,6 +74,15 @@
                                         {{ $memo->updated_at->diffForHumans(short: true) }}
                                     </span>
                                 </span>
+                            </button>
+                            <button type="button"
+                                    wire:click="deleteMemo({{ $memo->id }})"
+                                    wire:confirm="Delete this memo?"
+                                    class="absolute right-2 top-1/2 -translate-y-1/2 p-1.5 rounded-md opacity-0 group-hover:opacity-100 hover:bg-red-100 dark:hover:bg-red-500/20 text-gray-400 hover:text-red-600 dark:hover:text-red-400 transition-all duration-200"
+                                    title="Delete memo">
+                                <svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                                </svg>
                             </button>
                         </li>
                     @endforeach

@@ -39,6 +39,7 @@ async def generate_memo_body(request: GenerateMemoRequest):
         headers={
             "Content-Disposition": f'attachment; filename="{draft.filename}"',
             "X-Memo-Searchable-Text-B64": searchable_text,
+            "X-Memo-Page-Size": draft.page_size,
             "X-Content-Type-Options": "nosniff",
             "Cache-Control": "no-store",
         },

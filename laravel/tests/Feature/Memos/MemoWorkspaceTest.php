@@ -33,7 +33,9 @@ class MemoWorkspaceTest extends TestCase
             ->assertSee('Konfigurasi Memo', false)
             ->assertSee('Nomor Memo', false)
             ->assertSee('Format dokumen', false)
+            ->assertSee('Sedang membuat memo', false)
             ->assertSee('Generate Memo', false)
+            ->assertSee('Arahan Tambahan', false)
             ->assertSee('memo-document-ready.window', false)
             ->assertSee('ISTA AI dapat keliru', false)
             ->assertSee('dark:bg-gray-800/85', false)
@@ -41,7 +43,6 @@ class MemoWorkspaceTest extends TestCase
             ->assertDontSee('Dokumen resmi', false)
             ->assertDontSee('Format resmi', false)
             ->assertDontSee('Nota Dinas', false)
-            ->assertDontSee('Arahan', false)
             ->assertDontSee('Buat Memo Baru', false)
             ->assertDontSee('wire:click="$set(\'tab\', \'chat\')"', false);
     }
@@ -89,6 +90,7 @@ class MemoWorkspaceTest extends TestCase
             ->assertSee('Previous 7 Days', false)
             ->assertSee('Older', false)
             ->assertSee('chat-history-item', false)
+            ->assertSee('wire:click="deleteMemo', false)
             ->assertSee('data-memo-history-id=', false)
             ->assertSee('Memo Hari Ini', false)
             ->assertSee('Memo Minggu Ini', false)
@@ -181,6 +183,7 @@ class MemoWorkspaceTest extends TestCase
         Http::fake([
             '*/api/memos/generate-body' => Http::response('docx-bytes', 200, [
                 'X-Memo-Searchable-Text-B64' => base64_encode('Isi memo rapat lingkungan'),
+                'X-Memo-Page-Size' => 'letter',
                 'Content-Type' => 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
             ]),
         ]);
@@ -221,7 +224,7 @@ class MemoWorkspaceTest extends TestCase
         Http::assertSent(fn ($request) => $request['configuration']['number'] === 'M-03/I-Yog/UM.01/05/2026'
             && $request['configuration']['recipient'] === 'Kepala Subbagian Tata Usaha'
             && $request['configuration']['content'] === 'Buatkan memo rapat lingkungan dengan poin peserta dan jadwal.'
-            && $request['configuration']['page_size'] === 'letter'
+            && $request['configuration']['page_size'] === 'auto'
             && $request['configuration']['page_size_mode'] === 'auto'
             && ! array_key_exists('closing', $request['configuration']));
         $this->assertTrue(collect($storedMessages)->contains(
@@ -329,5 +332,30 @@ class MemoWorkspaceTest extends TestCase
             ->assertSet('memoCarbonCopy', "Kepala Dinas Sekretariat Negara\nKepala IKY\nKepala KOMDIGI");
 
         $this->assertSame($originalVersion->file_path, $memo->refresh()->file_path);
+    }
+
+    public function test_memo_history_can_be_deleted_like_chat_history(): void
+    {
+        $user = User::factory()->create(['email_verified_at' => now()]);
+        $memo = Memo::create([
+            'user_id' => $user->id,
+            'title' => 'Memo Untuk Dihapus',
+            'memo_type' => 'memo_internal',
+            'status' => Memo::STATUS_GENERATED,
+            'chat_messages' => [
+                ['role' => 'assistant', 'content' => 'Memo siap.', 'timestamp' => '10:00'],
+            ],
+        ]);
+
+        Livewire::actingAs($user)
+            ->test(MemoWorkspace::class)
+            ->call('loadMemo', $memo->id)
+            ->call('deleteMemo', $memo->id)
+            ->assertSet('activeMemoId', null)
+            ->assertSet('activeMemoVersionId', null)
+            ->assertSee('Konfigurasi Memo', false)
+            ->assertDontSee('Memo Untuk Dihapus', false);
+
+        $this->assertSoftDeleted('memos', ['id' => $memo->id]);
     }
 }

@@ -79,7 +79,22 @@
                 <div id="memo-workspace-editor" class="h-full min-h-[640px] w-full"></div>
             </div>
         @else
-            <div class="flex h-full min-h-[400px] items-center justify-center px-6 text-center">
+            <div wire:loading.flex wire:target="generateConfiguredMemo,generateFromChat" class="h-full min-h-[400px] items-center justify-center px-6 text-center">
+                <div class="max-w-sm">
+                    <div class="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-white shadow-[0_18px_40px_-28px_rgba(15,23,42,0.75)] dark:bg-gray-900">
+                        <div class="relative flex h-12 w-12 items-center justify-center rounded-full">
+                            <span class="absolute inset-0 rounded-full border-2 border-ista-primary/25 border-t-ista-primary animate-spin"></span>
+                            <img src="{{ asset('images/ista/logo.png') }}" alt="" class="h-8 w-8 object-contain" />
+                        </div>
+                    </div>
+                    <h3 class="text-[15px] font-semibold text-stone-700 dark:text-gray-300">Sedang membuat memo...</h3>
+                    <p class="mt-2 text-[13px] leading-relaxed text-stone-500 dark:text-gray-400">
+                        Dokumen sedang disusun dan akan tampil otomatis di panel ini.
+                    </p>
+                </div>
+            </div>
+
+            <div wire:loading.remove wire:target="generateConfiguredMemo,generateFromChat" class="flex h-full min-h-[400px] items-center justify-center px-6 text-center">
                 <div class="max-w-sm">
                     <div class="mx-auto h-16 w-16 rounded-2xl bg-stone-100 dark:bg-gray-800 flex items-center justify-center mb-4">
                         <svg xmlns="http://www.w3.org/2000/svg" class="h-8 w-8 text-stone-300 dark:text-gray-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">

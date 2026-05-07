@@ -93,14 +93,14 @@
 
                     <div class="mt-3">
                         <label class="memo-config-label">Nomor Memo</label>
-                        <input type="text" wire:model="memoNumber" placeholder="Contoh: M-02/I-Yog/IT.02/05/2026"
+                        <input type="text" wire:model="memoNumber" placeholder="Contoh: M-01/UNIT/05/2026"
                                class="memo-config-control">
                         @error('memoNumber') <p class="memo-config-error">{{ $message }}</p> @enderror
                     </div>
 
                     <div class="mt-3">
                         <label class="memo-config-label">Yth.</label>
-                        <input type="text" wire:model="memoRecipient" placeholder="Contoh: Kepala Pusat Pengembangan dan Layanan Sistem Informasi"
+                        <input type="text" wire:model="memoRecipient" placeholder="Contoh: Pejabat atau unit yang dituju"
                                class="memo-config-control">
                         @error('memoRecipient') <p class="memo-config-error">{{ $message }}</p> @enderror
                     </div>
@@ -115,7 +115,7 @@
                     <div class="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-[1fr_150px]">
                         <div>
                             <label class="memo-config-label">Hal</label>
-                            <input type="text" wire:model="title" placeholder="Contoh: Penyampaian Nama PIC Aplikasi Virtual Meeting"
+                            <input type="text" wire:model="title" placeholder="Contoh: Penyampaian, permohonan, atau koordinasi ..."
                                    class="memo-config-control">
                             @error('title') <p class="memo-config-error">{{ $message }}</p> @enderror
                         </div>
@@ -134,21 +134,21 @@
                     </div>
                     <div>
                         <label class="memo-config-label">Dasar / Konteks</label>
-                        <textarea wire:model="memoBasis" rows="2" placeholder="Contoh: Menindaklanjuti memorandum Bapak/Ibu nomor ..."
+                        <textarea wire:model="memoBasis" rows="2" placeholder="Contoh: Menindaklanjuti arahan, rapat, surat, atau kebutuhan ..."
                                   class="memo-config-textarea"></textarea>
                         @error('memoBasis') <p class="memo-config-error">{{ $message }}</p> @enderror
                     </div>
 
                     <div class="mt-3">
                         <label class="memo-config-label">Isi / Poin Wajib</label>
-                        <textarea wire:model="memoContent" rows="3" placeholder="Contoh: Cantumkan nama PIC, NIP, jabatan, unit kerja, nomor kontak, dan batas pengiriman."
+                        <textarea wire:model="memoContent" rows="3" placeholder="Tuliskan tujuan, data penting, batas waktu, atau poin yang wajib masuk."
                                   class="memo-config-textarea"></textarea>
                         @error('memoContent') <p class="memo-config-error">{{ $message }}</p> @enderror
                     </div>
 
                     <div class="mt-3">
                         <label class="memo-config-label">Penutup</label>
-                        <input type="text" wire:model="memoClosing" placeholder="Contoh: Demikian disampaikan, mohon arahan lebih lanjut."
+                        <input type="text" wire:model="memoClosing" placeholder="Opsional: tentukan kalimat penutup manual"
                                class="memo-config-control">
                         @error('memoClosing') <p class="memo-config-error">{{ $message }}</p> @enderror
                     </div>
@@ -156,12 +156,12 @@
 
                 <div class="memo-config-section bg-stone-50/50 dark:bg-gray-950/20">
                     <div class="mb-3 flex items-center justify-between gap-3">
-                        <p class="text-[11.5px] font-bold text-stone-700 dark:text-gray-200">Distribusi dan catatan</p>
+                        <p class="text-[11.5px] font-bold text-stone-700 dark:text-gray-200">Distribusi dan arahan</p>
                     </div>
                     <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
                         <div>
                             <label class="memo-config-label">Penandatangan</label>
-                            <input type="text" wire:model="memoSignatory" placeholder="Contoh: Deni Mulyana"
+                            <input type="text" wire:model="memoSignatory" placeholder="Contoh: Nama pejabat penandatangan"
                                    class="memo-config-control">
                             @error('memoSignatory') <p class="memo-config-error">{{ $message }}</p> @enderror
                         </div>
@@ -174,8 +174,8 @@
                     </div>
 
                     <div class="mt-3">
-                        <label class="memo-config-label">Catatan Tambahan</label>
-                        <textarea wire:model="memoAdditionalInstruction" rows="2" placeholder="Opsional: arahkan nada, panjang, atau detail khusus yang belum masuk."
+                        <label class="memo-config-label">Arahan Tambahan</label>
+                        <textarea wire:model="memoAdditionalInstruction" rows="2" placeholder="Opsional: atur nada, panjang, format poin, atau batasan khusus."
                                   class="memo-config-textarea"></textarea>
                         @error('memoAdditionalInstruction') <p class="memo-config-error">{{ $message }}</p> @enderror
                     </div>

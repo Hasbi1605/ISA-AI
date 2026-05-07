@@ -290,6 +290,35 @@ class MemoWorkspace extends Component
         $this->dispatch('memo-document-ready', memoId: $memo->id);
     }
 
+    public function deleteMemo(int $memoId): void
+    {
+        $memo = Memo::where('id', $memoId)
+            ->where('user_id', Auth::id())
+            ->first();
+
+        if (! $memo) {
+            return;
+        }
+
+        $wasActiveMemo = (int) $this->activeMemoId === (int) $memo->id;
+
+        unset($this->memoChatThreads[$this->threadKey($memo->id)]);
+        $memo->delete();
+
+        if (! $wasActiveMemo) {
+            return;
+        }
+
+        $this->activeMemoId = null;
+        $this->activeMemoVersionId = null;
+        $this->memoPrompt = '';
+        $this->memoChatMessages = [];
+        $this->isGenerating = false;
+        $this->resetMemoConfiguration();
+        $this->showMemoConfiguration = true;
+        $this->addSystemMessage('Memo berhasil dihapus dari history. Lengkapi konfigurasi untuk membuat memo baru.');
+    }
+
     public function editorConfig(): ?array
     {
         if (! $this->activeMemoId) {
@@ -411,7 +440,7 @@ class MemoWorkspace extends Component
             'closing' => trim($this->memoClosing),
             'signatory' => trim($this->memoSignatory),
             'carbon_copy' => trim($this->memoCarbonCopy),
-            'page_size' => $this->resolveMemoPageSize(),
+            'page_size' => $this->memoPageSize === 'auto' ? 'auto' : $this->resolveMemoPageSize(),
             'page_size_mode' => trim($this->memoPageSize),
             'additional_instruction' => trim($this->memoAdditionalInstruction),
         ];
@@ -428,7 +457,7 @@ class MemoWorkspace extends Component
         $sections[] = "Isi/poin wajib:\n".trim($this->memoContent);
 
         if (trim($this->memoAdditionalInstruction) !== '') {
-            $sections[] = "Catatan tambahan:\n".trim($this->memoAdditionalInstruction);
+            $sections[] = "Arahan tambahan:\n".trim($this->memoAdditionalInstruction);
         }
 
         return implode("\n\n", $sections);

@@ -55,6 +55,7 @@ def test_generate_memo_docx_builds_official_memorandum_document():
     assert "Deni Mulyana" in paragraphs
     assert "Dokumen ini telah ditandatangani secara elektronik" in document.sections[0].footer.paragraphs[0].text
     assert document.sections[0].page_height == Inches(14)
+    assert draft.page_size == "folio"
     assert document.styles["Normal"].font.name == "Arial"
     assert document.paragraphs[0].runs[0].font.name == "Arial"
     assert document.tables[0].cell(0, 2).text == configuration["recipient"]
@@ -89,6 +90,39 @@ def test_generate_memo_docx_does_not_add_default_closing_when_blank():
     assert "Deni Mulyana" in paragraphs
 
 
+def test_generate_memo_docx_auto_page_size_uses_generated_body_length():
+    long_body = "\n".join(
+        [
+            "1. " + "Koordinasi lintas unit perlu dilakukan secara tertib dan terdokumentasi. " * 4,
+            "2. " + "Setiap unit diminta menyiapkan data pendukung dan batas waktu pelaksanaan. " * 4,
+            "3. " + "Hasil pembahasan disampaikan kembali sebagai bahan tindak lanjut pimpinan. " * 4,
+        ]
+    )
+
+    draft = generate_memo_docx(
+        memo_type="memo_internal",
+        title="Koordinasi Kegiatan",
+        context="Buat memo koordinasi kegiatan.",
+        text_generator=lambda prompt: long_body,
+        configuration={
+            "number": "M-05/I-Yog/UM.01/05/2026",
+            "recipient": "Kepala Unit Terkait",
+            "sender": "Kepala Istana Kepresidenan Yogyakarta",
+            "subject": "Koordinasi Kegiatan",
+            "date": "7 Mei 2026",
+            "content": "Buat memo koordinasi kegiatan.",
+            "signatory": "Deni Mulyana",
+            "page_size": "auto",
+            "page_size_mode": "auto",
+        },
+    )
+
+    document = Document(BytesIO(draft.content))
+
+    assert draft.page_size == "folio"
+    assert document.sections[0].page_height == Inches(14)
+
+
 def test_build_memo_prompt_keeps_ai_inside_body_scope():
     prompt = build_memo_prompt(
         memo_type="memo_internal",
@@ -107,6 +141,7 @@ def test_build_memo_prompt_keeps_ai_inside_body_scope():
     assert "Yth.: Deputi Bidang Administrasi dan Pengelolaan Istana" in prompt
     assert "Tulis hanya isi utama memo" in prompt
     assert "tanpa kop, nomor, Yth., Dari, Hal, Tanggal" in prompt
+    assert "Arahan tambahan:" in prompt
     assert "kecuali user mengisinya di field Penutup" in prompt
 
 
@@ -167,6 +202,7 @@ def test_generate_memo_endpoint_handles_unicode_searchable_text(monkeypatch):
             filename="memo-unicode.docx",
             content=b"docx-bytes",
             searchable_text="Paragraf awal\n- Poin penting • arahan — selesai",
+            page_size="letter",
         )
 
     monkeypatch.setattr("app.routers.memos.generate_memo_docx", fake_generate_memo_docx)
@@ -188,3 +224,4 @@ def test_generate_memo_endpoint_handles_unicode_searchable_text(monkeypatch):
     assert "X-Memo-Searchable-Text" not in response.headers
     encoded = response.headers["X-Memo-Searchable-Text-B64"]
     assert isinstance(encoded.encode("latin-1"), bytes)
+    assert response.headers["X-Memo-Page-Size"] == "letter"

@@ -36,6 +36,7 @@ class MemoDraft:
     filename: str
     content: bytes
     searchable_text: str
+    page_size: str
 
 
 def normalize_memo_type(memo_type: str) -> str:
@@ -85,7 +86,7 @@ def build_memo_prompt(
         "Isi atau poin wajib:\n"
         f"{content_source}\n\n"
         f"{revision_section}"
-        "Catatan tambahan:\n"
+        "Arahan tambahan:\n"
         f"{config['additional_instruction'] or '-'}\n\n"
         "Aturan keluaran:\n"
         "- Tulis hanya isi utama memo, tanpa kop, nomor, Yth., Dari, Hal, Tanggal, tanda tangan, tembusan, atau footer.\n"
@@ -116,6 +117,7 @@ def generate_memo_docx(
     generator = text_generator or _default_text_generator
     prompt = build_memo_prompt(normalized_type, clean_title, clean_context, config)
     body = _normalize_generated_text(generator(prompt))
+    config["page_size"] = _resolve_page_size(config, body)
 
     document = _build_official_memo_document(normalized_type, config, body)
 
@@ -128,6 +130,7 @@ def generate_memo_docx(
         filename=f"{_slugify(clean_title)}.docx",
         content=buffer.getvalue(),
         searchable_text=searchable_text,
+        page_size=config["page_size"],
     )
 
 
@@ -488,8 +491,12 @@ def _normalize_configuration(
 ) -> dict[str, str]:
     raw = dict(configuration or {})
 
+    page_size_mode = _clean_config_value(raw.get("page_size_mode")).lower()
     page_size = _clean_config_value(raw.get("page_size"), default="folio").lower()
-    if page_size not in {"folio", "letter"}:
+
+    if page_size_mode == "auto" or page_size == "auto":
+        page_size = "auto"
+    elif page_size not in {"folio", "letter"}:
         page_size = "folio"
 
     return {
@@ -504,6 +511,7 @@ def _normalize_configuration(
         "signatory": _clean_config_value(raw.get("signatory"), default="Deni Mulyana"),
         "carbon_copy": _clean_config_value(raw.get("carbon_copy")),
         "page_size": page_size,
+        "page_size_mode": page_size_mode,
         "additional_instruction": _clean_config_value(raw.get("additional_instruction")),
         "revision_instruction": _clean_config_value(raw.get("revision_instruction")),
     }
@@ -538,6 +546,30 @@ def _build_searchable_text(memo_type: str, config: dict[str, str], body: str) ->
 
     parts.extend(["", FOOTER_NOTICE])
     return "\n".join(part for part in parts if part is not None).strip()
+
+
+def _resolve_page_size(config: dict[str, str], body: str) -> str:
+    requested = config.get("page_size", "folio")
+    if requested in {"letter", "folio"}:
+        return requested
+
+    carbon_copy_lines = _split_lines(config.get("carbon_copy", ""))
+    body_blocks = _split_blocks(body)
+    measured_text = "\n".join(
+        [
+            config.get("basis", ""),
+            body,
+            config.get("closing", ""),
+            "\n".join(carbon_copy_lines),
+        ]
+    ).strip()
+    numbered_count = sum(1 for block in body_blocks if re.match(r"^\d+[.)]\s+.+$", block))
+    effective_blocks = len(body_blocks) + len(carbon_copy_lines)
+
+    if len(measured_text) <= 820 and effective_blocks <= 8 and numbered_count <= 5:
+        return "letter"
+
+    return "folio"
 
 
 def _clean_title(title: str) -> str:

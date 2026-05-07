@@ -35,6 +35,7 @@ class MemoGenerationService
     {
         $configuration = $this->normalizeConfiguration($configuration);
         $draft = $this->requestDraft($memoType, $title, $context, $configuration);
+        $configuration = $this->applyResolvedPageSize($configuration, $draft['page_size']);
 
         $memo = Memo::create([
             'user_id' => $user->id,
@@ -63,6 +64,7 @@ class MemoGenerationService
         $configuration = $this->normalizeConfiguration($configuration);
         $title = (string) ($configuration['subject'] ?? $memo->title);
         $draft = $this->requestDraft($memo->memo_type, $title, $context, $configuration);
+        $configuration = $this->applyResolvedPageSize($configuration, $draft['page_size']);
         $versionNumber = ((int) $memo->versions()->max('version_number')) + 1;
         $path = $this->storeDraft($memo, $draft['content'], $versionNumber);
 
@@ -108,7 +110,7 @@ class MemoGenerationService
 
     /**
      * @param  array<string, string>  $configuration
-     * @return array{content: string, searchable_text: string}
+     * @return array{content: string, searchable_text: string, page_size: string|null}
      */
     protected function requestDraft(string $memoType, string $title, string $context, array $configuration): array
     {
@@ -135,7 +137,28 @@ class MemoGenerationService
                 $title,
                 $context,
             ),
+            'page_size' => $this->normalizeResolvedPageSize($response->header('X-Memo-Page-Size')),
         ];
+    }
+
+    /**
+     * @param  array<string, string>  $configuration
+     * @return array<string, string>
+     */
+    protected function applyResolvedPageSize(array $configuration, ?string $resolvedPageSize): array
+    {
+        if (in_array($resolvedPageSize, ['letter', 'folio'], true)) {
+            $configuration['page_size'] = $resolvedPageSize;
+        }
+
+        return $configuration;
+    }
+
+    protected function normalizeResolvedPageSize(?string $pageSize): ?string
+    {
+        $normalized = strtolower(trim((string) $pageSize));
+
+        return in_array($normalized, ['letter', 'folio'], true) ? $normalized : null;
     }
 
     protected function storeDraft(Memo $memo, string $content, int $versionNumber): string
