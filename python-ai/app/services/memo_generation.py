@@ -30,12 +30,24 @@ FOOTER_NOTICE = (
     "yang diterbitkan oleh Balai Sertifikasi Elektronik (BSrE)."
 )
 
+PERSON_DATA_LABEL_PATTERN = (
+    r"nama(?:\s+(?:pic|pegawai)(?:\s+yang\s+benar)?)?"
+    r"|nip(?:\s+yang\s+bersangkutan)?"
+    r"|pangkat/gol(?:ongan|\.)?"
+    r"|jabatan"
+    r"|unit\s+kerja"
+    r"|nomor\s+kontak"
+    r"|keperluan"
+)
+
 PERSON_DATA_PATTERN = re.compile(
     r"^(?:\d+[.)]\s*)?"
-    r"(?P<label>nama(?: pegawai(?: yang benar)?)?|nip|pangkat/gol\.?|jabatan|keperluan)"
-    r"\s*:\s*(?P<value>.+)$",
+    rf"(?P<label>{PERSON_DATA_LABEL_PATTERN})"
+    r"\s*(?::|adalah)\s*(?P<value>.+)$",
     re.IGNORECASE,
 )
+
+SIGNATURE_TABLE_INDENT_IN = 2.70
 
 
 @dataclass(slots=True)
@@ -102,6 +114,7 @@ def build_memo_prompt(
         "- Awali dengan dasar atau tindak lanjut bila konteks menyediakannya.\n"
         "- Perlakukan kata seperti baseline, uji, skenario evaluasi, dan auto format sebagai instruksi internal; jangan salin ke naskah memo.\n"
         "- Jangan menulis blok Tembusan karena tembusan diambil dari konfigurasi.\n"
+        "- Jangan mencantumkan sumber, URL, JSON, kutipan tool, atau blok [SOURCES: ...] dalam naskah memo.\n"
         "- Untuk data PIC/pegawai, gunakan pola baris label resmi seperti nama, NIP, pangkat/gol., dan jabatan.\n"
         f"{revision_rules}"
         "- Jangan gunakan markdown, tabel, salam pembuka, atau salam penutup.\n"
@@ -368,7 +381,7 @@ def _add_signature_placeholder(document: Document, signatory: str) -> None:
     table = document.add_table(rows=2, cols=3)
     table.alignment = WD_TABLE_ALIGNMENT.LEFT
     table.autofit = False
-    _set_table_indent(table, 3.92)
+    _set_table_indent(table, SIGNATURE_TABLE_INDENT_IN)
     _set_table_width(table, 1.56)
 
     widths = [Inches(0.35), Inches(0.86), Inches(0.35)]
@@ -632,7 +645,7 @@ def _normalize_configuration(
         "basis": _clean_config_value(raw.get("basis")),
         "content": _clean_config_value(raw.get("content"), default=context),
         "closing": _clean_config_value(raw.get("closing")),
-        "signatory": _clean_config_value(raw.get("signatory"), default="Deni Mulyana"),
+        "signatory": _clean_config_value(raw.get("signatory")),
         "carbon_copy": _clean_config_value(raw.get("carbon_copy")),
         "page_size": page_size,
         "page_size_mode": page_size_mode,
@@ -673,14 +686,19 @@ def _build_searchable_text(memo_type: str, config: dict[str, str], body: str) ->
 
 
 def _sanitize_memo_body(body: str, config: dict[str, str]) -> str:
-    clean = _strip_forbidden_body_sections(body)
+    clean = _strip_external_source_artifacts(body)
+    clean = _strip_forbidden_body_sections(clean)
+    clean = _strip_markdown_artifacts(clean)
     clean = _strip_evaluation_artifacts(clean)
+    clean = _strip_body_closing_sentences(clean)
     clean = _remove_configured_closing(clean, config.get("closing", ""))
+    clean = _normalize_person_data_sequences(clean)
     clean = _dedupe_consecutive_blocks(clean)
     return _normalize_generated_text(clean)
 
 
 def _strip_forbidden_body_sections(text: str) -> str:
+    text = re.sub(r"(?ims)(?:^|\n)\s*Tembusan\s*:.*$", "\n", text)
     lines = text.splitlines()
     output: list[str] = []
     skipping_tembusan = False
@@ -705,6 +723,42 @@ def _strip_forbidden_body_sections(text: str) -> str:
         output.append(line)
 
     return "\n".join(output).strip()
+
+
+def _strip_external_source_artifacts(text: str) -> str:
+    clean = re.sub(r"(?is)\[SOURCES\s*:.*?(?:\]\]|\n\s*\n|$)", "", text or "")
+    clean = re.sub(r"\\n", " ", clean)
+
+    output: list[str] = []
+    for block in _split_blocks(clean):
+        normalized = block.lower()
+        has_source_marker = any(
+            marker in normalized
+            for marker in (
+                '"type":"web"',
+                '"type": "web"',
+                '"url"',
+                '"snippet"',
+                "source:",
+                "sources:",
+            )
+        )
+        if has_source_marker and ("http://" in normalized or "https://" in normalized or "{" in block):
+            continue
+        if block.strip().startswith(("{", "[{")) and ("http://" in normalized or "https://" in normalized):
+            continue
+        output.append(block)
+
+    return "\n".join(output).strip()
+
+
+def _strip_markdown_artifacts(text: str) -> str:
+    clean = re.sub(r"(?m)^\s{0,3}#{1,6}\s*", "", text)
+    clean = re.sub(r"\*\*(.*?)\*\*", r"\1", clean)
+    clean = re.sub(r"__(.*?)__", r"\1", clean)
+    clean = clean.replace("```", "").replace("`", "")
+    clean = re.sub(r"\[([^\]]+)\]\((?:https?://)?[^)]+\)", r"\1", clean)
+    return clean.strip()
 
 
 def _strip_evaluation_artifacts(text: str) -> str:
@@ -757,16 +811,49 @@ def _is_evaluation_artifact_block(block: str) -> bool:
     return "pengujian auto format" in normalized
 
 
+def _strip_body_closing_sentences(text: str) -> str:
+    output: list[str] = []
+
+    for block in _split_blocks(text):
+        if _looks_like_closing_block(block):
+            continue
+
+        clean = re.sub(r"(?is)\s+demikian\b.*$", "", block).strip()
+        clean = re.sub(r"(?is)\s+atas\s+perhatian\b.*?terima\s+kasih\.?$", "", clean).strip()
+
+        if clean and not _looks_like_closing_block(clean):
+            output.append(clean)
+
+    return "\n".join(output).strip()
+
+
+def _looks_like_closing_block(block: str) -> bool:
+    normalized = _normalize_comparison_text(block)
+    if not normalized:
+        return False
+
+    closing_starters = (
+        "demikian",
+        "atas perhatian",
+        "atas kerja sama",
+        "mohon arahan lebih lanjut",
+    )
+    return normalized.startswith(closing_starters)
+
+
 def _remove_configured_closing(text: str, closing: str) -> str:
     if not closing:
         return text
 
     closing_key = _normalize_comparison_text(closing)
-    output = [
-        block
-        for block in _split_blocks(text)
-        if _normalize_comparison_text(block) != closing_key
-    ]
+    output = []
+    for block in _split_blocks(text):
+        clean = re.sub(re.escape(closing), "", block, flags=re.IGNORECASE).strip()
+        if not clean:
+            continue
+        if _normalize_comparison_text(clean) == closing_key:
+            continue
+        output.append(clean)
     return "\n".join(output).strip()
 
 
@@ -856,10 +943,23 @@ def _parse_person_data_block(block: str) -> tuple[str, str] | None:
         label = "pangkat/gol."
     elif raw_label == "jabatan":
         label = "jabatan"
+    elif raw_label.startswith("unit kerja"):
+        label = "unit kerja"
+    elif raw_label.startswith("nomor kontak"):
+        label = "nomor kontak"
     else:
         label = "keperluan"
 
     return label, value
+
+
+def _normalize_person_data_sequences(text: str) -> str:
+    label = PERSON_DATA_LABEL_PATTERN
+    return re.sub(
+        rf"(?i)(?<!^)(?<!\n)\s+(\d+[.)]\s*(?:{label})\s*(?::|adalah))",
+        r"\n\1",
+        text,
+    ).strip()
 
 
 def _clean_title(title: str) -> str:

@@ -317,7 +317,9 @@ class MemoWorkspaceTest extends TestCase
             && $request['configuration']['carbon_copy'] === "1. Kepala Dinas Sekretariat Negara\n2. Kepala IKY\n3. Kepala KOMDIGI\n4. Kepala Istana Kapak"
             && $request['configuration']['revision_instruction'] === 'tambahkan tembusan nomor 4, untuk Kepala Istana Kapak'
             && str_contains($request['context'], 'Isi memo saat ini')
-            && str_contains($request['context'], 'Instruksi revisi wajib diterapkan'));
+            && str_contains($request['context'], 'Instruksi revisi wajib diterapkan')
+            && ! str_contains($request['context'], 'Tembusan:')
+            && ! str_contains($request['context'], 'Deni Mulyana'));
 
         $revisedMemo = $memo->refresh();
 
@@ -349,6 +351,151 @@ class MemoWorkspaceTest extends TestCase
         $this->assertSame((string) $originalVersion->id, $documentQuery['version_id']);
         $this->assertSame((string) $originalVersion->id, $callbackQuery['version_id']);
         $this->assertStringStartsWith('memo-'.$memo->id.'-v'.$originalVersion->id.'-', $editorConfig['document']['key']);
+    }
+
+    public function test_generate_configuration_allows_blank_signatory_and_preserves_it_for_ai_service(): void
+    {
+        Storage::fake('local');
+        Http::fake([
+            '*/api/memos/generate-body' => Http::response('docx-bytes', 200, [
+                'X-Memo-Searchable-Text-B64' => base64_encode('Memo tanpa nama penandatangan'),
+                'X-Memo-Page-Size' => 'letter',
+                'Content-Type' => 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+            ]),
+        ]);
+
+        $user = User::factory()->create(['email_verified_at' => now()]);
+
+        Livewire::actingAs($user)
+            ->test(MemoWorkspace::class)
+            ->set('memoType', 'memo_internal')
+            ->set('memoNumber', 'EVAL-21/IST/YK/05/2026')
+            ->set('memoRecipient', 'Kepala Subbagian Persuratan')
+            ->set('memoSender', 'Kepala Istana Kepresidenan Yogyakarta')
+            ->set('title', 'Konfirmasi Kehadiran Rapat Singkat')
+            ->set('memoDate', '7 Mei 2026')
+            ->set('memoContent', 'Konfirmasi kehadiran rapat singkat.')
+            ->set('memoSignatory', '')
+            ->set('memoPageSize', 'letter')
+            ->call('generateConfiguredMemo')
+            ->assertHasNoErrors()
+            ->assertDispatched('memo-document-ready');
+
+        $memo = Memo::firstOrFail();
+
+        $this->assertArrayHasKey('signatory', $memo->configuration);
+        $this->assertSame('', $memo->configuration['signatory']);
+        Http::assertSent(fn ($request) => $request['configuration']['signatory'] === '');
+    }
+
+    public function test_revision_chat_applies_recipient_instruction_before_regenerating(): void
+    {
+        Storage::fake('local');
+        Http::fake([
+            '*/api/memos/generate-body' => Http::response('revised-docx-bytes', 200, [
+                'X-Memo-Searchable-Text-B64' => base64_encode('Memo revisi penerima'),
+                'X-Memo-Page-Size' => 'letter',
+                'Content-Type' => 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+            ]),
+        ]);
+
+        $user = User::factory()->create(['email_verified_at' => now()]);
+        $memo = Memo::create([
+            'user_id' => $user->id,
+            'title' => 'Revisi Ubah Penerima Memo',
+            'memo_type' => 'memo_internal',
+            'file_path' => 'memos/'.$user->id.'/memo-awal.docx',
+            'status' => Memo::STATUS_GENERATED,
+            'searchable_text' => "KEMENTERIAN SEKRETARIAT NEGARA RI\nMEMORANDUM\nNomor EVAL-32/IST/YK/05/2026\nYth.    : Kepala Bagian Administrasi\nDari    : Kepala Istana Kepresidenan Yogyakarta\nHal     : Revisi Ubah Penerima Memo\nTanggal : 7 Mei 2026\nIsi memo saat ini tetap dipertahankan.\nDeni Mulyana\nTembusan:\nKepala Bagian Protokol",
+            'configuration' => [
+                'number' => 'EVAL-32/IST/YK/05/2026',
+                'recipient' => 'Kepala Bagian Administrasi',
+                'sender' => 'Kepala Istana Kepresidenan Yogyakarta',
+                'subject' => 'Revisi Ubah Penerima Memo',
+                'date' => '7 Mei 2026',
+                'content' => 'Isi memo saat ini tetap dipertahankan.',
+                'signatory' => 'Deni Mulyana',
+                'carbon_copy' => 'Kepala Bagian Protokol',
+                'page_size' => 'letter',
+                'page_size_mode' => 'auto',
+            ],
+        ]);
+        $version = $memo->versions()->create([
+            'version_number' => 1,
+            'label' => 'Versi 1',
+            'file_path' => $memo->file_path,
+            'status' => Memo::STATUS_GENERATED,
+            'configuration' => $memo->configuration,
+            'searchable_text' => $memo->searchable_text,
+        ]);
+        $memo->forceFill(['current_version_id' => $version->id])->save();
+
+        Livewire::actingAs($user)
+            ->test(MemoWorkspace::class)
+            ->call('loadMemo', $memo->id)
+            ->set('memoPrompt', 'ubah nama penerima memo menjadi Kepala Pusat Pengembangan Layanan')
+            ->call('sendMemoChat')
+            ->assertHasNoErrors()
+            ->assertDispatched('memo-document-ready');
+
+        Http::assertSent(fn ($request) => $request['configuration']['recipient'] === 'Kepala Pusat Pengembangan Layanan'
+            && str_contains($request['context'], 'Isi memo saat ini tetap dipertahankan.')
+            && ! str_contains($request['context'], 'Tembusan:')
+            && ! str_contains($request['context'], 'Deni Mulyana'));
+        $this->assertSame('Kepala Pusat Pengembangan Layanan', $memo->refresh()->configuration['recipient']);
+    }
+
+    public function test_revision_chat_applies_new_date_when_instruction_mentions_old_and_new_dates(): void
+    {
+        Storage::fake('local');
+        Http::fake([
+            '*/api/memos/generate-body' => Http::response('revised-docx-bytes', 200, [
+                'X-Memo-Searchable-Text-B64' => base64_encode('Memo revisi tanggal'),
+                'X-Memo-Page-Size' => 'letter',
+                'Content-Type' => 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+            ]),
+        ]);
+
+        $user = User::factory()->create(['email_verified_at' => now()]);
+        $memo = Memo::create([
+            'user_id' => $user->id,
+            'title' => 'Revisi Tanggal Kegiatan',
+            'memo_type' => 'memo_internal',
+            'file_path' => 'memos/'.$user->id.'/memo-awal.docx',
+            'status' => Memo::STATUS_GENERATED,
+            'searchable_text' => "Isi memo saat ini menyebut kegiatan pada 12 Mei 2026.\nDeni Mulyana",
+            'configuration' => [
+                'number' => 'EVAL-39/IST/YK/05/2026',
+                'recipient' => 'Kepala Bagian Protokol',
+                'sender' => 'Kepala Istana Kepresidenan Yogyakarta',
+                'subject' => 'Revisi Tanggal Kegiatan',
+                'date' => '12 Mei 2026',
+                'content' => 'Isi memo saat ini menyebut kegiatan pada 12 Mei 2026.',
+                'signatory' => 'Deni Mulyana',
+                'page_size' => 'letter',
+                'page_size_mode' => 'auto',
+            ],
+        ]);
+        $version = $memo->versions()->create([
+            'version_number' => 1,
+            'label' => 'Versi 1',
+            'file_path' => $memo->file_path,
+            'status' => Memo::STATUS_GENERATED,
+            'configuration' => $memo->configuration,
+            'searchable_text' => $memo->searchable_text,
+        ]);
+        $memo->forceFill(['current_version_id' => $version->id])->save();
+
+        Livewire::actingAs($user)
+            ->test(MemoWorkspace::class)
+            ->call('loadMemo', $memo->id)
+            ->set('memoPrompt', 'ubah tanggal kegiatan dari 12 Mei 2026 menjadi 13 Mei 2026')
+            ->call('sendMemoChat')
+            ->assertHasNoErrors()
+            ->assertDispatched('memo-document-ready');
+
+        Http::assertSent(fn ($request) => $request['configuration']['date'] === '13 Mei 2026');
+        $this->assertSame('13 Mei 2026', $memo->refresh()->configuration['date']);
     }
 
     public function test_memo_history_can_be_deleted_like_chat_history(): void

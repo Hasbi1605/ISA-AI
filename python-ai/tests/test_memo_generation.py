@@ -87,7 +87,7 @@ def test_generate_memo_docx_builds_official_memorandum_document():
     assert qr_table.cell(1, 0).text == "Deni Mulyana"
     table_indent = qr_table._tbl.tblPr.find(qn("w:tblInd"))
     assert table_indent is not None
-    assert int(table_indent.get(qn("w:w"))) >= 5600
+    assert 3800 <= int(table_indent.get(qn("w:w"))) <= 4000
     assert "Penyampaian Nama PIC Aplikasi Virtual Meeting" in draft.searchable_text
 
 
@@ -301,6 +301,99 @@ def test_generate_memo_docx_formats_pic_data_as_key_value_table():
     assert data_table.cell(1, 2).text == "231210013"
     assert data_table.cell(2, 0).text == "jabatan"
     assert data_table.cell(2, 2).text == "Pengadministrasi Perkantoran"
+
+
+def test_generate_memo_docx_strips_source_json_urls_and_markdown_artifacts():
+    draft = generate_memo_docx(
+        memo_type="memo_internal",
+        title="Permohonan Persetujuan Jadwal Pemeliharaan Sistem",
+        context="Minta persetujuan jadwal pemeliharaan sistem.",
+        text_generator=lambda prompt: (
+            "Sehubungan dengan kebutuhan pemeliharaan sistem aplikasi internal, kami memohon persetujuan.\n"
+            "1. Persetujuan pelaksanaan pemeliharaan sistem pada tanggal yang telah ditentukan.\n"
+            "2. Penyampaian pemberitahuan kepada seluruh unit pengguna.\n"
+            '[SOURCES:[{"type":"web","title":"Contoh Memo","url":"https://example.com/memo",'
+            '"snippet":"contoh memo internal"}]]\n'
+            "3. **Koordinasi teknis** dilakukan oleh unit terkait."
+        ),
+        configuration={
+            "number": "EVAL-09/IST/YK/05/2026",
+            "recipient": "Kepala Istana Kepresidenan Yogyakarta",
+            "sender": "Kepala Istana Kepresidenan Yogyakarta",
+            "subject": "Permohonan Persetujuan Jadwal Pemeliharaan Sistem",
+            "date": "7 Mei 2026",
+            "signatory": "Deni Mulyana",
+            "page_size": "letter",
+        },
+    )
+
+    document = Document(BytesIO(draft.content))
+    all_text = _all_document_text(document)
+
+    assert "[SOURCES" not in all_text
+    assert '"type":"web"' not in all_text
+    assert "https://example.com" not in all_text
+    assert "**" not in all_text
+    assert "Koordinasi teknis" in all_text
+    assert "[SOURCES" not in draft.searchable_text
+
+
+def test_generate_memo_docx_formats_inline_pic_data_as_key_value_table():
+    draft = generate_memo_docx(
+        memo_type="memo_internal",
+        title="Penyampaian Kontak PIC Layanan",
+        context="Data PIC layanan.",
+        text_generator=lambda prompt: (
+            "Dalam rangka mempercepat koordinasi layanan internal, berikut disampaikan kontak PIC:\n"
+            "1. Nama: Eko Prasetyo 2. NIP: 199411172025211057 "
+            "3. Pangkat/golongan: V 4. Jabatan: Pengadministrasi Perkantoran "
+            "5. Nomor kontak: 0812-0000-2026"
+        ),
+        configuration={
+            "number": "EVAL-19/IST/YK/05/2026",
+            "recipient": "Kepala Unit Layanan",
+            "sender": "Kepala Istana Kepresidenan Yogyakarta",
+            "subject": "Penyampaian Kontak PIC Layanan",
+            "date": "7 Mei 2026",
+            "signatory": "Deni Mulyana",
+            "page_size": "letter",
+        },
+    )
+
+    document = Document(BytesIO(draft.content))
+    data_table = _find_table_containing(document, "nama")
+
+    assert data_table.cell(0, 0).text == "nama"
+    assert data_table.cell(0, 2).text == "Eko Prasetyo"
+    assert data_table.cell(1, 0).text == "NIP"
+    assert data_table.cell(2, 0).text == "pangkat/gol."
+    assert data_table.cell(3, 0).text == "jabatan"
+    assert data_table.cell(4, 0).text == "nomor kontak"
+
+
+def test_generate_memo_docx_keeps_blank_signatory_blank():
+    draft = generate_memo_docx(
+        memo_type="memo_internal",
+        title="Konfirmasi Kehadiran Rapat Singkat",
+        context="Konfirmasi kehadiran rapat.",
+        text_generator=lambda prompt: "Menindaklanjuti rencana rapat singkat, dimohon mengonfirmasi kehadiran.",
+        configuration={
+            "number": "EVAL-21/IST/YK/05/2026",
+            "recipient": "Kepala Subbagian Persuratan",
+            "sender": "Kepala Istana Kepresidenan Yogyakarta",
+            "subject": "Konfirmasi Kehadiran Rapat Singkat",
+            "date": "7 Mei 2026",
+            "signatory": "",
+            "page_size": "letter",
+        },
+    )
+
+    document = Document(BytesIO(draft.content))
+    qr_table = _find_table_containing(document, "QR\nTTE")
+
+    assert qr_table.cell(1, 0).text == ""
+    assert "Deni Mulyana" not in _all_document_text(document)
+    assert "Deni Mulyana" not in draft.searchable_text
 
 
 def test_generate_memo_docx_starts_signature_on_new_page_for_long_folio_with_carbon_copy():

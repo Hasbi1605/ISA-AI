@@ -217,9 +217,10 @@ class MemoGenerationService
         $normalized = [];
 
         foreach ($allowedKeys as $key) {
+            $hasKey = array_key_exists($key, $configuration);
             $value = trim((string) ($configuration[$key] ?? ''));
 
-            if ($value !== '') {
+            if ($value !== '' || ($key === 'signatory' && $hasKey)) {
                 $normalized[$key] = $value;
             }
         }

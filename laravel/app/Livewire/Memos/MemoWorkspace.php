@@ -432,7 +432,7 @@ class MemoWorkspace extends Component
                 'memoBasis' => ['nullable', 'string', 'max:4000'],
                 'memoContent' => ['required', 'string', 'min:8', 'max:8000'],
                 'memoClosing' => ['nullable', 'string', 'max:800'],
-                'memoSignatory' => ['required', 'string', 'max:160'],
+                'memoSignatory' => ['nullable', 'string', 'max:160'],
                 'memoCarbonCopy' => ['nullable', 'string', 'max:2000'],
                 'memoPageSize' => ['required', 'in:auto,folio,letter'],
                 'memoAdditionalInstruction' => ['nullable', 'string', 'max:2000'],
@@ -444,7 +444,6 @@ class MemoWorkspace extends Component
                 'memoDate.required' => 'Tanggal wajib diisi.',
                 'memoContent.required' => 'Isi / poin wajib harus diisi.',
                 'memoContent.min' => 'Isi / poin wajib minimal :min karakter.',
-                'memoSignatory.required' => 'Penandatangan wajib diisi.',
             ]);
 
             return true;
@@ -517,7 +516,11 @@ class MemoWorkspace extends Component
         }
 
         if (trim((string) $activeMemoText) !== '') {
-            array_unshift($sections, "Isi memo saat ini:\n".trim((string) $activeMemoText));
+            $bodyOnly = $this->memoBodyForRevision((string) $activeMemoText);
+
+            if ($bodyOnly !== '') {
+                array_unshift($sections, "Isi memo saat ini:\n".$bodyOnly);
+            }
         }
 
         return implode("\n\n", array_filter($sections, fn (string $section) => trim($section) !== ''));
@@ -544,8 +547,150 @@ class MemoWorkspace extends Component
 
     protected function applyRevisionInstruction(string $instruction): void
     {
+        $this->applyRecipientRevision($instruction);
+        $this->applyDateRevision($instruction);
+        $this->applyClosingRevision($instruction);
+        $this->applySignatoryRevision($instruction);
         $this->applyCarbonCopyRevision($instruction);
         $this->applyCarbonCopyCasingRevision($instruction);
+    }
+
+    protected function memoBodyForRevision(string $searchableText): string
+    {
+        $lines = preg_split('/\R+/', $searchableText) ?: [];
+        $bodyLines = [];
+
+        foreach ($lines as $line) {
+            $line = trim((string) $line);
+
+            if ($line === '') {
+                continue;
+            }
+
+            if ($this->isOfficialMemoStructureLine($line)) {
+                continue;
+            }
+
+            if (preg_match('/^Tembusan\s*:/iu', $line)) {
+                break;
+            }
+
+            if (in_array(mb_strtolower($line), ['qr', 'tte'], true)) {
+                break;
+            }
+
+            if (trim($this->memoSignatory) !== '' && mb_strtolower($line) === mb_strtolower(trim($this->memoSignatory))) {
+                break;
+            }
+
+            if (trim($this->memoClosing) !== '' && mb_strtolower($line) === mb_strtolower(trim($this->memoClosing))) {
+                continue;
+            }
+
+            if (preg_match('/^(?:demikian|atas perhatian|atas kerja sama)\b/iu', $line)) {
+                continue;
+            }
+
+            $bodyLines[] = $line;
+        }
+
+        return trim(implode("\n", $bodyLines));
+    }
+
+    protected function isOfficialMemoStructureLine(string $line): bool
+    {
+        $normalized = mb_strtolower(trim($line));
+
+        $exactLines = [
+            'kementerian sekretariat negara ri',
+            'sekretariat presiden',
+            'istana kepresidenan yogyakarta',
+            'memorandum',
+            'dokumen ini telah ditandatangani secara elektronik menggunakan sertifikat elektronik',
+            'yang diterbitkan oleh balai sertifikasi elektronik (bsre).',
+        ];
+
+        if (in_array($normalized, $exactLines, true)) {
+            return true;
+        }
+
+        return preg_match('/^(?:yth\.?|dari|hal|tanggal)\s*:/iu', $line) === 1
+            || preg_match('/^nomor\s+\S+/iu', $line) === 1;
+    }
+
+    protected function applyRecipientRevision(string $instruction): void
+    {
+        if (! preg_match('/\b(?:penerima|yth\.?)\b/iu', $instruction)) {
+            return;
+        }
+
+        $value = $this->extractRevisionValue($instruction);
+
+        if ($value !== '') {
+            $this->memoRecipient = $value;
+        }
+    }
+
+    protected function applyDateRevision(string $instruction): void
+    {
+        if (! preg_match('/\btanggal\b/iu', $instruction)) {
+            return;
+        }
+
+        if (preg_match_all('/\b(\d{1,2}\s+\p{L}+\s+\d{4})\b/u', $instruction, $matches) && ! empty($matches[1])) {
+            $this->memoDate = $this->cleanRevisionValue((string) end($matches[1]));
+
+            return;
+        }
+
+        $value = $this->extractRevisionValue($instruction);
+
+        if ($value !== '') {
+            $this->memoDate = $value;
+        }
+    }
+
+    protected function applyClosingRevision(string $instruction): void
+    {
+        if (! preg_match('/\b(?:penutup|kalimat\s+penutup)\b/iu', $instruction)) {
+            return;
+        }
+
+        $value = $this->extractRevisionValue($instruction);
+
+        if ($value !== '') {
+            $this->memoClosing = $value;
+        }
+    }
+
+    protected function applySignatoryRevision(string $instruction): void
+    {
+        if (! preg_match('/\b(?:penandatangan|tanda\s+tangan)\b/iu', $instruction)) {
+            return;
+        }
+
+        $value = $this->extractRevisionValue($instruction);
+
+        if ($value !== '') {
+            $this->memoSignatory = $value;
+        }
+    }
+
+    protected function extractRevisionValue(string $instruction): string
+    {
+        if (preg_match('/(?:menjadi|jadi|ke|kepada|dengan|:)\s+(.+)$/iu', $instruction, $matches)) {
+            return $this->cleanRevisionValue((string) $matches[1]);
+        }
+
+        return '';
+    }
+
+    protected function cleanRevisionValue(string $value): string
+    {
+        $value = preg_replace('/\s+/u', ' ', trim($value)) ?? $value;
+        $value = preg_replace('/^(?:untuk|kepada|ke)\s+/iu', '', $value) ?? $value;
+
+        return trim($value, " \t\n\r\0\x0B\"'.,;:");
     }
 
     protected function resolveMemoVersion(Memo $memo): ?MemoVersion
