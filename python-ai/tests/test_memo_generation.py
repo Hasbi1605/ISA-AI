@@ -3,6 +3,7 @@ import sys
 from io import BytesIO
 
 from docx import Document
+from docx.oxml.ns import qn
 from docx.shared import Inches
 from fastapi.testclient import TestClient
 
@@ -13,6 +14,27 @@ from app.documents_api import app
 from app.services.memo_generation import MemoDraft
 from app.services.memo_generation import build_memo_prompt
 from app.services.memo_generation import generate_memo_docx
+
+
+def _all_document_text(document):
+    texts = [paragraph.text for paragraph in document.paragraphs if paragraph.text]
+    for table in document.tables:
+        for row in table.rows:
+            for cell in row.cells:
+                if cell.text:
+                    texts.append(cell.text)
+    for section in document.sections:
+        texts.extend(paragraph.text for paragraph in section.footer.paragraphs if paragraph.text)
+    return "\n".join(texts)
+
+
+def _find_table_containing(document, text):
+    for table in document.tables:
+        for row in table.rows:
+            for cell in row.cells:
+                if cell.text == text:
+                    return table
+    raise AssertionError(f"Table containing {text!r} not found")
 
 
 def test_generate_memo_docx_builds_official_memorandum_document():
@@ -52,7 +74,7 @@ def test_generate_memo_docx_builds_official_memorandum_document():
     assert "Mohon setiap unit menyiapkan laporan progres." in paragraphs
     assert any("Bawa data pendukung." in paragraph for paragraph in paragraphs)
     assert "Atas perhatian dan kerja sama Bapak, kami ucapkan terima kasih." in paragraphs
-    assert "Deni Mulyana" in paragraphs
+    assert "Deni Mulyana" in _all_document_text(document)
     assert "Dokumen ini telah ditandatangani secara elektronik" in document.sections[0].footer.paragraphs[0].text
     assert document.sections[0].page_height == Inches(14)
     assert draft.page_size == "folio"
@@ -60,7 +82,12 @@ def test_generate_memo_docx_builds_official_memorandum_document():
     assert document.paragraphs[0].runs[0].font.name == "Arial"
     assert document.tables[0].cell(0, 2).text == configuration["recipient"]
     assert document.tables[0].cell(2, 2).text == configuration["subject"]
-    assert document.tables[1].cell(0, 0).text == "QR\nTTE"
+    qr_table = _find_table_containing(document, "QR\nTTE")
+    assert qr_table.cell(0, 1).text == "QR\nTTE"
+    assert qr_table.cell(1, 0).text == "Deni Mulyana"
+    table_indent = qr_table._tbl.tblPr.find(qn("w:tblInd"))
+    assert table_indent is not None
+    assert int(table_indent.get(qn("w:w"))) >= 5600
     assert "Penyampaian Nama PIC Aplikasi Virtual Meeting" in draft.searchable_text
 
 
@@ -87,7 +114,7 @@ def test_generate_memo_docx_does_not_add_default_closing_when_blank():
 
     assert "Demikian, mohon arahan lebih lanjut." not in paragraphs
     assert "Demikian, mohon arahan lebih lanjut." not in draft.searchable_text
-    assert "Deni Mulyana" in paragraphs
+    assert "Deni Mulyana" in _all_document_text(document)
 
 
 def test_generate_memo_docx_auto_page_size_uses_generated_body_length():
@@ -166,6 +193,146 @@ def test_build_memo_prompt_prioritizes_revision_instruction_and_current_context(
     assert "tambahkan tembusan nomor 3, Kepala C" in prompt
     assert "Jangan meregenerasi seluruh memo" in prompt
     assert "ubah hanya bagian yang disebut" in prompt
+    assert "baseline, uji, skenario evaluasi, dan auto format" in prompt
+    assert "Jangan menulis blok Tembusan" in prompt
+
+
+def test_generate_memo_docx_sanitizes_evaluation_artifacts_and_forbidden_sections():
+    closing = "Demikian disampaikan, atas perhatian dan kerja samanya diucapkan terima kasih."
+    draft = generate_memo_docx(
+        memo_type="memo_internal",
+        title="Revisi Ubah Penutup",
+        context="Revisi memo evaluasi.",
+        text_generator=lambda prompt: (
+            "Sehubungan dengan persiapan kegiatan, dimohon melakukan koordinasi.\n"
+            "Memo ini juga sebagai baseline untuk uji revisi penutup.\n"
+            f"{closing}\n"
+            f"{closing}\n"
+            "Tembusan:\n"
+            "Kepala Bagian Keamanan"
+        ),
+        configuration={
+            "number": "EVAL-33/IST/YK/05/2026",
+            "recipient": "Kepala Bagian Protokol",
+            "sender": "Kepala Istana Kepresidenan Yogyakarta",
+            "subject": "Revisi Ubah Penutup",
+            "date": "7 Mei 2026",
+            "closing": closing,
+            "signatory": "Deni Mulyana",
+            "carbon_copy": "Kepala Bagian Keamanan",
+            "page_size": "letter",
+        },
+    )
+
+    document = Document(BytesIO(draft.content))
+    all_text = _all_document_text(document)
+
+    assert "baseline" not in all_text.lower()
+    assert "uji revisi" not in all_text.lower()
+    assert all_text.count(closing) == 1
+    assert all_text.count("Tembusan:") == 1
+    assert all_text.count("Kepala Bagian Keamanan") == 1
+
+
+def test_generate_memo_docx_removes_carbon_copy_from_body_but_keeps_configuration_copy():
+    draft = generate_memo_docx(
+        memo_type="memo_internal",
+        title="Revisi Kapitalisasi Tembusan",
+        context="Kapitalisasi tembusan.",
+        text_generator=lambda prompt: (
+            "Menindaklanjuti kebutuhan distribusi informasi, diminta agar:\n"
+            "1. Informasi disampaikan kepada unit terkait.\n"
+            "2. Setiap unit memastikan tindak lanjut.\n"
+            "Tembusan:\n"
+            "Kementrian Polisi\n"
+            "Kemenkue\n"
+            "Purbaya Yudhi Sadewa"
+        ),
+        configuration={
+            "number": "EVAL-40/IST/YK/05/2026",
+            "recipient": "Kepala Bagian Administrasi",
+            "sender": "Kepala Istana Kepresidenan Yogyakarta",
+            "subject": "Revisi Kapitalisasi Tembusan",
+            "date": "7 Mei 2026",
+            "signatory": "Deni Mulyana",
+            "carbon_copy": "Kementrian Polisi\nKemenkue\nPurbaya Yudhi Sadewa",
+            "page_size": "folio",
+        },
+    )
+
+    document = Document(BytesIO(draft.content))
+    all_text = _all_document_text(document)
+
+    assert all_text.count("Tembusan:") == 1
+    assert all_text.count("Kementrian Polisi") == 1
+    assert all_text.count("Kemenkue") == 1
+    assert all_text.count("Purbaya Yudhi Sadewa") == 1
+
+
+def test_generate_memo_docx_formats_pic_data_as_key_value_table():
+    draft = generate_memo_docx(
+        memo_type="memo_internal",
+        title="Penyampaian Data Pegawai",
+        context="Data PIC pegawai.",
+        text_generator=lambda prompt: (
+            "Menindaklanjuti proses pendataan pegawai, dengan ini disampaikan data sebagai berikut:\n"
+            "1. Nama pegawai yang benar: Muhammad Hasbi Ash Shiddiqi\n"
+            "2. NIP: 231210013\n"
+            "3. Jabatan: Pengadministrasi Perkantoran"
+        ),
+        configuration={
+            "number": "EVAL-38/IST/YK/05/2026",
+            "recipient": "Kepala Bagian SDM",
+            "sender": "Kepala Istana Kepresidenan Yogyakarta",
+            "subject": "Penyampaian Data Pegawai",
+            "date": "7 Mei 2026",
+            "signatory": "Deni Mulyana",
+            "page_size": "letter",
+        },
+    )
+
+    document = Document(BytesIO(draft.content))
+    data_table = _find_table_containing(document, "nama")
+
+    assert data_table.cell(0, 0).text == "nama"
+    assert data_table.cell(0, 1).text == ":"
+    assert data_table.cell(0, 2).text == "Muhammad Hasbi Ash Shiddiqi"
+    assert data_table.cell(1, 0).text == "NIP"
+    assert data_table.cell(1, 2).text == "231210013"
+    assert data_table.cell(2, 0).text == "jabatan"
+    assert data_table.cell(2, 2).text == "Pengadministrasi Perkantoran"
+
+
+def test_generate_memo_docx_starts_signature_on_new_page_for_long_folio_with_carbon_copy():
+    long_body = "\n".join(
+        [
+            f"{index}. "
+            + "Koordinasi dan penataan layanan administrasi internal perlu dilakukan secara bertahap. " * 7
+            for index in range(1, 7)
+        ]
+    )
+
+    draft = generate_memo_docx(
+        memo_type="memo_internal",
+        title="Memo Panjang Format Folio",
+        context="Buat memo panjang format folio.",
+        text_generator=lambda prompt: long_body,
+        configuration={
+            "number": "EVAL-25/IST/YK/05/2026",
+            "recipient": "Kepala Pusat Pengembangan Layanan",
+            "sender": "Kepala Istana Kepresidenan Yogyakarta",
+            "subject": "Memo Panjang Format Folio",
+            "date": "7 Mei 2026",
+            "signatory": "Deni Mulyana",
+            "carbon_copy": "Kepala Biro Perencanaan\nKepala Bagian Administrasi\nKoordinator Layanan",
+            "page_size": "folio",
+        },
+    )
+
+    document = Document(BytesIO(draft.content))
+    page_breaks = document._element.xpath(".//w:br[@w:type='page']")
+
+    assert page_breaks
 
 
 def test_generate_memo_docx_rejects_unknown_type():

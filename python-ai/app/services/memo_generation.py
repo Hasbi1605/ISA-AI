@@ -30,6 +30,13 @@ FOOTER_NOTICE = (
     "yang diterbitkan oleh Balai Sertifikasi Elektronik (BSrE)."
 )
 
+PERSON_DATA_PATTERN = re.compile(
+    r"^(?:\d+[.)]\s*)?"
+    r"(?P<label>nama(?: pegawai(?: yang benar)?)?|nip|pangkat/gol\.?|jabatan|keperluan)"
+    r"\s*:\s*(?P<value>.+)$",
+    re.IGNORECASE,
+)
+
 
 @dataclass(slots=True)
 class MemoDraft:
@@ -93,6 +100,9 @@ def build_memo_prompt(
         "- Gunakan paragraf formal yang singkat, jelas, dan mengikuti contoh memorandum manual.\n"
         "- Jika ada beberapa butir keputusan/permohonan, gunakan daftar bernomor 1., 2., 3.\n"
         "- Awali dengan dasar atau tindak lanjut bila konteks menyediakannya.\n"
+        "- Perlakukan kata seperti baseline, uji, skenario evaluasi, dan auto format sebagai instruksi internal; jangan salin ke naskah memo.\n"
+        "- Jangan menulis blok Tembusan karena tembusan diambil dari konfigurasi.\n"
+        "- Untuk data PIC/pegawai, gunakan pola baris label resmi seperti nama, NIP, pangkat/gol., dan jabatan.\n"
         f"{revision_rules}"
         "- Jangan gunakan markdown, tabel, salam pembuka, atau salam penutup.\n"
         f"{closing_rule}"
@@ -116,7 +126,7 @@ def generate_memo_docx(
     config = _normalize_configuration(configuration, clean_title, clean_context)
     generator = text_generator or _default_text_generator
     prompt = build_memo_prompt(normalized_type, clean_title, clean_context, config)
-    body = _normalize_generated_text(generator(prompt))
+    body = _sanitize_memo_body(_normalize_generated_text(generator(prompt)), config)
     config["page_size"] = _resolve_page_size(config, body)
 
     document = _build_official_memo_document(normalized_type, config, body)
@@ -157,6 +167,8 @@ def _build_official_memo_document(memo_type: str, config: dict[str, str], body: 
     _add_separator(document)
     _add_body(document, body)
     _add_closing(document, config["closing"])
+    if _should_start_signature_on_next_page(config, body):
+        document.add_page_break()
     _add_signature_placeholder(document, config["signatory"])
     _add_carbon_copy(document, config["carbon_copy"])
     _add_footer(document.sections[0])
@@ -248,7 +260,17 @@ def _add_separator(document: Document) -> None:
 
 
 def _add_body(document: Document, body: str) -> None:
-    for block in _split_blocks(body):
+    blocks = _split_blocks(body)
+    index = 0
+
+    while index < len(blocks):
+        key_value_items = _collect_person_data_blocks(blocks, index)
+        if len(key_value_items) >= 2:
+            _add_key_value_body_table(document, key_value_items)
+            index += len(key_value_items)
+            continue
+
+        block = blocks[index]
         numbered = re.match(r"^(\d+)[.)]\s+(.+)$", block)
         bulleted = re.match(r"^([-*])\s+(.+)$", block)
 
@@ -260,9 +282,11 @@ def _add_body(document: Document, body: str) -> None:
                 line_spacing_pt=13.8,
                 left_indent_in=0.28,
                 first_line_indent_in=-0.28,
+                keep_together=True,
             )
             paragraph.paragraph_format.tab_stops.add_tab_stop(Inches(0.28))
             _append_text_run(paragraph, f"{numbered.group(1)}.\t{numbered.group(2).strip()}")
+            index += 1
             continue
 
         if bulleted:
@@ -273,19 +297,44 @@ def _add_body(document: Document, body: str) -> None:
                 line_spacing_pt=13.8,
                 left_indent_in=0.28,
                 first_line_indent_in=-0.28,
+                keep_together=True,
             )
             paragraph.paragraph_format.tab_stops.add_tab_stop(Inches(0.28))
             _append_text_run(paragraph, f"-\t{bulleted.group(2).strip()}")
+            index += 1
             continue
 
         paragraph = document.add_paragraph()
         _format_paragraph(
             paragraph,
-            alignment=WD_ALIGN_PARAGRAPH.JUSTIFY,
+            alignment=_body_alignment(block),
             line_spacing_pt=13.8,
             first_line_indent_in=0.5,
+            keep_together=True,
         )
         _append_text_run(paragraph, block)
+        index += 1
+
+
+def _add_key_value_body_table(document: Document, items: list[tuple[str, str]]) -> None:
+    table = document.add_table(rows=len(items), cols=3)
+    table.autofit = False
+    _set_table_indent(table, 0.5)
+    _set_table_width(table, 5.16)
+
+    widths = [Inches(1.12), Inches(0.18), Inches(3.86)]
+    for row_index, (label, value) in enumerate(items):
+        row = table.rows[row_index]
+        _set_row_cant_split(row)
+        cells = row.cells
+        for cell_index, width in enumerate(widths):
+            cells[cell_index].width = width
+            cells[cell_index].vertical_alignment = WD_CELL_VERTICAL_ALIGNMENT.TOP
+            _set_cell_margins(cells[cell_index], top=0, start=0, bottom=0, end=0)
+
+        _set_cell_text(cells[0], label)
+        _set_cell_text(cells[1], ":")
+        _set_cell_text(cells[2], value)
 
 
 def _add_closing(document: Document, closing: str) -> None:
@@ -299,36 +348,63 @@ def _add_closing(document: Document, closing: str) -> None:
         line_spacing_pt=13.8,
         first_line_indent_in=0.5,
         space_before_pt=20,
+        keep_together=True,
+        keep_with_next=True,
     )
     _append_text_run(paragraph, closing)
 
 
 def _add_signature_placeholder(document: Document, signatory: str) -> None:
     spacer = document.add_paragraph()
-    _format_paragraph(spacer, line_spacing_pt=1, space_before_pt=42, space_after_pt=0)
+    _format_paragraph(
+        spacer,
+        line_spacing_pt=1,
+        space_before_pt=42,
+        space_after_pt=0,
+        keep_together=True,
+        keep_with_next=True,
+    )
 
-    table = document.add_table(rows=1, cols=1)
-    table.alignment = WD_TABLE_ALIGNMENT.RIGHT
+    table = document.add_table(rows=2, cols=3)
+    table.alignment = WD_TABLE_ALIGNMENT.LEFT
     table.autofit = False
+    _set_table_indent(table, 3.92)
+    _set_table_width(table, 1.56)
+
+    widths = [Inches(0.35), Inches(0.86), Inches(0.35)]
+    for row in table.rows:
+        _set_row_cant_split(row)
+        for cell_index, width in enumerate(widths):
+            cell = row.cells[cell_index]
+            cell.width = width
+            _set_cell_margins(cell, top=0, start=0, bottom=0, end=0)
+
     table.rows[0].height = Inches(0.86)
     table.rows[0].height_rule = WD_ROW_HEIGHT_RULE.EXACTLY
 
-    cell = table.cell(0, 0)
-    cell.width = Inches(0.86)
-    cell.vertical_alignment = WD_CELL_VERTICAL_ALIGNMENT.CENTER
-    _set_cell_margins(cell, top=0, start=0, bottom=0, end=0)
-    _set_cell_border(cell, color="777777")
-    paragraph = cell.paragraphs[0]
-    _format_paragraph(paragraph, alignment=WD_ALIGN_PARAGRAPH.CENTER, line_spacing_pt=8)
+    qr_cell = table.cell(0, 1)
+    qr_cell.vertical_alignment = WD_CELL_VERTICAL_ALIGNMENT.CENTER
+    _set_cell_border(qr_cell, color="777777")
+    paragraph = qr_cell.paragraphs[0]
+    _format_paragraph(
+        paragraph,
+        alignment=WD_ALIGN_PARAGRAPH.CENTER,
+        line_spacing_pt=8,
+        keep_together=True,
+        keep_with_next=True,
+    )
     run = paragraph.add_run("QR\nTTE")
     _format_run(run, size_pt=6, color="777777")
 
-    name = document.add_paragraph()
+    name_cell = table.cell(1, 0).merge(table.cell(1, 2))
+    name = name_cell.paragraphs[0]
     _format_paragraph(
         name,
-        alignment=WD_ALIGN_PARAGRAPH.RIGHT,
+        alignment=WD_ALIGN_PARAGRAPH.CENTER,
         line_spacing_pt=13.8,
         space_before_pt=10,
+        keep_together=True,
+        keep_with_next=True,
     )
     _append_text_run(name, signatory)
 
@@ -339,7 +415,13 @@ def _add_carbon_copy(document: Document, carbon_copy: str) -> None:
         return
 
     heading = document.add_paragraph()
-    _format_paragraph(heading, line_spacing_pt=13.8, space_before_pt=48)
+    _format_paragraph(
+        heading,
+        line_spacing_pt=13.8,
+        space_before_pt=48,
+        keep_with_next=True,
+        keep_together=True,
+    )
     _append_text_run(heading, "Tembusan:")
 
     should_auto_number = len(lines) > 1 and not any(re.match(r"^\d+[.)]\s+", line) for line in lines)
@@ -354,11 +436,18 @@ def _add_carbon_copy(document: Document, carbon_copy: str) -> None:
                 line_spacing_pt=13.8,
                 left_indent_in=0.28,
                 first_line_indent_in=-0.28,
+                keep_together=True,
+                keep_with_next=index < len(lines),
             )
             paragraph.paragraph_format.tab_stops.add_tab_stop(Inches(0.28))
             _append_text_run(paragraph, f"{numbered.group(1)}.\t{numbered.group(2).strip()}")
         else:
-            _format_paragraph(paragraph, line_spacing_pt=13.8)
+            _format_paragraph(
+                paragraph,
+                line_spacing_pt=13.8,
+                keep_together=True,
+                keep_with_next=index < len(lines),
+            )
             _append_text_run(paragraph, text)
 
 
@@ -387,6 +476,8 @@ def _format_paragraph(
     space_after_pt: float = 0,
     first_line_indent_in: float | None = None,
     left_indent_in: float | None = None,
+    keep_together: bool = False,
+    keep_with_next: bool = False,
 ) -> None:
     fmt = paragraph.paragraph_format
     if alignment is not None:
@@ -399,6 +490,8 @@ def _format_paragraph(
         fmt.first_line_indent = Inches(first_line_indent_in)
     if left_indent_in is not None:
         fmt.left_indent = Inches(left_indent_in)
+    fmt.keep_together = keep_together
+    fmt.keep_with_next = keep_with_next
 
 
 def _append_text_run(paragraph, text: str):
@@ -484,6 +577,37 @@ def _set_cell_border(cell, *, color: str) -> None:
         node.set(qn("w:color"), color)
 
 
+def _set_table_indent(table, indent_in: float) -> None:
+    tbl_pr = table._tbl.tblPr
+    tbl_ind = tbl_pr.find(qn("w:tblInd"))
+    if tbl_ind is None:
+        tbl_ind = OxmlElement("w:tblInd")
+        tbl_pr.append(tbl_ind)
+
+    tbl_ind.set(qn("w:w"), str(int(indent_in * 1440)))
+    tbl_ind.set(qn("w:type"), "dxa")
+
+
+def _set_table_width(table, width_in: float) -> None:
+    tbl_pr = table._tbl.tblPr
+    tbl_w = tbl_pr.find(qn("w:tblW"))
+    if tbl_w is None:
+        tbl_w = OxmlElement("w:tblW")
+        tbl_pr.append(tbl_w)
+
+    tbl_w.set(qn("w:w"), str(int(width_in * 1440)))
+    tbl_w.set(qn("w:type"), "dxa")
+
+
+def _set_row_cant_split(row) -> None:
+    tr_pr = row._tr.get_or_add_trPr()
+    cant_split = tr_pr.find(qn("w:cantSplit"))
+    if cant_split is None:
+        cant_split = OxmlElement("w:cantSplit")
+        tr_pr.append(cant_split)
+    cant_split.set(qn("w:val"), "1")
+
+
 def _normalize_configuration(
     configuration: Mapping[str, Any] | None,
     title: str,
@@ -548,6 +672,122 @@ def _build_searchable_text(memo_type: str, config: dict[str, str], body: str) ->
     return "\n".join(part for part in parts if part is not None).strip()
 
 
+def _sanitize_memo_body(body: str, config: dict[str, str]) -> str:
+    clean = _strip_forbidden_body_sections(body)
+    clean = _strip_evaluation_artifacts(clean)
+    clean = _remove_configured_closing(clean, config.get("closing", ""))
+    clean = _dedupe_consecutive_blocks(clean)
+    return _normalize_generated_text(clean)
+
+
+def _strip_forbidden_body_sections(text: str) -> str:
+    lines = text.splitlines()
+    output: list[str] = []
+    skipping_tembusan = False
+
+    for line in lines:
+        stripped = line.strip()
+        if skipping_tembusan:
+            if not stripped:
+                skipping_tembusan = False
+            continue
+
+        if re.match(r"^tembusan\s*:", stripped, re.IGNORECASE):
+            skipping_tembusan = True
+            continue
+
+        if re.match(r"^(yth\.?|dari|hal|tanggal|nomor)\s*:", stripped, re.IGNORECASE):
+            continue
+
+        if re.match(r"^(memorandum|qr|tte)$", stripped, re.IGNORECASE):
+            continue
+
+        output.append(line)
+
+    return "\n".join(output).strip()
+
+
+def _strip_evaluation_artifacts(text: str) -> str:
+    output: list[str] = []
+
+    for block in _split_blocks(text):
+        if _is_evaluation_artifact_block(block):
+            continue
+
+        clean = re.sub(
+            r",?\s*(?:serta|dan)?\s*sebagai baseline untuk uji[^,.;]*(?P<sep>[,.;])",
+            lambda match: match.group("sep") if match.group("sep") == "," else ".",
+            block,
+            flags=re.IGNORECASE,
+        )
+        clean = re.sub(r"\bpada baseline\b", "pada", clean, flags=re.IGNORECASE)
+        clean = re.sub(r"\bbaseline\b", "", clean, flags=re.IGNORECASE)
+        clean = re.sub(r"\s{2,}", " ", clean).strip()
+        clean = re.sub(r"\s+([,.;])", r"\1", clean)
+        clean = re.sub(r",\s*,", ",", clean).strip(" ,")
+
+        if clean:
+            output.append(clean)
+
+    return "\n".join(output).strip()
+
+
+def _is_evaluation_artifact_block(block: str) -> bool:
+    normalized = block.strip().lower()
+    if not normalized:
+        return False
+
+    if "baseline paragraf ini digunakan" in normalized:
+        return True
+
+    evaluation_starters = (
+        "poin nomor",
+        "memo ini juga",
+        "penyampaian data dan laporan ini digunakan",
+    )
+    if normalized.startswith(evaluation_starters) and "baseline" in normalized:
+        return True
+
+    if normalized.startswith("sebagai baseline"):
+        return True
+
+    if any(marker in normalized for marker in ("skenario evaluasi", "skenario revisi", "digenerate")):
+        return True
+
+    return "pengujian auto format" in normalized
+
+
+def _remove_configured_closing(text: str, closing: str) -> str:
+    if not closing:
+        return text
+
+    closing_key = _normalize_comparison_text(closing)
+    output = [
+        block
+        for block in _split_blocks(text)
+        if _normalize_comparison_text(block) != closing_key
+    ]
+    return "\n".join(output).strip()
+
+
+def _dedupe_consecutive_blocks(text: str) -> str:
+    output: list[str] = []
+    previous_key = ""
+
+    for block in _split_blocks(text):
+        key = _normalize_comparison_text(block)
+        if key == previous_key:
+            continue
+        output.append(block)
+        previous_key = key
+
+    return "\n".join(output).strip()
+
+
+def _normalize_comparison_text(text: str) -> str:
+    return re.sub(r"\s+", " ", (text or "").strip().lower()).rstrip(".")
+
+
 def _resolve_page_size(config: dict[str, str], body: str) -> str:
     requested = config.get("page_size", "folio")
     if requested in {"letter", "folio"}:
@@ -570,6 +810,56 @@ def _resolve_page_size(config: dict[str, str], body: str) -> str:
         return "letter"
 
     return "folio"
+
+
+def _should_start_signature_on_next_page(config: dict[str, str], body: str) -> bool:
+    if not _split_lines(config.get("carbon_copy", "")):
+        return False
+
+    if config.get("page_size") != "folio":
+        return False
+
+    body_blocks = _split_blocks(body)
+    numbered_count = sum(1 for block in body_blocks if re.match(r"^\d+[.)]\s+.+$", block))
+    return len(body) >= 2400 or (len(body_blocks) >= 8 and numbered_count >= 5)
+
+
+def _body_alignment(block: str):
+    return WD_ALIGN_PARAGRAPH.JUSTIFY if len(block) >= 180 else WD_ALIGN_PARAGRAPH.LEFT
+
+
+def _collect_person_data_blocks(blocks: list[str], start_index: int) -> list[tuple[str, str]]:
+    items: list[tuple[str, str]] = []
+
+    for block in blocks[start_index:]:
+        parsed = _parse_person_data_block(block)
+        if not parsed:
+            break
+        items.append(parsed)
+
+    return items
+
+
+def _parse_person_data_block(block: str) -> tuple[str, str] | None:
+    match = PERSON_DATA_PATTERN.match(block.strip())
+    if not match:
+        return None
+
+    raw_label = match.group("label").lower().rstrip(".")
+    value = match.group("value").strip()
+
+    if raw_label.startswith("nama"):
+        label = "nama"
+    elif raw_label == "nip":
+        label = "NIP"
+    elif raw_label.startswith("pangkat/gol"):
+        label = "pangkat/gol."
+    elif raw_label == "jabatan":
+        label = "jabatan"
+    else:
+        label = "keperluan"
+
+    return label, value
 
 
 def _clean_title(title: str) -> str:
