@@ -33,8 +33,10 @@ def test_chat_models_include_bedrock_fallback_without_inline_secret():
     bedrock_models = [model for model in models if model.get("provider") == "bedrock_converse"]
 
     assert [model["model_name"] for model in bedrock_models] == [
+        "openai.gpt-oss-120b-1:0",
+        "zai.glm-4.7-flash",
+        "zai.glm-4.7",
         "amazon.nova-micro-v1:0",
-        "amazon.nova-lite-v1:0",
     ]
     assert all(model["api_key_env"] == "AWS_BEARER_TOKEN_BEDROCK" for model in bedrock_models)
     assert all("api_key" not in model for model in bedrock_models)
