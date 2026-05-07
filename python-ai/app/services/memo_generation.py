@@ -155,7 +155,8 @@ def build_memo_prompt(
         "- Perlakukan kata seperti baseline, uji, skenario evaluasi, dan auto format sebagai instruksi internal; jangan salin ke naskah memo.\n"
         "- Jangan menulis blok Tembusan karena tembusan diambil dari konfigurasi.\n"
         "- Jangan mencantumkan sumber, URL, JSON, kutipan tool, atau blok [SOURCES: ...] dalam naskah memo.\n"
-        "- Untuk data PIC/pegawai, gunakan pola baris label resmi seperti nama, NIP, pangkat/gol., dan jabatan.\n"
+        "- Untuk data PIC/pegawai, tulis setiap label dari konfigurasi sebagai baris terpisah; jangan menggabungkan nama, NIP, jabatan, unit kerja, keperluan, jadwal, atau nomor kontak ke dalam paragraf naratif.\n"
+        "- Jika field Penutup berisi teks, jangan ubah atau hilangkan kalimat penutup tersebut.\n"
         f"{revision_rules}"
         "- Jangan gunakan markdown, tabel, salam pembuka, atau salam penutup.\n"
         f"{closing_rule}"
@@ -181,6 +182,9 @@ def generate_memo_docx(
     prompt = build_memo_prompt(normalized_type, clean_title, clean_context, config)
     body = _sanitize_memo_body(_normalize_generated_text(generator(prompt)), config)
     body = _enforce_revision_constraints(body, config)
+    body, generated_closing = _separate_generated_closing(body, config)
+    if generated_closing and not config["closing"]:
+        config["closing"] = generated_closing
     config["page_size"] = _resolve_page_size(config, body)
 
     document = _build_official_memo_document(normalized_type, config, body)
@@ -220,7 +224,7 @@ def _build_official_memo_document(memo_type: str, config: dict[str, str], body: 
     _add_metadata(document, config)
     compact_layout = _should_use_compact_layout(config, body)
     _add_separator(document, compact=compact_layout)
-    _add_body(document, body, compact=compact_layout)
+    _add_body(document, body, compact=compact_layout, config=config)
     _add_closing(document, config["closing"], compact=compact_layout)
     signature_space_before = _signature_space_before(config, body, compact=compact_layout)
     _add_signature_placeholder(
@@ -324,15 +328,34 @@ def _add_separator(document: Document, *, compact: bool = False) -> None:
     _set_paragraph_bottom_border(paragraph)
 
 
-def _add_body(document: Document, body: str, *, compact: bool = False) -> None:
+def _add_body(
+    document: Document,
+    body: str,
+    *,
+    compact: bool = False,
+    config: dict[str, str] | None = None,
+) -> None:
     blocks = _split_blocks(body)
+    configured_key_values = _extract_configured_key_value_items(config or {})
+    configured_key_values_used = False
+
+    if len(configured_key_values) >= 2 and not _blocks_contain_key_value_table(blocks):
+        insert_at = 1 if blocks and not _is_structured_body_block(blocks[0]) else 0
+        configured_blocks = [f"{label}: {value}" for label, value in configured_key_values]
+        blocks = [*blocks[:insert_at], *configured_blocks, *blocks[insert_at:]]
+
     index = 0
     line_spacing_pt = 13.1 if compact else 13.8
 
     while index < len(blocks):
         key_value_items = _collect_person_data_blocks(blocks, index)
         if len(key_value_items) >= 2:
-            _add_key_value_body_table(document, key_value_items, compact=compact, add_space_before=index > 0)
+            table_items = key_value_items
+            if len(configured_key_values) >= 2 and not configured_key_values_used:
+                table_items = _merge_key_value_items(key_value_items, configured_key_values)
+                configured_key_values_used = True
+
+            _add_key_value_body_table(document, table_items, compact=compact, add_space_before=index > 0)
             index += len(key_value_items)
             continue
 
@@ -380,6 +403,62 @@ def _add_body(document: Document, body: str, *, compact: bool = False) -> None:
         )
         _append_text_run(paragraph, block)
         index += 1
+
+
+def _blocks_contain_key_value_table(blocks: list[str]) -> bool:
+    for index in range(len(blocks)):
+        if len(_collect_person_data_blocks(blocks, index)) >= 2:
+            return True
+    return False
+
+
+def _extract_configured_key_value_items(config: dict[str, str]) -> list[tuple[str, str]]:
+    content = config.get("content", "")
+    if not content:
+        return []
+
+    normalized = _normalize_person_data_sequences(content)
+    items: list[tuple[str, str]] = []
+    for block in _split_blocks(normalized):
+        parsed = _parse_person_data_block(block)
+        if parsed:
+            items.append(parsed)
+
+    return _dedupe_key_value_items(items)
+
+
+def _merge_key_value_items(
+    generated_items: list[tuple[str, str]],
+    configured_items: list[tuple[str, str]],
+) -> list[tuple[str, str]]:
+    merged = _dedupe_key_value_items(configured_items)
+    configured_labels = {_key_value_label_key(label) for label, _value in merged}
+
+    for label, value in generated_items:
+        if _key_value_label_key(label) in configured_labels:
+            continue
+        merged.append((label, value))
+
+    return merged
+
+
+def _dedupe_key_value_items(items: list[tuple[str, str]]) -> list[tuple[str, str]]:
+    output: list[tuple[str, str]] = []
+    seen: set[str] = set()
+
+    for label, value in items:
+        key = _key_value_label_key(label)
+        clean_value = _clean_inline_person_data_value(value)
+        if not key or not clean_value or key in seen:
+            continue
+        output.append((label, clean_value))
+        seen.add(key)
+
+    return output
+
+
+def _key_value_label_key(label: str) -> str:
+    return _normalize_comparison_text(label)
 
 
 def _add_key_value_body_table(
@@ -777,6 +856,7 @@ def _sanitize_memo_body(body: str, config: dict[str, str]) -> str:
     clean = _strip_instruction_artifacts(clean, config)
     clean = _strip_trailing_fragments(clean)
     clean = _normalize_person_data_sequences(clean)
+    clean = _clean_official_language_fragments(clean)
     clean = _dedupe_consecutive_blocks(clean)
     return _normalize_generated_text(clean)
 
@@ -1017,6 +1097,7 @@ def _strip_body_closing_sentences(text: str) -> str:
 
     for block in _split_blocks(text):
         if _looks_like_closing_block(block):
+            output.append(block)
             continue
 
         clean = re.sub(r"(?is)\s+dengan\s+demikian\b.*$", "", block).strip()
@@ -1024,6 +1105,44 @@ def _strip_body_closing_sentences(text: str) -> str:
         clean = re.sub(r"(?is)\s+atas\s+perhatian\b.*?terima\s+kasih\.?$", "", clean).strip()
 
         if clean and not _looks_like_closing_block(clean):
+            output.append(clean)
+
+    return "\n".join(output).strip()
+
+
+def _separate_generated_closing(body: str, config: dict[str, str]) -> tuple[str, str]:
+    blocks = _split_blocks(body)
+    if not blocks:
+        return body, ""
+
+    generated_closing = ""
+    while blocks and _looks_like_closing_block(blocks[-1]):
+        closing_block = blocks.pop().strip()
+        if not config.get("closing") and not generated_closing:
+            generated_closing = closing_block
+
+    return "\n".join(blocks).strip(), generated_closing
+
+
+def _clean_official_language_fragments(text: str) -> str:
+    output: list[str] = []
+
+    replacements = (
+        (r"\bkami ingin menyampaikan sebagai berikut\b", "dapat kami sampaikan sebagai berikut"),
+        (r"\bkami ingin menyampaikan berikut\b", "dapat kami sampaikan sebagai berikut"),
+        (r"\bberikut adalah beberapa\b", "disampaikan beberapa"),
+        (r"\bTerimakasih\b", "Terima kasih"),
+        (r"\bterimakasih\b", "terima kasih"),
+    )
+
+    for block in _split_blocks(text):
+        clean = block
+        clean = re.sub(r"(?i)\bmohon\s+untuk\s+mem\s+dan\b[^.;]*(?:[.;]|$)", "", clean)
+        clean = re.sub(r"(?i)\buntuk\s+mem\s+dan\b[^.;]*(?:[.;]|$)", "", clean)
+        for pattern, replacement in replacements:
+            clean = re.sub(pattern, replacement, clean, flags=re.IGNORECASE)
+        clean = _normalize_spacing_after_sentence_removal(clean)
+        if clean:
             output.append(clean)
 
     return "\n".join(output).strip()
@@ -1180,8 +1299,12 @@ def _resolve_page_size(config: dict[str, str], body: str) -> str:
     ).strip()
     numbered_count = sum(1 for block in body_blocks if re.match(r"^\d+[.)]\s+.+$", block))
     effective_blocks = len(body_blocks) + len(carbon_copy_lines)
+    estimated_lines = _estimate_rendered_lines(config, body)
 
-    if len(measured_text) <= 820 and effective_blocks <= 8 and numbered_count <= 5:
+    if len(measured_text) <= 880 and effective_blocks <= 10 and numbered_count <= 5:
+        return "letter"
+
+    if len(measured_text) <= 1120 and estimated_lines <= 10 and effective_blocks <= 12 and numbered_count <= 5:
         return "letter"
 
     return "folio"
@@ -1206,6 +1329,11 @@ def _signature_space_before(config: dict[str, str], body: str, *, compact: bool)
     if compact:
         body_length = len(body or "")
         carbon_copy_count = len(_split_lines(config.get("carbon_copy", "")))
+        if config.get("page_size") == "folio" and carbon_copy_count < 3:
+            if body_length <= 900:
+                return 118
+            if body_length <= 1400:
+                return 100
         if body_length >= 2200 or carbon_copy_count >= 3:
             return SIGNATURE_SPACE_BEFORE_COMPACT_DENSE_PT
         return SIGNATURE_SPACE_BEFORE_COMPACT_PT
@@ -1225,6 +1353,18 @@ def _signature_space_before(config: dict[str, str], body: str, *, compact: bool)
     if carbon_copy_count >= 2:
         return max(SIGNATURE_SPACE_BEFORE_DEFAULT_PT, space - 18)
     return space
+
+
+def _estimate_rendered_lines(config: dict[str, str], body: str) -> int:
+    blocks = _split_blocks(body)
+    carbon_copy_lines = _split_lines(config.get("carbon_copy", ""))
+    closing_lines = _split_blocks(config.get("closing", ""))
+    basis_lines = _split_blocks(config.get("basis", ""))
+
+    body_lines = sum(max(1, (len(block) + 91) // 92) for block in blocks)
+    closing_unit = sum(max(1, (len(block) + 91) // 92) for block in closing_lines)
+
+    return body_lines + len(carbon_copy_lines) + closing_unit + min(1, len(basis_lines))
 
 
 def _body_alignment(block: str):

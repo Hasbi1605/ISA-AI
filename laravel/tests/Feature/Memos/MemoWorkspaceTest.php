@@ -295,6 +295,65 @@ class MemoWorkspaceTest extends TestCase
         Http::assertSent(fn ($request) => $request['configuration']['closing'] === $closing);
     }
 
+    public function test_generate_configuration_on_active_memo_creates_new_version_without_new_history(): void
+    {
+        Storage::fake('local');
+        config([
+            'services.onlyoffice.jwt_secret' => 'workspace-secret',
+            'services.onlyoffice.laravel_internal_url' => 'http://laravel:8000',
+        ]);
+        Http::fake([
+            '*/api/memos/generate-body' => Http::response('docx-bytes', 200, [
+                'X-Memo-Searchable-Text-B64' => base64_encode('Memo hasil konfigurasi'),
+                'X-Memo-Page-Size' => 'letter',
+                'Content-Type' => 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+            ]),
+        ]);
+
+        $user = User::factory()->create(['email_verified_at' => now()]);
+
+        $component = Livewire::actingAs($user)
+            ->test(MemoWorkspace::class)
+            ->set('memoType', 'memo_internal')
+            ->set('memoNumber', 'EVAL-19/IST/YK/05/2026')
+            ->set('memoRecipient', 'Kepala Unit Layanan')
+            ->set('memoSender', 'Kepala Istana Kepresidenan Yogyakarta')
+            ->set('title', 'Penyampaian Kontak PIC Layanan')
+            ->set('memoDate', '7 Mei 2026')
+            ->set('memoBasis', 'Untuk mempercepat koordinasi layanan internal.')
+            ->set('memoContent', 'Nama: Eko Prasetyo'.PHP_EOL.'NIP: 199411172025211057')
+            ->set('memoClosing', 'Demikian disampaikan, atas perhatian dan kerja samanya diucapkan terima kasih.')
+            ->set('memoSignatory', 'Deni Mulyana')
+            ->set('memoPageSize', 'auto')
+            ->call('generateConfiguredMemo')
+            ->assertHasNoErrors()
+            ->assertDispatched('memo-document-ready');
+
+        $memo = Memo::firstOrFail();
+        $firstVersionId = $memo->current_version_id;
+
+        $component
+            ->set('memoContent', 'Nama: Eko Prasetyo'.PHP_EOL.'NIP: 199411172025211057'.PHP_EOL.'Keperluan: Koordinasi layanan internal.')
+            ->call('generateConfiguredMemo')
+            ->assertHasNoErrors()
+            ->assertSee('Versi 2', false)
+            ->assertSee('History tetap berada pada memo yang sama', false)
+            ->assertDispatched('memo-document-ready');
+
+        $memo->refresh();
+
+        $this->assertSame(1, Memo::count());
+        $this->assertSame(2, MemoVersion::where('memo_id', $memo->id)->count());
+        $this->assertNotSame($firstVersionId, $memo->current_version_id);
+        $this->assertSame('Keperluan: Koordinasi layanan internal.', str($memo->configuration['content'])->afterLast(PHP_EOL)->toString());
+        $this->assertStringContainsString('Generate ulang memo aktif dari konfigurasi terbaru', $memo->configuration['revision_instruction']);
+        Http::assertSentCount(2);
+        Http::assertSent(fn ($request) => ($request['configuration']['revision_instruction'] ?? '') !== ''
+            && $request['configuration']['content'] === "Nama: Eko Prasetyo\nNIP: 199411172025211057\nKeperluan: Koordinasi layanan internal."
+            && str_contains($request['context'], 'Isi/poin wajib:')
+            && ! str_contains($request['context'], 'Isi memo saat ini:'));
+    }
+
     public function test_loading_memo_without_optional_closing_clears_stale_form_values(): void
     {
         $user = User::factory()->create(['email_verified_at' => now()]);

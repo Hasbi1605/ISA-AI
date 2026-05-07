@@ -86,6 +86,12 @@ def _separator_after_twips(document):
     raise AssertionError("Separator paragraph not found")
 
 
+def _paragraph_space_before_twips(paragraph):
+    spacing = paragraph._p.get_or_add_pPr().find(qn("w:spacing"))
+    assert spacing is not None
+    return int(spacing.get(qn("w:before"), "0"))
+
+
 def test_generate_memo_docx_builds_official_memorandum_document():
     configuration = {
         "number": "M-02/I-Yog/IT.02/04/2026",
@@ -165,6 +171,39 @@ def test_generate_memo_docx_does_not_add_default_closing_when_blank():
     assert "Deni Mulyana" in _all_document_text(document)
 
 
+def test_generate_memo_docx_moves_generated_closing_to_official_closing_block():
+    closing = "Demikian disampaikan, atas perhatian dan kerja samanya diucapkan terima kasih."
+
+    draft = generate_memo_docx(
+        memo_type="memo_internal",
+        title="Penyampaian Data Pegawai Pendamping Kegiatan",
+        context="Data pegawai pendamping kegiatan.",
+        text_generator=lambda prompt: (
+            "Sehubungan dengan kebutuhan pendampingan kegiatan integrasi aplikasi, "
+            "dapat kami sampaikan data pegawai pendamping sebagai berikut.\n"
+            "nama: Muhammad Hasbi Ash Shiddiqi\n"
+            "NIP: 231210013\n"
+            f"{closing}"
+        ),
+        configuration={
+            "number": "EVAL-11/IST/YK/05/2026",
+            "recipient": "Kepala Bagian SDM",
+            "sender": "Kepala Istana Kepresidenan Yogyakarta",
+            "subject": "Penyampaian Data Pegawai Pendamping Kegiatan",
+            "date": "7 Mei 2026",
+            "signatory": "Deni Mulyana",
+            "page_size": "letter",
+        },
+    )
+
+    document = Document(BytesIO(draft.content))
+    closing_paragraphs = [paragraph for paragraph in document.paragraphs if paragraph.text == closing]
+
+    assert len(closing_paragraphs) == 1
+    assert _paragraph_space_before_twips(closing_paragraphs[0]) >= 280
+    assert draft.searchable_text.count(closing) == 1
+
+
 def test_generate_memo_docx_rejects_ai_unavailable_fallback_message():
     try:
         generate_memo_docx(
@@ -219,6 +258,37 @@ def test_generate_memo_docx_auto_page_size_uses_generated_body_length():
 
     assert draft.page_size == "folio"
     assert document.sections[0].page_height == Inches(14)
+
+
+def test_generate_memo_docx_auto_page_size_keeps_short_many_copies_on_letter():
+    draft = generate_memo_docx(
+        memo_type="memo_internal",
+        title="Penyampaian Data Singkat",
+        context="Memo singkat dengan banyak tembusan.",
+        text_generator=lambda prompt: "Sehubungan dengan kebutuhan koordinasi, data singkat disampaikan untuk menjadi perhatian.",
+        configuration={
+            "number": "EVAL-24/IST/YK/05/2026",
+            "recipient": "Kepala Bagian Administrasi",
+            "sender": "Kepala Istana Kepresidenan Yogyakarta",
+            "subject": "Penyampaian Data Singkat",
+            "date": "7 Mei 2026",
+            "signatory": "Deni Mulyana",
+            "carbon_copy": "\n".join([
+                "Kepala Bagian Tata Usaha",
+                "Kepala Subbagian Kepegawaian",
+                "Kepala Subbagian Rumah Tangga",
+                "Koordinator Layanan",
+                "Arsip",
+            ]),
+            "page_size": "auto",
+            "page_size_mode": "auto",
+        },
+    )
+
+    document = Document(BytesIO(draft.content))
+
+    assert draft.page_size == "letter"
+    assert document.sections[0].page_height == Inches(11)
 
 
 def test_build_memo_prompt_keeps_ai_inside_body_scope():
@@ -581,6 +651,47 @@ def test_generate_memo_docx_formats_comma_separated_inline_pic_data_as_key_value
     assert data_table.cell(4, 2).text == "0812-0000-2026"
 
 
+def test_generate_memo_docx_prefers_complete_configured_pic_rows_over_model_narrative():
+    draft = generate_memo_docx(
+        memo_type="memo_internal",
+        title="Penyampaian Data Pegawai Pendamping Kegiatan",
+        context="Data pegawai pendamping kegiatan.",
+        text_generator=lambda prompt: (
+            "Sehubungan dengan kebutuhan pendampingan kegiatan integrasi aplikasi, dapat kami sampaikan sebagai berikut.\n"
+            "nama: Muhammad Hasbi Ash Shiddiqi\n"
+            "NIP: 231210013\n"
+            "jabatan: Analis Sistem Informasi\n"
+            "unit kerja: Subbagian Tata Usaha. Pegawai tersebut ditugaskan untuk pendampingan kegiatan integrasi aplikasi."
+        ),
+        configuration={
+            "number": "EVAL-11/IST/YK/05/2026",
+            "recipient": "Kepala Bagian SDM",
+            "sender": "Kepala Istana Kepresidenan Yogyakarta",
+            "subject": "Penyampaian Data Pegawai Pendamping Kegiatan",
+            "date": "7 Mei 2026",
+            "content": (
+                "Nama: Muhammad Hasbi Ash Shiddiqi\n"
+                "NIP: 231210013\n"
+                "Jabatan: Analis Sistem Informasi\n"
+                "Unit kerja: Subbagian Tata Usaha\n"
+                "Keperluan: Pendampingan kegiatan integrasi aplikasi."
+            ),
+            "signatory": "Deni Mulyana",
+            "page_size": "letter",
+        },
+    )
+
+    document = Document(BytesIO(draft.content))
+    data_table = _find_table_containing(document, "keperluan")
+
+    assert data_table.cell(0, 0).text == "nama"
+    assert data_table.cell(3, 0).text == "unit kerja"
+    assert data_table.cell(3, 2).text == "Subbagian Tata Usaha"
+    assert data_table.cell(4, 0).text == "keperluan"
+    assert data_table.cell(4, 2).text == "Pendampingan kegiatan integrasi aplikasi"
+    assert "Pegawai tersebut ditugaskan" not in data_table.cell(3, 2).text
+
+
 def test_generate_memo_docx_keeps_blank_signatory_blank():
     draft = generate_memo_docx(
         memo_type="memo_internal",
@@ -674,8 +785,36 @@ def test_generate_memo_docx_keeps_compact_folio_signature_lower_for_medium_numbe
     document = Document(BytesIO(draft.content))
     qr_table = _find_table_containing(document, "QR\nTTE")
 
-    assert _signature_spacer_before_twips(qr_table) >= 1600
+    assert _signature_spacer_before_twips(qr_table) >= 2200
     assert 0.67 <= _signature_qr_center_ratio(document, qr_table) <= 0.72
+
+
+def test_generate_memo_docx_cleans_broken_official_language_fragments():
+    draft = generate_memo_docx(
+        memo_type="memo_internal",
+        title="Permohonan Persetujuan Jadwal",
+        context="Persetujuan jadwal kegiatan.",
+        text_generator=lambda prompt: (
+            "Sehubungan dengan rencana kegiatan, kami ingin menyampaikan berikut. "
+            "Mohon untuk mem dan menindaklanjuti hal tersebut. Terimakasih."
+        ),
+        configuration={
+            "number": "EVAL-09/IST/YK/05/2026",
+            "recipient": "Kepala Istana Kepresidenan Yogyakarta",
+            "sender": "Kepala Istana Kepresidenan Yogyakarta",
+            "subject": "Permohonan Persetujuan Jadwal",
+            "date": "7 Mei 2026",
+            "signatory": "Deni Mulyana",
+            "page_size": "letter",
+        },
+    )
+
+    text = draft.searchable_text
+
+    assert "mohon untuk mem dan" not in text.lower()
+    assert "kami ingin menyampaikan berikut" not in text.lower()
+    assert "dapat kami sampaikan sebagai berikut" in text.lower()
+    assert "Terimakasih" not in text
 
 
 def test_generate_memo_docx_anchors_short_signature_lower_without_changing_horizontal_qr():

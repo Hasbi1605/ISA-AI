@@ -132,6 +132,12 @@ class MemoWorkspace extends Component
         ];
         $this->rememberCurrentThread();
 
+        if ($this->activeMemoId) {
+            $this->generateConfiguredRevision();
+
+            return;
+        }
+
         $this->generateFromChat($this->memoDraftContext(), true);
     }
 
@@ -203,6 +209,50 @@ class MemoWorkspace extends Component
             $this->dispatch('memo-document-ready', memoId: $memo->id);
         } catch (\Throwable $e) {
             $this->addSystemMessage('Maaf, terjadi kesalahan saat revisi memo: '.$e->getMessage());
+        } finally {
+            $this->isGenerating = false;
+        }
+    }
+
+    public function generateConfiguredRevision(): void
+    {
+        if (! $this->validateMemoConfiguration()) {
+            return;
+        }
+
+        $this->isGenerating = true;
+
+        try {
+            $instruction = 'Generate ulang memo aktif dari konfigurasi terbaru. Gunakan seluruh metadata, isi, penutup, penandatangan, tembusan, dan format dokumen yang sedang tampil di panel konfigurasi.';
+            $generationService = app(MemoGenerationService::class);
+            $configuration = array_merge($this->memoConfigurationPayload(), [
+                'revision_instruction' => $instruction,
+            ]);
+
+            $memo = Memo::where('id', $this->activeMemoId)
+                ->where('user_id', Auth::id())
+                ->firstOrFail();
+
+            $version = $generationService->generateRevision(
+                $memo,
+                $this->memoConfiguredRevisionContext($instruction),
+                $configuration,
+                $instruction,
+            );
+
+            $memo = $version->memo()->firstOrFail();
+
+            $this->activeMemoId = $memo->id;
+            $this->activeMemoVersionId = $version->id;
+            $this->title = $memo->title;
+            $this->applyMemoConfiguration($version->configuration ?? []);
+            $this->showMemoConfiguration = false;
+            $this->rememberCurrentThread();
+
+            $this->addSystemMessage("Memo \"{$memo->title}\" berhasil digenerate ulang dari konfigurasi sebagai Versi {$version->version_number}. History tetap berada pada memo yang sama.");
+            $this->dispatch('memo-document-ready', memoId: $memo->id);
+        } catch (\Throwable $e) {
+            $this->addSystemMessage('Maaf, terjadi kesalahan saat generate ulang memo dari konfigurasi: '.$e->getMessage());
         } finally {
             $this->isGenerating = false;
         }
@@ -492,6 +542,14 @@ class MemoWorkspace extends Component
         }
 
         return implode("\n\n", $sections);
+    }
+
+    protected function memoConfiguredRevisionContext(string $instruction): string
+    {
+        return implode("\n\n", array_filter([
+            $this->memoDraftContext(),
+            "Instruksi revisi wajib diterapkan:\n".trim($instruction),
+        ], fn (string $section) => trim($section) !== ''));
     }
 
     protected function memoRevisionContext(string $instruction): string
