@@ -37,6 +37,36 @@ def _find_table_containing(document, text):
     raise AssertionError(f"Table containing {text!r} not found")
 
 
+def _has_table_containing(document, text):
+    try:
+        _find_table_containing(document, text)
+    except AssertionError:
+        return False
+    return True
+
+
+def _table_indent_twips(table):
+    table_indent = table._tbl.tblPr.find(qn("w:tblInd"))
+    assert table_indent is not None
+    return int(table_indent.get(qn("w:w")))
+
+
+def _cell_margin_twips(cell, margin_name):
+    tc_mar = cell._tc.get_or_add_tcPr().first_child_found_in("w:tcMar")
+    assert tc_mar is not None
+    margin = tc_mar.find(qn(f"w:{margin_name}"))
+    assert margin is not None
+    return int(margin.get(qn("w:w")))
+
+
+def _signature_qr_center_ratio(document, table):
+    indent_in = _table_indent_twips(table) / 1440
+    page_width_in = document.sections[0].page_width.inches
+    left_margin_in = document.sections[0].left_margin.inches
+    qr_center_in = left_margin_in + indent_in + 0.35 + (0.86 / 2)
+    return qr_center_in / page_width_in
+
+
 def test_generate_memo_docx_builds_official_memorandum_document():
     configuration = {
         "number": "M-02/I-Yog/IT.02/04/2026",
@@ -85,9 +115,8 @@ def test_generate_memo_docx_builds_official_memorandum_document():
     qr_table = _find_table_containing(document, "QR\nTTE")
     assert qr_table.cell(0, 1).text == "QR\nTTE"
     assert qr_table.cell(1, 0).text == "Deni Mulyana"
-    table_indent = qr_table._tbl.tblPr.find(qn("w:tblInd"))
-    assert table_indent is not None
-    assert 3800 <= int(table_indent.get(qn("w:w"))) <= 4000
+    assert 5550 <= _table_indent_twips(qr_table) <= 5700
+    assert 0.67 <= _signature_qr_center_ratio(document, qr_table) <= 0.72
     assert "Penyampaian Nama PIC Aplikasi Virtual Meeting" in draft.searchable_text
 
 
@@ -301,6 +330,7 @@ def test_generate_memo_docx_formats_pic_data_as_key_value_table():
     assert data_table.cell(1, 2).text == "231210013"
     assert data_table.cell(2, 0).text == "jabatan"
     assert data_table.cell(2, 2).text == "Pengadministrasi Perkantoran"
+    assert _cell_margin_twips(data_table.cell(0, 2), "start") >= 80
 
 
 def test_generate_memo_docx_strips_source_json_urls_and_markdown_artifacts():
@@ -389,14 +419,12 @@ def test_generate_memo_docx_keeps_blank_signatory_blank():
     )
 
     document = Document(BytesIO(draft.content))
-    qr_table = _find_table_containing(document, "QR\nTTE")
-
-    assert qr_table.cell(1, 0).text == ""
+    assert not _has_table_containing(document, "QR\nTTE")
     assert "Deni Mulyana" not in _all_document_text(document)
     assert "Deni Mulyana" not in draft.searchable_text
 
 
-def test_generate_memo_docx_starts_signature_on_new_page_for_long_folio_with_carbon_copy():
+def test_generate_memo_docx_uses_compact_layout_without_manual_page_break_for_long_folio_with_carbon_copy():
     long_body = "\n".join(
         [
             f"{index}. "
@@ -424,8 +452,59 @@ def test_generate_memo_docx_starts_signature_on_new_page_for_long_folio_with_car
 
     document = Document(BytesIO(draft.content))
     page_breaks = document._element.xpath(".//w:br[@w:type='page']")
+    qr_table = _find_table_containing(document, "QR\nTTE")
 
-    assert page_breaks
+    assert not page_breaks
+    assert qr_table.cell(1, 0).text == "Deni Mulyana"
+    assert "Tembusan:" in _all_document_text(document)
+
+
+def test_generate_memo_docx_enforces_short_revision_constraints():
+    generated = "\n".join(
+        [
+            "Menindaklanjuti kebutuhan konsolidasi rencana kerja lintas unit, disampaikan beberapa langkah untuk meningkatkan efisiensi dan efektifitas pelaksanaan rencana kerja.",
+            "Berikut adalah beberapa keputusan yang perlu diambil:",
+            "1. Menyusun rencana kerja secara ringkas, disertai data pendukung yang relevan, sehingga memudahkan pelaksanaan dan pemantauan.",
+            "2. Menunjuk PIC serta menetapkan jadwal pelaksanaan, dengan memastikan bahwa PIC memiliki kemampuan dan sumber daya yang memadai.",
+            "3. Mengidentifikasi kendala dan mengajukan usulan perbaikan, sehingga dapat dilakukan antisipasi dan penyelesaian masalah secara efektif.",
+            "4. Menyampaikan laporan lengkap kepada pimpinan sesuai jadwal, sehingga memungkinkan pemantauan dan evaluasi berkala.",
+            "5. Melakukan evaluasi berkala atas tindak lanjut setiap unit, sehingga dapat dilakukan penyesuaian dan perbaikan.",
+            "Dalam pelaksanaan rencana kerja, perlu diingat bahwa efisiensi dan efektifitas adalah kunci untuk mencapai tujuan.",
+        ]
+    )
+
+    draft = generate_memo_docx(
+        memo_type="memo_internal",
+        title="Revisi Memo Menjadi Lebih Singkat",
+        context="Revisi memo menjadi lebih singkat.",
+        text_generator=lambda prompt: generated,
+        configuration={
+            "number": "EVAL-36/IST/YK/05/2026",
+            "recipient": "Kepala Biro Perencanaan",
+            "sender": "Kepala Istana Kepresidenan Yogyakarta",
+            "subject": "Revisi Memo Menjadi Lebih Singkat",
+            "date": "7 Mei 2026",
+            "basis": "Menindaklanjuti kebutuhan konsolidasi rencana kerja lintas unit.",
+            "content": (
+                "1. Menyusun rencana kerja secara ringkas, disertai data pendukung yang relevan.\n"
+                "2. Menunjuk PIC serta menetapkan jadwal pelaksanaan.\n"
+                "3. Mengidentifikasi kendala dan mengajukan usulan perbaikan.\n"
+                "4. Menyampaikan laporan lengkap kepada pimpinan sesuai jadwal.\n"
+                "5. Melakukan evaluasi berkala atas tindak lanjut setiap unit."
+            ),
+            "signatory": "Deni Mulyana",
+            "carbon_copy": "Para Kepala Bagian",
+            "page_size": "auto",
+            "page_size_mode": "auto",
+            "revision_instruction": "Buat isi memo menjadi lebih singkat maksimal dua paragraf, metadata jangan berubah.",
+            "additional_instruction": "Buat isi memo menjadi lebih singkat maksimal dua paragraf.",
+        },
+    )
+
+    assert "efisiensi dan efektifitas adalah kunci" not in draft.searchable_text
+    assert "Menyusun rencana kerja secara ringkas" in draft.searchable_text
+    assert "Melakukan evaluasi berkala" in draft.searchable_text
+    assert len(draft.searchable_text.split()) < len(generated.split())
 
 
 def test_generate_memo_docx_rejects_unknown_type():

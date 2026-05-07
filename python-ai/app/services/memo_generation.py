@@ -47,7 +47,17 @@ PERSON_DATA_PATTERN = re.compile(
     re.IGNORECASE,
 )
 
-SIGNATURE_TABLE_INDENT_IN = 2.70
+SIGNATURE_TABLE_INDENT_IN = 3.92
+SIGNATURE_TABLE_WIDTH_IN = 1.56
+
+INDONESIAN_SMALL_NUMBERS = {
+    "satu": 1,
+    "dua": 2,
+    "tiga": 3,
+    "empat": 4,
+    "lima": 5,
+    "enam": 6,
+}
 
 
 @dataclass(slots=True)
@@ -140,6 +150,7 @@ def generate_memo_docx(
     generator = text_generator or _default_text_generator
     prompt = build_memo_prompt(normalized_type, clean_title, clean_context, config)
     body = _sanitize_memo_body(_normalize_generated_text(generator(prompt)), config)
+    body = _enforce_revision_constraints(body, config)
     config["page_size"] = _resolve_page_size(config, body)
 
     document = _build_official_memo_document(normalized_type, config, body)
@@ -177,13 +188,12 @@ def _build_official_memo_document(memo_type: str, config: dict[str, str], body: 
     _add_header(document)
     _add_document_title(document, memo_type, config["number"])
     _add_metadata(document, config)
-    _add_separator(document)
-    _add_body(document, body)
-    _add_closing(document, config["closing"])
-    if _should_start_signature_on_next_page(config, body):
-        document.add_page_break()
-    _add_signature_placeholder(document, config["signatory"])
-    _add_carbon_copy(document, config["carbon_copy"])
+    compact_layout = _should_use_compact_layout(config, body)
+    _add_separator(document, compact=compact_layout)
+    _add_body(document, body, compact=compact_layout)
+    _add_closing(document, config["closing"], compact=compact_layout)
+    _add_signature_placeholder(document, config["signatory"], compact=compact_layout)
+    _add_carbon_copy(document, config["carbon_copy"], compact=compact_layout)
     _add_footer(document.sections[0])
 
     return document
@@ -266,20 +276,26 @@ def _add_metadata(document: Document, config: dict[str, str]) -> None:
         _set_cell_text(cells[2], value)
 
 
-def _add_separator(document: Document) -> None:
+def _add_separator(document: Document, *, compact: bool = False) -> None:
     paragraph = document.add_paragraph()
-    _format_paragraph(paragraph, line_spacing_pt=1, space_before_pt=16, space_after_pt=39)
+    _format_paragraph(
+        paragraph,
+        line_spacing_pt=1,
+        space_before_pt=16,
+        space_after_pt=30 if compact else 39,
+    )
     _set_paragraph_bottom_border(paragraph)
 
 
-def _add_body(document: Document, body: str) -> None:
+def _add_body(document: Document, body: str, *, compact: bool = False) -> None:
     blocks = _split_blocks(body)
     index = 0
+    line_spacing_pt = 13.1 if compact else 13.8
 
     while index < len(blocks):
         key_value_items = _collect_person_data_blocks(blocks, index)
         if len(key_value_items) >= 2:
-            _add_key_value_body_table(document, key_value_items)
+            _add_key_value_body_table(document, key_value_items, compact=compact, add_space_before=index > 0)
             index += len(key_value_items)
             continue
 
@@ -292,7 +308,7 @@ def _add_body(document: Document, body: str) -> None:
             _format_paragraph(
                 paragraph,
                 alignment=WD_ALIGN_PARAGRAPH.JUSTIFY,
-                line_spacing_pt=13.8,
+                line_spacing_pt=line_spacing_pt,
                 left_indent_in=0.28,
                 first_line_indent_in=-0.28,
                 keep_together=True,
@@ -307,7 +323,7 @@ def _add_body(document: Document, body: str) -> None:
             _format_paragraph(
                 paragraph,
                 alignment=WD_ALIGN_PARAGRAPH.JUSTIFY,
-                line_spacing_pt=13.8,
+                line_spacing_pt=line_spacing_pt,
                 left_indent_in=0.28,
                 first_line_indent_in=-0.28,
                 keep_together=True,
@@ -321,7 +337,7 @@ def _add_body(document: Document, body: str) -> None:
         _format_paragraph(
             paragraph,
             alignment=_body_alignment(block),
-            line_spacing_pt=13.8,
+            line_spacing_pt=line_spacing_pt,
             first_line_indent_in=0.5,
             keep_together=True,
         )
@@ -329,13 +345,28 @@ def _add_body(document: Document, body: str) -> None:
         index += 1
 
 
-def _add_key_value_body_table(document: Document, items: list[tuple[str, str]]) -> None:
+def _add_key_value_body_table(
+    document: Document,
+    items: list[tuple[str, str]],
+    *,
+    compact: bool = False,
+    add_space_before: bool = False,
+) -> None:
+    if add_space_before:
+        spacer = document.add_paragraph()
+        _format_paragraph(
+            spacer,
+            line_spacing_pt=1,
+            space_before_pt=3 if compact else 5,
+            space_after_pt=5 if compact else 7,
+        )
+
     table = document.add_table(rows=len(items), cols=3)
     table.autofit = False
     _set_table_indent(table, 0.5)
-    _set_table_width(table, 5.16)
+    _set_table_width(table, 5.22)
 
-    widths = [Inches(1.12), Inches(0.18), Inches(3.86)]
+    widths = [Inches(1.08), Inches(0.18), Inches(3.96)]
     for row_index, (label, value) in enumerate(items):
         row = table.rows[row_index]
         _set_row_cant_split(row)
@@ -343,14 +374,15 @@ def _add_key_value_body_table(document: Document, items: list[tuple[str, str]]) 
         for cell_index, width in enumerate(widths):
             cells[cell_index].width = width
             cells[cell_index].vertical_alignment = WD_CELL_VERTICAL_ALIGNMENT.TOP
-            _set_cell_margins(cells[cell_index], top=0, start=0, bottom=0, end=0)
+            _set_cell_margins(cells[cell_index], top=10, start=0, bottom=10, end=0)
+        _set_cell_margins(cells[2], top=10, start=80, bottom=10, end=0)
 
         _set_cell_text(cells[0], label)
         _set_cell_text(cells[1], ":")
         _set_cell_text(cells[2], value)
 
 
-def _add_closing(document: Document, closing: str) -> None:
+def _add_closing(document: Document, closing: str, *, compact: bool = False) -> None:
     if not closing:
         return
 
@@ -358,21 +390,24 @@ def _add_closing(document: Document, closing: str) -> None:
     _format_paragraph(
         paragraph,
         alignment=WD_ALIGN_PARAGRAPH.JUSTIFY,
-        line_spacing_pt=13.8,
+        line_spacing_pt=13.1 if compact else 13.8,
         first_line_indent_in=0.5,
-        space_before_pt=20,
+        space_before_pt=14 if compact else 20,
         keep_together=True,
         keep_with_next=True,
     )
     _append_text_run(paragraph, closing)
 
 
-def _add_signature_placeholder(document: Document, signatory: str) -> None:
+def _add_signature_placeholder(document: Document, signatory: str, *, compact: bool = False) -> None:
+    if not signatory.strip():
+        return
+
     spacer = document.add_paragraph()
     _format_paragraph(
         spacer,
         line_spacing_pt=1,
-        space_before_pt=42,
+        space_before_pt=26 if compact else 42,
         space_after_pt=0,
         keep_together=True,
         keep_with_next=True,
@@ -382,7 +417,7 @@ def _add_signature_placeholder(document: Document, signatory: str) -> None:
     table.alignment = WD_TABLE_ALIGNMENT.LEFT
     table.autofit = False
     _set_table_indent(table, SIGNATURE_TABLE_INDENT_IN)
-    _set_table_width(table, 1.56)
+    _set_table_width(table, SIGNATURE_TABLE_WIDTH_IN)
 
     widths = [Inches(0.35), Inches(0.86), Inches(0.35)]
     for row in table.rows:
@@ -422,7 +457,7 @@ def _add_signature_placeholder(document: Document, signatory: str) -> None:
     _append_text_run(name, signatory)
 
 
-def _add_carbon_copy(document: Document, carbon_copy: str) -> None:
+def _add_carbon_copy(document: Document, carbon_copy: str, *, compact: bool = False) -> None:
     lines = _split_lines(carbon_copy)
     if not lines:
         return
@@ -430,8 +465,8 @@ def _add_carbon_copy(document: Document, carbon_copy: str) -> None:
     heading = document.add_paragraph()
     _format_paragraph(
         heading,
-        line_spacing_pt=13.8,
-        space_before_pt=48,
+        line_spacing_pt=13.1 if compact else 13.8,
+        space_before_pt=30 if compact else 48,
         keep_with_next=True,
         keep_together=True,
     )
@@ -446,7 +481,7 @@ def _add_carbon_copy(document: Document, carbon_copy: str) -> None:
         if numbered:
             _format_paragraph(
                 paragraph,
-                line_spacing_pt=13.8,
+                line_spacing_pt=13.1 if compact else 13.8,
                 left_indent_in=0.28,
                 first_line_indent_in=-0.28,
                 keep_together=True,
@@ -457,7 +492,7 @@ def _add_carbon_copy(document: Document, carbon_copy: str) -> None:
         else:
             _format_paragraph(
                 paragraph,
-                line_spacing_pt=13.8,
+                line_spacing_pt=13.1 if compact else 13.8,
                 keep_together=True,
                 keep_with_next=index < len(lines),
             )
@@ -697,6 +732,94 @@ def _sanitize_memo_body(body: str, config: dict[str, str]) -> str:
     return _normalize_generated_text(clean)
 
 
+def _enforce_revision_constraints(body: str, config: dict[str, str]) -> str:
+    instruction = " ".join(
+        [
+            config.get("revision_instruction", ""),
+            config.get("additional_instruction", ""),
+        ]
+    ).lower()
+    if not config.get("revision_instruction") or not instruction.strip():
+        return body
+
+    max_paragraphs = _extract_max_paragraphs(instruction)
+    wants_shorter = any(marker in instruction for marker in ("lebih singkat", "ringkas", "dipersingkat"))
+    blocks = _split_blocks(body)
+    source_word_count = _word_count(config.get("content", ""))
+    violates_short_request = wants_shorter and source_word_count > 0 and _word_count(body) >= source_word_count
+    violates_paragraph_limit = max_paragraphs is not None and len(blocks) > max_paragraphs
+
+    if not violates_short_request and not violates_paragraph_limit:
+        return body
+
+    concise = _build_concise_revision_body(config, fallback_body=body)
+    if concise:
+        concise_blocks = _split_blocks(concise)
+        if max_paragraphs is None or len(concise_blocks) <= max_paragraphs:
+            if not wants_shorter or _word_count(concise) < _word_count(body):
+                return concise
+
+    if max_paragraphs is not None:
+        return "\n".join(blocks[:max_paragraphs]).strip()
+
+    return body
+
+
+def _extract_max_paragraphs(instruction: str) -> int | None:
+    match = re.search(
+        r"(?:maksimal|paling banyak|tidak lebih dari|jangan lebih dari)\s+(\d+|[a-z]+)\s+paragraf",
+        instruction,
+        flags=re.IGNORECASE,
+    )
+    if not match:
+        return None
+
+    raw_limit = match.group(1).lower()
+    if raw_limit.isdigit():
+        return max(1, int(raw_limit))
+
+    return INDONESIAN_SMALL_NUMBERS.get(raw_limit)
+
+
+def _build_concise_revision_body(config: dict[str, str], *, fallback_body: str) -> str:
+    source = config.get("content", "").strip()
+    basis = config.get("basis", "").strip().rstrip(".")
+    lead = basis if basis else "Sehubungan hal tersebut"
+
+    items = _extract_numbered_items(source) or _extract_numbered_items(fallback_body)
+    if items:
+        return f"{lead}, disampaikan hal-hal sebagai berikut: {_join_numbered_items(items)}"
+
+    source_blocks = _split_blocks(source)
+    if source_blocks:
+        clean_source = " ".join(source_blocks[:2]).strip().rstrip(".")
+        return f"{lead}, {clean_source}."
+
+    fallback_blocks = _split_blocks(fallback_body)
+    return " ".join(fallback_blocks[:2]).strip()
+
+
+def _extract_numbered_items(text: str) -> list[str]:
+    items: list[str] = []
+    for block in _split_blocks(text):
+        match = re.match(r"^\d+[.)]\s+(.+)$", block)
+        if match:
+            items.append(match.group(1).strip())
+    return items
+
+
+def _join_numbered_items(items: list[str]) -> str:
+    fragments = [f"{index}. {item.rstrip(' .;')}" for index, item in enumerate(items, start=1)]
+    if len(fragments) == 1:
+        return f"{fragments[0]}."
+
+    return f"{'; '.join(fragments[:-1])}; dan {fragments[-1]}."
+
+
+def _word_count(text: str) -> int:
+    return len(re.findall(r"\b[\w/-]+\b", text or ""))
+
+
 def _strip_forbidden_body_sections(text: str) -> str:
     text = re.sub(r"(?ims)(?:^|\n)\s*Tembusan\s*:.*$", "\n", text)
     lines = text.splitlines()
@@ -899,16 +1022,19 @@ def _resolve_page_size(config: dict[str, str], body: str) -> str:
     return "folio"
 
 
-def _should_start_signature_on_next_page(config: dict[str, str], body: str) -> bool:
-    if not _split_lines(config.get("carbon_copy", "")):
-        return False
-
+def _should_use_compact_layout(config: dict[str, str], body: str) -> bool:
     if config.get("page_size") != "folio":
         return False
 
     body_blocks = _split_blocks(body)
+    carbon_copy_lines = _split_lines(config.get("carbon_copy", ""))
     numbered_count = sum(1 for block in body_blocks if re.match(r"^\d+[.)]\s+.+$", block))
-    return len(body) >= 2400 or (len(body_blocks) >= 8 and numbered_count >= 5)
+    return (
+        len(body) >= 1500
+        or len(body_blocks) + len(carbon_copy_lines) >= 8
+        or numbered_count >= 5
+        or len(carbon_copy_lines) >= 3
+    )
 
 
 def _body_alignment(block: str):
