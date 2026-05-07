@@ -49,6 +49,11 @@ PERSON_DATA_PATTERN = re.compile(
 
 SIGNATURE_TABLE_INDENT_IN = 3.92
 SIGNATURE_TABLE_WIDTH_IN = 1.56
+SIGNATURE_SPACE_BEFORE_SHORT_PT = 110
+SIGNATURE_SPACE_BEFORE_MEDIUM_PT = 76
+SIGNATURE_SPACE_BEFORE_DEFAULT_PT = 56
+SIGNATURE_SPACE_BEFORE_COMPACT_PT = 34
+SEPARATOR_SPACE_AFTER_PT = 39
 
 INDONESIAN_SMALL_NUMBERS = {
     "satu": 1,
@@ -58,6 +63,18 @@ INDONESIAN_SMALL_NUMBERS = {
     "lima": 5,
     "enam": 6,
 }
+
+INSTRUCTION_ARTIFACT_PATTERNS = (
+    r"\bperbaiki\s+typo\b",
+    r"\bbagian\s+lain\s+jangan\s+diubah\b",
+    r"\bmetadata\s+jangan\s+berubah\b",
+    r"\bjangan\s+(?:diubah|berubah|mengubah|ubah)\b",
+    r"\b(?:pertahankan|mempertahankan)\s+(?:seluruh\s+)?data\b.*\btanpa\s+perubahan\b",
+    r"\btanpa\s+perubahan\b.*\bdata\b",
+    r"\binstruksi\s+revisi\b",
+    r"\barahan\s+tambahan\b",
+    r"\bkontrol\s+kerja\b",
+)
 
 
 @dataclass(slots=True)
@@ -120,8 +137,11 @@ def build_memo_prompt(
         "Aturan keluaran:\n"
         "- Tulis hanya isi utama memo, tanpa kop, nomor, Yth., Dari, Hal, Tanggal, tanda tangan, tembusan, atau footer.\n"
         "- Gunakan paragraf formal yang singkat, jelas, dan mengikuti contoh memorandum manual.\n"
+        "- Gunakan rumusan naskah dinas yang hemat, misalnya 'Sehubungan hal tersebut, dapat kami sampaikan sebagai berikut.' bila sesuai konteks.\n"
+        "- Hindari frasa generik atau terlalu operasional seperti 'beberapa hal yang perlu diperhatikan' bila data dapat langsung disampaikan.\n"
         "- Jika ada beberapa butir keputusan/permohonan, gunakan daftar bernomor 1., 2., 3.\n"
         "- Awali dengan dasar atau tindak lanjut bila konteks menyediakannya.\n"
+        "- Instruksi revisi dan arahan tambahan adalah kontrol kerja, bukan bagian naskah; jangan salin frasa seperti 'jangan diubah', 'metadata jangan berubah', atau 'perbaiki typo'.\n"
         "- Perlakukan kata seperti baseline, uji, skenario evaluasi, dan auto format sebagai instruksi internal; jangan salin ke naskah memo.\n"
         "- Jangan menulis blok Tembusan karena tembusan diambil dari konfigurasi.\n"
         "- Jangan mencantumkan sumber, URL, JSON, kutipan tool, atau blok [SOURCES: ...] dalam naskah memo.\n"
@@ -192,9 +212,16 @@ def _build_official_memo_document(memo_type: str, config: dict[str, str], body: 
     _add_separator(document, compact=compact_layout)
     _add_body(document, body, compact=compact_layout)
     _add_closing(document, config["closing"], compact=compact_layout)
-    _add_signature_placeholder(document, config["signatory"], compact=compact_layout)
+    signature_space_before = _signature_space_before(config, body, compact=compact_layout)
+    _add_signature_placeholder(
+        document,
+        config["signatory"],
+        compact=compact_layout,
+        space_before_pt=signature_space_before,
+    )
     _add_carbon_copy(document, config["carbon_copy"], compact=compact_layout)
-    _add_footer(document.sections[0])
+    if config["signatory"].strip():
+        _add_footer(document.sections[0])
 
     return document
 
@@ -282,7 +309,7 @@ def _add_separator(document: Document, *, compact: bool = False) -> None:
         paragraph,
         line_spacing_pt=1,
         space_before_pt=16,
-        space_after_pt=30 if compact else 39,
+        space_after_pt=SEPARATOR_SPACE_AFTER_PT,
     )
     _set_paragraph_bottom_border(paragraph)
 
@@ -399,15 +426,24 @@ def _add_closing(document: Document, closing: str, *, compact: bool = False) -> 
     _append_text_run(paragraph, closing)
 
 
-def _add_signature_placeholder(document: Document, signatory: str, *, compact: bool = False) -> None:
+def _add_signature_placeholder(
+    document: Document,
+    signatory: str,
+    *,
+    compact: bool = False,
+    space_before_pt: float | None = None,
+) -> None:
     if not signatory.strip():
         return
+
+    if space_before_pt is None:
+        space_before_pt = SIGNATURE_SPACE_BEFORE_COMPACT_PT if compact else SIGNATURE_SPACE_BEFORE_DEFAULT_PT
 
     spacer = document.add_paragraph()
     _format_paragraph(
         spacer,
         line_spacing_pt=1,
-        space_before_pt=26 if compact else 42,
+        space_before_pt=space_before_pt,
         space_after_pt=0,
         keep_together=True,
         keep_with_next=True,
@@ -716,7 +752,8 @@ def _build_searchable_text(memo_type: str, config: dict[str, str], body: str) ->
     if config["carbon_copy"]:
         parts.extend(["", "Tembusan:", config["carbon_copy"]])
 
-    parts.extend(["", FOOTER_NOTICE])
+    if config["signatory"].strip():
+        parts.extend(["", FOOTER_NOTICE])
     return "\n".join(part for part in parts if part is not None).strip()
 
 
@@ -727,6 +764,7 @@ def _sanitize_memo_body(body: str, config: dict[str, str]) -> str:
     clean = _strip_evaluation_artifacts(clean)
     clean = _strip_body_closing_sentences(clean)
     clean = _remove_configured_closing(clean, config.get("closing", ""))
+    clean = _strip_instruction_artifacts(clean, config)
     clean = _normalize_person_data_sequences(clean)
     clean = _dedupe_consecutive_blocks(clean)
     return _normalize_generated_text(clean)
@@ -980,6 +1018,63 @@ def _remove_configured_closing(text: str, closing: str) -> str:
     return "\n".join(output).strip()
 
 
+def _strip_instruction_artifacts(text: str, config: dict[str, str]) -> str:
+    clean = text
+    for instruction in (config.get("revision_instruction", ""), config.get("additional_instruction", "")):
+        clean = _remove_exact_instruction_text(clean, instruction)
+
+    output: list[str] = []
+    for block in _split_blocks(clean):
+        sentences = _split_sentence_like_parts(block)
+        kept = [sentence for sentence in sentences if not _looks_like_instruction_artifact(sentence)]
+        cleaned_block = " ".join(sentence.strip() for sentence in kept if sentence.strip())
+        cleaned_block = _normalize_spacing_after_sentence_removal(cleaned_block)
+        if cleaned_block and not _looks_like_instruction_artifact(cleaned_block):
+            output.append(cleaned_block)
+
+    return "\n".join(output).strip()
+
+
+def _remove_exact_instruction_text(text: str, instruction: str) -> str:
+    clean_instruction = (instruction or "").strip()
+    if not clean_instruction:
+        return text
+
+    variants = {
+        clean_instruction,
+        clean_instruction.rstrip(". "),
+        _normalize_comparison_text(clean_instruction),
+    }
+    clean = text
+    for variant in variants:
+        if not variant:
+            continue
+        clean = re.sub(re.escape(variant), "", clean, flags=re.IGNORECASE)
+
+    return _normalize_spacing_after_sentence_removal(clean)
+
+
+def _split_sentence_like_parts(block: str) -> list[str]:
+    parts = re.findall(r"[^.!?]+(?:[.!?]+|$)", block)
+    return parts if parts else [block]
+
+
+def _looks_like_instruction_artifact(text: str) -> bool:
+    normalized = _normalize_comparison_text(text)
+    if not normalized:
+        return False
+
+    return any(re.search(pattern, normalized, flags=re.IGNORECASE) for pattern in INSTRUCTION_ARTIFACT_PATTERNS)
+
+
+def _normalize_spacing_after_sentence_removal(text: str) -> str:
+    clean = re.sub(r"\s{2,}", " ", text or "").strip()
+    clean = re.sub(r"\s+([,.;:])", r"\1", clean)
+    clean = re.sub(r"([,;:])\s*([.;])", r"\2", clean)
+    clean = re.sub(r"\.{2,}", ".", clean)
+    return clean.strip(" ,;")
+
+
 def _dedupe_consecutive_blocks(text: str) -> str:
     output: list[str] = []
     previous_key = ""
@@ -1035,6 +1130,27 @@ def _should_use_compact_layout(config: dict[str, str], body: str) -> bool:
         or numbered_count >= 5
         or len(carbon_copy_lines) >= 3
     )
+
+
+def _signature_space_before(config: dict[str, str], body: str, *, compact: bool) -> float:
+    if compact:
+        return SIGNATURE_SPACE_BEFORE_COMPACT_PT
+
+    body_length = len(body or "")
+    carbon_copy_count = len(_split_lines(config.get("carbon_copy", "")))
+
+    if body_length <= 700:
+        space = SIGNATURE_SPACE_BEFORE_SHORT_PT
+    elif body_length <= 1150:
+        space = SIGNATURE_SPACE_BEFORE_MEDIUM_PT
+    else:
+        space = SIGNATURE_SPACE_BEFORE_DEFAULT_PT
+
+    if carbon_copy_count >= 3:
+        return max(SIGNATURE_SPACE_BEFORE_DEFAULT_PT, space - 32)
+    if carbon_copy_count >= 2:
+        return max(SIGNATURE_SPACE_BEFORE_DEFAULT_PT, space - 18)
+    return space
 
 
 def _body_alignment(block: str):

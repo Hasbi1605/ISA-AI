@@ -67,6 +67,25 @@ def _signature_qr_center_ratio(document, table):
     return qr_center_in / page_width_in
 
 
+def _signature_spacer_before_twips(table):
+    spacer = table._tbl.getprevious()
+    assert spacer is not None
+    spacing = spacer.find(qn("w:pPr")).find(qn("w:spacing"))
+    assert spacing is not None
+    return int(spacing.get(qn("w:before")))
+
+
+def _separator_after_twips(document):
+    for paragraph in document.paragraphs:
+        p_pr = paragraph._p.get_or_add_pPr()
+        if p_pr.find(qn("w:pBdr")) is None:
+            continue
+        spacing = p_pr.find(qn("w:spacing"))
+        assert spacing is not None
+        return int(spacing.get(qn("w:after")))
+    raise AssertionError("Separator paragraph not found")
+
+
 def test_generate_memo_docx_builds_official_memorandum_document():
     configuration = {
         "number": "M-02/I-Yog/IT.02/04/2026",
@@ -199,6 +218,8 @@ def test_build_memo_prompt_keeps_ai_inside_body_scope():
     assert "tanpa kop, nomor, Yth., Dari, Hal, Tanggal" in prompt
     assert "Arahan tambahan:" in prompt
     assert "kecuali user mengisinya di field Penutup" in prompt
+    assert "kontrol kerja, bukan bagian naskah" in prompt
+    assert "Sehubungan hal tersebut" in prompt
 
 
 def test_build_memo_prompt_prioritizes_revision_instruction_and_current_context():
@@ -261,6 +282,47 @@ def test_generate_memo_docx_sanitizes_evaluation_artifacts_and_forbidden_section
     assert all_text.count(closing) == 1
     assert all_text.count("Tembusan:") == 1
     assert all_text.count("Kepala Bagian Keamanan") == 1
+
+
+def test_generate_memo_docx_strips_revision_and_additional_instruction_artifacts():
+    draft = generate_memo_docx(
+        memo_type="memo_internal",
+        title="Revisi Typo Nama Orang",
+        context="Revisi typo nama orang.",
+        text_generator=lambda prompt: (
+            "Menindaklanjuti proses pendataan pegawai pendamping kegiatan integrasi aplikasi, "
+            "terdapat kekeliruan penulisan identitas yang perlu diperbaiki. "
+            "Adapun data pegawai yang benar adalah sebagai berikut:\n"
+            "nama: Muhammad Hasbi Ash Shiddiqi\n"
+            "NIP: 231210013\n"
+            "Perbaikan data tersebut dilakukan untuk keperluan pendampingan kegiatan integrasi aplikasi. "
+            "Perbaiki typo nama menjadi Muhammad Hasbi Ash Shiddiqi, bagian lain jangan diubah.\n"
+            "Hal ini disampaikan dengan mempertahankan seluruh data orang tersebut di atas tanpa perubahan."
+        ),
+        configuration={
+            "number": "EVAL-38/IST/YK/05/2026",
+            "recipient": "Kepala Bagian SDM",
+            "sender": "Kepala Istana Kepresidenan Yogyakarta",
+            "subject": "Revisi Typo Nama Orang",
+            "date": "7 Mei 2026",
+            "signatory": "Deni Mulyana",
+            "carbon_copy": "Kepala Subbagian Kepegawaian",
+            "page_size": "letter",
+            "revision_instruction": "Perbaiki typo nama menjadi Muhammad Hasbi Ash Shiddiqi, bagian lain jangan diubah.",
+            "additional_instruction": "Pertahankan seluruh data orang tanpa perubahan.",
+        },
+    )
+
+    document = Document(BytesIO(draft.content))
+    all_text = _all_document_text(document)
+
+    assert "Muhammad Hasbi Ash Shiddiqi" in all_text
+    assert "231210013" in all_text
+    assert "perbaiki typo" not in all_text.lower()
+    assert "bagian lain jangan" not in all_text.lower()
+    assert "pertahankan seluruh data" not in all_text.lower()
+    assert "tanpa perubahan" not in all_text.lower()
+    assert "perbaiki typo" not in draft.searchable_text.lower()
 
 
 def test_generate_memo_docx_removes_carbon_copy_from_body_but_keeps_configuration_copy():
@@ -422,6 +484,8 @@ def test_generate_memo_docx_keeps_blank_signatory_blank():
     assert not _has_table_containing(document, "QR\nTTE")
     assert "Deni Mulyana" not in _all_document_text(document)
     assert "Deni Mulyana" not in draft.searchable_text
+    assert "Dokumen ini telah ditandatangani secara elektronik" not in document.sections[0].footer.paragraphs[0].text
+    assert "Dokumen ini telah ditandatangani secara elektronik" not in draft.searchable_text
 
 
 def test_generate_memo_docx_uses_compact_layout_without_manual_page_break_for_long_folio_with_carbon_copy():
@@ -457,6 +521,38 @@ def test_generate_memo_docx_uses_compact_layout_without_manual_page_break_for_lo
     assert not page_breaks
     assert qr_table.cell(1, 0).text == "Deni Mulyana"
     assert "Tembusan:" in _all_document_text(document)
+    assert _separator_after_twips(document) >= 780
+    assert _signature_spacer_before_twips(qr_table) <= 700
+
+
+def test_generate_memo_docx_anchors_short_signature_lower_without_changing_horizontal_qr():
+    draft = generate_memo_docx(
+        memo_type="memo_internal",
+        title="Penyampaian Kontak PIC Layanan",
+        context="Data PIC layanan.",
+        text_generator=lambda prompt: (
+            "Dalam rangka mempercepat koordinasi layanan internal, dengan ini disampaikan "
+            "kontak PIC layanan sebagai berikut:\n"
+            "nama: Eko Prasetyo\n"
+            "NIP: 199411172025211057\n"
+            "jabatan: Pengadministrasi Perkantoran"
+        ),
+        configuration={
+            "number": "EVAL-19/IST/YK/05/2026",
+            "recipient": "Kepala Unit Layanan",
+            "sender": "Kepala Istana Kepresidenan Yogyakarta",
+            "subject": "Penyampaian Kontak PIC Layanan",
+            "date": "7 Mei 2026",
+            "signatory": "Deni Mulyana",
+            "page_size": "letter",
+        },
+    )
+
+    document = Document(BytesIO(draft.content))
+    qr_table = _find_table_containing(document, "QR\nTTE")
+
+    assert _signature_spacer_before_twips(qr_table) >= 2000
+    assert 0.67 <= _signature_qr_center_ratio(document, qr_table) <= 0.72
 
 
 def test_generate_memo_docx_enforces_short_revision_constraints():
