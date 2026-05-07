@@ -55,6 +55,32 @@ lanes:
         model_name: "openai/gpt-4o"
         api_key_env: "GITHUB_TOKEN_2"
         base_url: "https://models.github.ai/inference"
+
+      # GitHub Models fallback murah sebelum keluar ke provider lain.
+      # Setiap model dicoba dengan 2 akun/token agar limit per akun punya cadangan.
+      - label: "GPT-4.1 Mini (Primary)"
+        provider: "litellm"
+        model_name: "openai/gpt-4.1-mini"
+        api_key_env: "GITHUB_TOKEN"
+        base_url: "https://models.github.ai/inference"
+
+      - label: "GPT-4.1 Mini (Backup Node)"
+        provider: "litellm"
+        model_name: "openai/gpt-4.1-mini"
+        api_key_env: "GITHUB_TOKEN_2"
+        base_url: "https://models.github.ai/inference"
+
+      - label: "GPT-4.1 Nano (Primary)"
+        provider: "litellm"
+        model_name: "openai/gpt-4.1-nano"
+        api_key_env: "GITHUB_TOKEN"
+        base_url: "https://models.github.ai/inference"
+
+      - label: "GPT-4.1 Nano (Backup Node)"
+        provider: "litellm"
+        model_name: "openai/gpt-4.1-nano"
+        api_key_env: "GITHUB_TOKEN_2"
+        base_url: "https://models.github.ai/inference"
         
       # Fallback utama saat GPT-4.1/4o kena 413: Groq punya 128K context window,
       # production-ready, dan konsisten mengikuti instruksi RAG.
@@ -62,6 +88,31 @@ lanes:
         provider: "litellm"
         model_name: "groq/llama-3.3-70b-versatile"
         api_key_env: "GROQ_API_KEY"
+
+      # Fallback GitHub Models non-OpenAI sebelum Bedrock.
+      - label: "Mistral Medium 3 (Primary)"
+        provider: "litellm"
+        model_name: "mistral-ai/mistral-medium-2505"
+        api_key_env: "GITHUB_TOKEN"
+        base_url: "https://models.github.ai/inference"
+
+      - label: "Mistral Medium 3 (Backup Node)"
+        provider: "litellm"
+        model_name: "mistral-ai/mistral-medium-2505"
+        api_key_env: "GITHUB_TOKEN_2"
+        base_url: "https://models.github.ai/inference"
+
+      - label: "Mistral Small 3.1 (Primary)"
+        provider: "litellm"
+        model_name: "mistral-ai/mistral-small-2503"
+        api_key_env: "GITHUB_TOKEN"
+        base_url: "https://models.github.ai/inference"
+
+      - label: "Mistral Small 3.1 (Backup Node)"
+        provider: "litellm"
+        model_name: "mistral-ai/mistral-small-2503"
+        api_key_env: "GITHUB_TOKEN_2"
+        base_url: "https://models.github.ai/inference"
 
       # Bedrock fallback: kualitas memo dulu, lalu fallback makin hemat.
       # Secret tidak disimpan di repo; set env:

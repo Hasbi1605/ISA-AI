@@ -47,6 +47,33 @@ def test_chat_models_include_bedrock_fallback_without_inline_secret():
     assert gemini_models == []
 
 
+def test_chat_models_include_extra_github_fallbacks_with_two_tokens():
+    from app import config_loader
+
+    models = config_loader.get_chat_models()
+    github_models = [
+        (model["model_name"], model["api_key_env"])
+        for model in models
+        if model.get("provider") == "litellm"
+        and model.get("base_url") == "https://models.github.ai/inference"
+    ]
+
+    assert github_models[:8] == [
+        ("openai/gpt-4.1", "GITHUB_TOKEN"),
+        ("openai/gpt-4.1", "GITHUB_TOKEN_2"),
+        ("openai/gpt-4o", "GITHUB_TOKEN"),
+        ("openai/gpt-4o", "GITHUB_TOKEN_2"),
+        ("openai/gpt-4.1-mini", "GITHUB_TOKEN"),
+        ("openai/gpt-4.1-mini", "GITHUB_TOKEN_2"),
+        ("openai/gpt-4.1-nano", "GITHUB_TOKEN"),
+        ("openai/gpt-4.1-nano", "GITHUB_TOKEN_2"),
+    ]
+    assert ("mistral-ai/mistral-medium-2505", "GITHUB_TOKEN") in github_models
+    assert ("mistral-ai/mistral-medium-2505", "GITHUB_TOKEN_2") in github_models
+    assert ("mistral-ai/mistral-small-2503", "GITHUB_TOKEN") in github_models
+    assert ("mistral-ai/mistral-small-2503", "GITHUB_TOKEN_2") in github_models
+
+
 def test_system_prompt_uses_ista_work_assistant_persona():
     from app import config_loader
 
