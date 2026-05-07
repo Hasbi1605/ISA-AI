@@ -59,7 +59,7 @@ class MemoFileController extends Controller
         $headers = [
             'Content-Type' => 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
             'X-Content-Type-Options' => 'nosniff',
-            'Cache-Control' => 'private, max-age=300',
+            'Cache-Control' => 'no-store',
         ];
 
         if ($disposition === 'attachment') {

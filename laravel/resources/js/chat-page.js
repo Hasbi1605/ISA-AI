@@ -845,7 +845,7 @@ const registerChatPageData = (Alpine) => {
     Alpine.data('memoDocumentDownloads', () => ({
         downloadLoading: null,
 
-        async downloadMemo(url, type, fallbackName) {
+        async downloadMemo(url, type, fallbackName, versionId = null) {
             if (this.downloadLoading) {
                 return;
             }
@@ -853,9 +853,13 @@ const registerChatPageData = (Alpine) => {
             this.downloadLoading = type;
 
             try {
-                const response = await fetch(url, {
+                const response = await fetch(this.versionedUrl(url, versionId), {
+                    cache: 'no-store',
                     credentials: 'same-origin',
-                    headers: { 'X-Requested-With': 'XMLHttpRequest' },
+                    headers: {
+                        'Cache-Control': 'no-cache',
+                        'X-Requested-With': 'XMLHttpRequest',
+                    },
                 });
 
                 if (!response.ok) {
@@ -870,6 +874,17 @@ const registerChatPageData = (Alpine) => {
             } finally {
                 this.downloadLoading = null;
             }
+        },
+
+        versionedUrl(url, fallbackVersionId = null) {
+            const requestUrl = new URL(url, window.location.origin);
+            const selectedVersionId = document.getElementById('memo-version-select')?.value || fallbackVersionId;
+
+            if (selectedVersionId) {
+                requestUrl.searchParams.set('version_id', selectedVersionId);
+            }
+
+            return requestUrl.toString();
         },
 
         fileNameFromDisposition(disposition, fallbackName) {

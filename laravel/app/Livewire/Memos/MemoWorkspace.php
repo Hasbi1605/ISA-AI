@@ -280,10 +280,8 @@ class MemoWorkspace extends Component
             return;
         }
 
-        $memo = app(MemoGenerationService::class)->activateVersion($memo, $version, false);
-
         $this->activeMemoVersionId = $version->id;
-        $this->title = $memo->title;
+        $this->title = (string) data_get($version->configuration, 'subject', $memo->title);
         $this->applyMemoConfiguration($version->configuration ?? []);
         $this->showMemoConfiguration = false;
         $this->rememberCurrentThread();
@@ -325,28 +323,42 @@ class MemoWorkspace extends Component
             return null;
         }
 
-        $memo = Memo::where('id', $this->activeMemoId)
+        $memo = Memo::with('currentVersion')
+            ->where('id', $this->activeMemoId)
             ->where('user_id', Auth::id())
             ->first();
 
-        if (! $memo || ! $memo->file_path) {
+        if (! $memo) {
+            return null;
+        }
+
+        $version = $this->editorMemoVersion($memo);
+
+        $filePath = $version?->file_path ?: $memo->file_path;
+
+        if (! $filePath) {
             return null;
         }
 
         $signer = app(JwtSigner::class);
         $laravelInternalUrl = rtrim((string) config('services.onlyoffice.laravel_internal_url', config('app.url')), '/');
         $ttlMinutes = max(1, (int) config('services.onlyoffice.signed_url_ttl_minutes', 30));
-        $versionId = $this->activeMemoVersionId ?: $memo->current_version_id;
+        $versionId = $version?->id;
         $documentPath = URL::temporarySignedRoute('memos.file.signed', now()->addMinutes($ttlMinutes), array_filter([
             'memo' => $memo,
             'version_id' => $versionId,
         ], fn ($value) => filled($value)), false);
-        $callbackPath = route('onlyoffice.callback', $memo, false);
+        $callbackPath = route('onlyoffice.callback', array_filter([
+            'memo' => $memo,
+            'version_id' => $versionId,
+        ], fn ($value) => filled($value)), false);
 
         $config = [
             'document' => [
                 'fileType' => 'docx',
-                'key' => 'memo-'.$memo->id.'-v'.($versionId ?: 0).'-'.$memo->updated_at?->timestamp,
+                'key' => $version
+                    ? 'memo-'.$memo->id.'-v'.$version->id.'-'.$version->updated_at?->timestamp
+                    : 'memo-'.$memo->id.'-current-'.$memo->updated_at?->timestamp,
                 'title' => $memo->title.'.docx',
                 'url' => $laravelInternalUrl.$documentPath,
             ],
@@ -365,6 +377,22 @@ class MemoWorkspace extends Component
         $config['token'] = $signer->sign($config);
 
         return $config;
+    }
+
+    protected function editorMemoVersion(Memo $memo): ?MemoVersion
+    {
+        if ($this->activeMemoVersionId) {
+            $version = MemoVersion::where('memo_id', $memo->id)
+                ->whereKey($this->activeMemoVersionId)
+                ->first();
+
+            if ($version) {
+                return $version;
+            }
+        }
+
+        return $memo->currentVersion
+            ?: $memo->versions()->orderByDesc('version_number')->first();
     }
 
     public function render()

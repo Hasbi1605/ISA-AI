@@ -330,13 +330,25 @@ class MemoWorkspaceTest extends TestCase
         $this->assertSame('tambahkan tembusan nomor 4, untuk Kepala Istana Kapak', $revisedMemo->configuration['revision_instruction']);
         $this->assertSame($memo->id, $revisedMemo->id);
         $this->assertNotSame($originalVersion->id, $revisedMemo->current_version_id);
+        $currentVersionId = $revisedMemo->current_version_id;
+        $currentFilePath = $revisedMemo->file_path;
 
         $component
             ->call('switchMemoVersion', $originalVersion->id)
             ->assertSet('activeMemoVersionId', $originalVersion->id)
             ->assertSet('memoCarbonCopy', "Kepala Dinas Sekretariat Negara\nKepala IKY\nKepala KOMDIGI");
 
-        $this->assertSame($originalVersion->file_path, $memo->refresh()->file_path);
+        $memo->refresh();
+        $this->assertSame($currentVersionId, $memo->current_version_id);
+        $this->assertSame($currentFilePath, $memo->file_path);
+
+        $editorConfig = $component->instance()->editorConfig();
+        parse_str((string) parse_url($editorConfig['document']['url'], PHP_URL_QUERY), $documentQuery);
+        parse_str((string) parse_url($editorConfig['editorConfig']['callbackUrl'], PHP_URL_QUERY), $callbackQuery);
+
+        $this->assertSame((string) $originalVersion->id, $documentQuery['version_id']);
+        $this->assertSame((string) $originalVersion->id, $callbackQuery['version_id']);
+        $this->assertStringStartsWith('memo-'.$memo->id.'-v'.$originalVersion->id.'-', $editorConfig['document']['key']);
     }
 
     public function test_memo_history_can_be_deleted_like_chat_history(): void

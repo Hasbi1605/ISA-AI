@@ -273,6 +273,123 @@ class OnlyOfficeCallbackTest extends TestCase
         Http::assertNothingSent();
     }
 
+    public function test_callback_with_version_id_updates_only_that_version_file(): void
+    {
+        config([
+            'services.onlyoffice.jwt_secret' => 'callback-secret',
+            'services.onlyoffice.internal_url' => 'https://onlyoffice.test',
+        ]);
+        Storage::fake('local');
+        Http::fake([
+            'https://onlyoffice.test/version-one.docx' => Http::response('late-version-one-docx', 200),
+        ]);
+
+        $user = User::factory()->create(['email_verified_at' => now()]);
+        $memo = $this->createMemo($user);
+        $versionOne = $memo->versions()->where('version_number', 1)->firstOrFail();
+        $versionTwo = $memo->versions()->create([
+            'version_number' => 2,
+            'label' => 'Versi 2',
+            'file_path' => 'memos/'.$user->id.'/memo-v2.docx',
+            'status' => Memo::STATUS_GENERATED,
+            'configuration' => [],
+            'searchable_text' => 'Versi 2',
+        ]);
+
+        Storage::disk('local')->put($versionOne->file_path, 'original-version-one');
+        Storage::disk('local')->put($versionTwo->file_path, 'current-version-two');
+
+        $memo->forceFill([
+            'file_path' => $versionTwo->file_path,
+            'current_version_id' => $versionTwo->id,
+        ])->save();
+
+        $key = 'memo-'.$memo->id.'-v'.$versionOne->id.'-123';
+        $url = 'https://onlyoffice.test/version-one.docx';
+        $token = (new JwtSigner('callback-secret'))->sign([
+            'status' => 2,
+            'key' => $key,
+            'url' => $url,
+            'exp' => time() + 60,
+        ]);
+
+        $this->postJson(route('onlyoffice.callback', [
+            'memo' => $memo,
+            'version_id' => $versionOne->id,
+        ]), [
+            'status' => 2,
+            'key' => $key,
+            'url' => $url,
+            'token' => $token,
+        ])->assertOk()
+            ->assertJson(['error' => 0]);
+
+        $this->assertSame('late-version-one-docx', Storage::disk('local')->get($versionOne->file_path));
+        $this->assertSame('current-version-two', Storage::disk('local')->get($versionTwo->file_path));
+
+        $memo->refresh();
+        $this->assertSame($versionTwo->id, $memo->current_version_id);
+        $this->assertSame($versionTwo->file_path, $memo->file_path);
+        $this->assertSame(Memo::STATUS_EDITED, $versionOne->refresh()->status);
+        $this->assertSame(Memo::STATUS_GENERATED, $versionTwo->refresh()->status);
+    }
+
+    public function test_legacy_callback_key_version_updates_only_that_version_file(): void
+    {
+        config([
+            'services.onlyoffice.jwt_secret' => 'callback-secret',
+            'services.onlyoffice.internal_url' => 'https://onlyoffice.test',
+        ]);
+        Storage::fake('local');
+        Http::fake([
+            'https://onlyoffice.test/legacy-version-one.docx' => Http::response('legacy-version-one-docx', 200),
+        ]);
+
+        $user = User::factory()->create(['email_verified_at' => now()]);
+        $memo = $this->createMemo($user);
+        $versionOne = $memo->versions()->where('version_number', 1)->firstOrFail();
+        $versionTwo = $memo->versions()->create([
+            'version_number' => 2,
+            'label' => 'Versi 2',
+            'file_path' => 'memos/'.$user->id.'/memo-v2.docx',
+            'status' => Memo::STATUS_GENERATED,
+            'configuration' => [],
+            'searchable_text' => 'Versi 2',
+        ]);
+
+        Storage::disk('local')->put($versionOne->file_path, 'original-version-one');
+        Storage::disk('local')->put($versionTwo->file_path, 'current-version-two');
+
+        $memo->forceFill([
+            'file_path' => $versionTwo->file_path,
+            'current_version_id' => $versionTwo->id,
+        ])->save();
+
+        $key = 'memo-'.$memo->id.'-v'.$versionOne->id.'-legacy';
+        $url = 'https://onlyoffice.test/legacy-version-one.docx';
+        $token = (new JwtSigner('callback-secret'))->sign([
+            'status' => 2,
+            'key' => $key,
+            'url' => $url,
+            'exp' => time() + 60,
+        ]);
+
+        $this->postJson(route('onlyoffice.callback', $memo), [
+            'status' => 2,
+            'key' => $key,
+            'url' => $url,
+            'token' => $token,
+        ])->assertOk()
+            ->assertJson(['error' => 0]);
+
+        $this->assertSame('legacy-version-one-docx', Storage::disk('local')->get($versionOne->file_path));
+        $this->assertSame('current-version-two', Storage::disk('local')->get($versionTwo->file_path));
+
+        $memo->refresh();
+        $this->assertSame($versionTwo->id, $memo->current_version_id);
+        $this->assertSame($versionTwo->file_path, $memo->file_path);
+    }
+
     protected function createMemo(User $user): Memo
     {
         $memo = Memo::create([

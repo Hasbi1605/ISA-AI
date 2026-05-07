@@ -34,8 +34,11 @@
                 </button>
                 <button type="button"
                         data-download-url="{{ route('memos.download', $memoDownloadRouteParameters) }}"
+                        data-download-version-id="{{ $activeMemoVersionId }}"
                         data-download-filename="{{ e(($title ?: 'memo').'.docx') }}"
-                        @click="downloadMemo($el.dataset.downloadUrl, 'docx', $el.dataset.downloadFilename)"
+                        @click="downloadMemo($el.dataset.downloadUrl, 'docx', $el.dataset.downloadFilename, $el.dataset.downloadVersionId)"
+                        wire:loading.attr="disabled"
+                        wire:target="switchMemoVersion,generateRevisionFromChat,generateFromChat,generateConfiguredMemo"
                         :disabled="downloadLoading !== null"
                         class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-stone-200 dark:border-gray-700 text-[12px] font-semibold text-stone-600 dark:text-gray-300 hover:bg-stone-100 dark:hover:bg-gray-800 transition-all disabled:cursor-not-allowed disabled:opacity-60">
                     <span x-show="downloadLoading === 'docx'" style="display:none;" class="h-3.5 w-3.5 rounded-full border-2 border-current border-t-transparent animate-spin" aria-hidden="true"></span>
@@ -46,8 +49,11 @@
                 </button>
                 <button type="button"
                         data-download-url="{{ route('memos.export.pdf', $memoDownloadRouteParameters) }}"
+                        data-download-version-id="{{ $activeMemoVersionId }}"
                         data-download-filename="{{ e(($title ?: 'memo').'.pdf') }}"
-                        @click="downloadMemo($el.dataset.downloadUrl, 'pdf', $el.dataset.downloadFilename)"
+                        @click="downloadMemo($el.dataset.downloadUrl, 'pdf', $el.dataset.downloadFilename, $el.dataset.downloadVersionId)"
+                        wire:loading.attr="disabled"
+                        wire:target="switchMemoVersion,generateRevisionFromChat,generateFromChat,generateConfiguredMemo"
                         :disabled="downloadLoading !== null"
                         class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-ista-primary text-[12px] font-semibold text-white hover:bg-ista-dark transition-all disabled:cursor-not-allowed disabled:opacity-70">
                     <span x-show="downloadLoading === 'pdf'" style="display:none;" class="h-3.5 w-3.5 rounded-full border-2 border-white/70 border-t-transparent animate-spin" aria-hidden="true"></span>

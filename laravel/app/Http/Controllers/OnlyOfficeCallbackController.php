@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Models\Memo;
+use App\Models\MemoVersion;
 use App\Services\OnlyOffice\JwtSigner;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -29,6 +30,7 @@ class OnlyOfficeCallbackController extends Controller
 
         $callback = $this->normalizeSignedCallbackPayload($request, $payload);
         $this->validateSignedCallbackPayload($memo, $callback);
+        $version = $this->resolveMemoVersion($request, $memo, $callback);
         $status = (int) $callback['status'];
 
         if (in_array($status, [2, 6], true)) {
@@ -39,23 +41,39 @@ class OnlyOfficeCallbackController extends Controller
             $response = Http::timeout(60)->get($url);
             abort_unless($response->successful(), Response::HTTP_BAD_GATEWAY, 'Gagal mengunduh file dari OnlyOffice.');
 
-            $path = $memo->file_path ?: 'memos/'.$memo->user_id.'/'.$memo->id.'.docx';
+            $path = $version?->file_path ?: ($memo->file_path ?: 'memos/'.$memo->user_id.'/'.$memo->id.'.docx');
             Storage::disk('local')->put($path, $response->body());
 
-            $memo->forceFill([
-                'file_path' => $path,
-                'status' => Memo::STATUS_EDITED,
-                'searchable_text' => $memo->searchable_text ?: $memo->title,
-            ])->save();
+            if ($version) {
+                $version->forceFill([
+                    'file_path' => $path,
+                    'status' => Memo::STATUS_EDITED,
+                    'searchable_text' => $version->searchable_text ?: $memo->searchable_text ?: $memo->title,
+                ])->save();
 
-            $currentVersion = $memo->currentVersion()->first();
-
-            if ($currentVersion) {
-                $currentVersion->forceFill([
+                if ((int) $memo->current_version_id === (int) $version->id || $memo->current_version_id === null) {
+                    $memo->forceFill([
+                        'file_path' => $path,
+                        'status' => Memo::STATUS_EDITED,
+                        'searchable_text' => $version->searchable_text ?: $memo->searchable_text ?: $memo->title,
+                    ])->save();
+                }
+            } else {
+                $memo->forceFill([
                     'file_path' => $path,
                     'status' => Memo::STATUS_EDITED,
                     'searchable_text' => $memo->searchable_text ?: $memo->title,
                 ])->save();
+
+                $currentVersion = $memo->currentVersion()->first();
+
+                if ($currentVersion) {
+                    $currentVersion->forceFill([
+                        'file_path' => $path,
+                        'status' => Memo::STATUS_EDITED,
+                        'searchable_text' => $memo->searchable_text ?: $memo->title,
+                    ])->save();
+                }
             }
         }
 
@@ -98,6 +116,37 @@ class OnlyOfficeCallbackController extends Controller
             $url = (string) ($callback['url'] ?? '');
             abort_if($url === '', Response::HTTP_BAD_REQUEST, 'URL file OnlyOffice kosong.');
         }
+    }
+
+    /**
+     * @param  array<string, mixed>  $callback
+     */
+    protected function resolveMemoVersion(Request $request, Memo $memo, array $callback): ?MemoVersion
+    {
+        $versionId = $request->query('version_id');
+        $key = (string) ($callback['key'] ?? '');
+
+        if ($versionId === null || $versionId === '') {
+            $memoId = preg_quote((string) $memo->id, '/');
+
+            if (! preg_match('/^memo-'.$memoId.'-v([1-9][0-9]*)-/', $key, $matches)) {
+                return null;
+            }
+
+            $versionId = $matches[1];
+        }
+
+        abort_unless(is_numeric($versionId), Response::HTTP_FORBIDDEN);
+
+        $version = MemoVersion::where('memo_id', $memo->id)
+            ->whereKey((int) $versionId)
+            ->first();
+
+        abort_unless($version, Response::HTTP_FORBIDDEN);
+
+        abort_unless(str_starts_with($key, 'memo-'.$memo->id.'-v'.$version->id.'-'), Response::HTTP_FORBIDDEN);
+
+        return $version;
     }
 
     protected function isTrustedOnlyOfficeUrl(string $url): bool
