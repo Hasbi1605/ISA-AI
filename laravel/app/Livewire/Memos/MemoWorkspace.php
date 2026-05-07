@@ -857,7 +857,7 @@ class MemoWorkspace extends Component
         $this->memoDate = (string) ($configuration['date'] ?? $this->memoDate);
         $this->memoBasis = (string) ($configuration['basis'] ?? $this->memoBasis);
         $this->memoContent = (string) ($configuration['content'] ?? $this->memoContent);
-        $this->memoClosing = (string) ($configuration['closing'] ?? $this->memoClosing);
+        $this->memoClosing = (string) ($configuration['closing'] ?? '');
         $this->memoSignatory = (string) ($configuration['signatory'] ?? $this->memoSignatory);
         $this->memoCarbonCopy = (string) ($configuration['carbon_copy'] ?? $this->memoCarbonCopy);
         $storedPageSizeMode = (string) ($configuration['page_size_mode'] ?? '');
@@ -865,7 +865,7 @@ class MemoWorkspace extends Component
         $this->memoPageSize = in_array($storedPageSizeMode, array_keys($this->memoPageSizes()), true)
             ? $storedPageSizeMode
             : (in_array($storedPageSize, array_keys($this->memoPageSizes()), true) ? $storedPageSize : $this->memoPageSize);
-        $this->memoAdditionalInstruction = (string) ($configuration['additional_instruction'] ?? $this->memoAdditionalInstruction);
+        $this->memoAdditionalInstruction = (string) ($configuration['additional_instruction'] ?? '');
     }
 
     protected function resetMemoConfiguration(): void

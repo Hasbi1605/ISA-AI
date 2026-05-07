@@ -165,6 +165,29 @@ def test_generate_memo_docx_does_not_add_default_closing_when_blank():
     assert "Deni Mulyana" in _all_document_text(document)
 
 
+def test_generate_memo_docx_rejects_ai_unavailable_fallback_message():
+    try:
+        generate_memo_docx(
+            memo_type="memo_internal",
+            title="Revisi Ubah Penerima Memo",
+            context="Revisi penerima memo.",
+            text_generator=lambda prompt: "❌ Maaf, semua layanan AI sedang tidak tersedia. Silakan coba lagi nanti.",
+            configuration={
+                "number": "EVAL-32/IST/YK/05/2026",
+                "recipient": "Kepala Bagian Administrasi",
+                "sender": "Kepala Istana Kepresidenan Yogyakarta",
+                "subject": "Revisi Ubah Penerima Memo",
+                "date": "7 Mei 2026",
+                "signatory": "Deni Mulyana",
+                "page_size": "letter",
+            },
+        )
+    except ValueError as exc:
+        assert "Layanan AI" in str(exc)
+    else:
+        raise AssertionError("Expected AI unavailable fallback to be rejected")
+
+
 def test_generate_memo_docx_auto_page_size_uses_generated_body_length():
     long_body = "\n".join(
         [
@@ -284,6 +307,33 @@ def test_generate_memo_docx_sanitizes_evaluation_artifacts_and_forbidden_section
     assert all_text.count("Kepala Bagian Keamanan") == 1
 
 
+def test_generate_memo_docx_strips_dangling_closing_fragment():
+    draft = generate_memo_docx(
+        memo_type="memo_internal",
+        title="Kebutuhan Teknis Ruang Rapat Hybrid",
+        context="Kebutuhan teknis ruang rapat hybrid.",
+        text_generator=lambda prompt: (
+            "Sehubungan dengan kebutuhan pelaksanaan rapat hybrid, diminta agar unit terkait "
+            "menyiapkan perangkat audio, kamera, dan jaringan pendukung. Dengan"
+        ),
+        configuration={
+            "number": "EVAL-15/IST/YK/05/2026",
+            "recipient": "Kepala Subbagian Tata Usaha",
+            "sender": "Kepala Istana Kepresidenan Yogyakarta",
+            "subject": "Kebutuhan Teknis Ruang Rapat Hybrid",
+            "date": "7 Mei 2026",
+            "signatory": "Deni Mulyana",
+            "page_size": "letter",
+        },
+    )
+
+    all_text = _all_document_text(Document(BytesIO(draft.content)))
+
+    assert "Dengan\n" not in all_text
+    assert "\nDengan\n" not in draft.searchable_text
+    assert "jaringan pendukung" in draft.searchable_text
+
+
 def test_generate_memo_docx_strips_revision_and_additional_instruction_artifacts():
     draft = generate_memo_docx(
         memo_type="memo_internal",
@@ -395,6 +445,39 @@ def test_generate_memo_docx_formats_pic_data_as_key_value_table():
     assert _cell_margin_twips(data_table.cell(0, 2), "start") >= 80
 
 
+def test_generate_memo_docx_keeps_schedule_inside_key_value_table():
+    draft = generate_memo_docx(
+        memo_type="memo_internal",
+        title="Penugasan Staf Pendamping Kegiatan",
+        context="Penugasan staf pendamping kegiatan.",
+        text_generator=lambda prompt: (
+            "Dalam rangka pelaksanaan kegiatan integrasi aplikasi layanan internal, perlu dilakukan "
+            "penugasan staf pendamping kegiatan untuk memastikan kelancaran proses integrasi.\n"
+            "nama: Andi Susanto\n"
+            "NIP: 197605172006041001\n"
+            "jabatan: Kasubag Teknologi Informasi\n"
+            "unit kerja: Bagian SDM\n"
+            "5. Jadwal pendampingan: Senin hingga Jumat, pukul 08.00-16.00 WIB."
+        ),
+        configuration={
+            "number": "EVAL-06/IST/YK/05/2026",
+            "recipient": "Kepala Bagian SDM",
+            "sender": "Kepala Istana Kepresidenan Yogyakarta",
+            "subject": "Penugasan Staf Pendamping Kegiatan",
+            "date": "7 Mei 2026",
+            "signatory": "Deni Mulyana",
+            "page_size": "letter",
+        },
+    )
+
+    document = Document(BytesIO(draft.content))
+    data_table = _find_table_containing(document, "jadwal pendampingan")
+
+    assert data_table.cell(0, 0).text == "nama"
+    assert data_table.cell(4, 0).text == "jadwal pendampingan"
+    assert data_table.cell(4, 2).text == "Senin hingga Jumat, pukul 08.00-16.00 WIB"
+
+
 def test_generate_memo_docx_strips_source_json_urls_and_markdown_artifacts():
     draft = generate_memo_docx(
         memo_type="memo_internal",
@@ -463,6 +546,41 @@ def test_generate_memo_docx_formats_inline_pic_data_as_key_value_table():
     assert data_table.cell(4, 0).text == "nomor kontak"
 
 
+def test_generate_memo_docx_formats_comma_separated_inline_pic_data_as_key_value_table():
+    draft = generate_memo_docx(
+        memo_type="memo_internal",
+        title="Penyampaian Kontak PIC Layanan",
+        context="Data PIC layanan.",
+        text_generator=lambda prompt: (
+            "Untuk mempercepat koordinasi layanan internal, perlu dilakukan peningkatan koordinasi antar unit. "
+            "Sehubungan hal tersebut, dapat kami sampaikan sebagai berikut. "
+            "Nama: Eko Prasetyo, NIP: 199411172025211057, pangkat/gol.: V, "
+            "jabatan: Pengadministrasi Perkantoran pada Subbagian Tata Usaha, "
+            "nomor kontak: 0812-0000-2026."
+        ),
+        configuration={
+            "number": "EVAL-19/IST/YK/05/2026",
+            "recipient": "Kepala Unit Layanan",
+            "sender": "Kepala Istana Kepresidenan Yogyakarta",
+            "subject": "Penyampaian Kontak PIC Layanan",
+            "date": "7 Mei 2026",
+            "signatory": "Deni Mulyana",
+            "page_size": "letter",
+        },
+    )
+
+    document = Document(BytesIO(draft.content))
+    data_table = _find_table_containing(document, "nama")
+
+    assert data_table.cell(0, 2).text == "Eko Prasetyo"
+    assert data_table.cell(1, 0).text == "NIP"
+    assert data_table.cell(1, 2).text == "199411172025211057"
+    assert data_table.cell(2, 0).text == "pangkat/gol."
+    assert data_table.cell(3, 0).text == "jabatan"
+    assert data_table.cell(4, 0).text == "nomor kontak"
+    assert data_table.cell(4, 2).text == "0812-0000-2026"
+
+
 def test_generate_memo_docx_keeps_blank_signatory_blank():
     draft = generate_memo_docx(
         memo_type="memo_internal",
@@ -522,7 +640,42 @@ def test_generate_memo_docx_uses_compact_layout_without_manual_page_break_for_lo
     assert qr_table.cell(1, 0).text == "Deni Mulyana"
     assert "Tembusan:" in _all_document_text(document)
     assert _separator_after_twips(document) >= 780
-    assert _signature_spacer_before_twips(qr_table) <= 700
+    assert _signature_spacer_before_twips(qr_table) >= 1000
+
+
+def test_generate_memo_docx_keeps_compact_folio_signature_lower_for_medium_numbered_body():
+    body = "\n".join(
+        [
+            "Menindaklanjuti kebutuhan konsolidasi rencana kerja lintas unit, disampaikan langkah sebagai berikut:",
+            "1. Menyusun rencana kerja secara ringkas.",
+            "2. Menunjuk PIC serta menetapkan jadwal pelaksanaan.",
+            "3. Mengidentifikasi kendala dan mengajukan usulan perbaikan.",
+            "4. Menyampaikan laporan lengkap kepada pimpinan sesuai jadwal.",
+            "5. Melakukan evaluasi berkala atas tindak lanjut setiap unit.",
+        ]
+    )
+
+    draft = generate_memo_docx(
+        memo_type="memo_internal",
+        title="Revisi Memo Menjadi Lebih Singkat",
+        context="Revisi ringkas dengan lima poin.",
+        text_generator=lambda prompt: body,
+        configuration={
+            "number": "EVAL-36/IST/YK/05/2026",
+            "recipient": "Kepala Biro Perencanaan",
+            "sender": "Kepala Istana Kepresidenan Yogyakarta",
+            "subject": "Revisi Memo Menjadi Lebih Singkat",
+            "date": "7 Mei 2026",
+            "signatory": "Deni Mulyana",
+            "page_size": "folio",
+        },
+    )
+
+    document = Document(BytesIO(draft.content))
+    qr_table = _find_table_containing(document, "QR\nTTE")
+
+    assert _signature_spacer_before_twips(qr_table) >= 1600
+    assert 0.67 <= _signature_qr_center_ratio(document, qr_table) <= 0.72
 
 
 def test_generate_memo_docx_anchors_short_signature_lower_without_changing_horizontal_qr():
@@ -600,6 +753,9 @@ def test_generate_memo_docx_enforces_short_revision_constraints():
     assert "efisiensi dan efektifitas adalah kunci" not in draft.searchable_text
     assert "Menyusun rencana kerja secara ringkas" in draft.searchable_text
     assert "Melakukan evaluasi berkala" in draft.searchable_text
+    assert "sebagai berikut: 1." not in draft.searchable_text
+    assert "sebagai berikut:\n1. Menyusun rencana kerja" in draft.searchable_text
+    assert "\n5. Melakukan evaluasi berkala" in draft.searchable_text
     assert len(draft.searchable_text.split()) < len(generated.split())
 
 

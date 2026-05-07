@@ -258,6 +258,94 @@ class MemoWorkspaceTest extends TestCase
             ->assertSee('berhasil digenerate', false);
     }
 
+    public function test_generate_configuration_preserves_manual_closing_for_ai_service(): void
+    {
+        Storage::fake('local');
+        Http::fake([
+            '*/api/memos/generate-body' => Http::response('docx-bytes', 200, [
+                'X-Memo-Searchable-Text-B64' => base64_encode('Isi memo dengan penutup manual'),
+                'X-Memo-Page-Size' => 'letter',
+                'Content-Type' => 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+            ]),
+        ]);
+
+        $user = User::factory()->create(['email_verified_at' => now()]);
+        $closing = 'Demikian disampaikan, atas perhatian dan kerja samanya diucapkan terima kasih.';
+
+        Livewire::actingAs($user)
+            ->test(MemoWorkspace::class)
+            ->set('memoType', 'memo_internal')
+            ->set('memoNumber', 'EVAL-11/IST/YK/05/2026')
+            ->set('memoRecipient', 'Kepala Bagian SDM')
+            ->set('memoSender', 'Kepala Istana Kepresidenan Yogyakarta')
+            ->set('title', 'Penyampaian Data Pegawai Pendamping Kegiatan')
+            ->set('memoDate', '7 Mei 2026')
+            ->set('memoBasis', 'Untuk kebutuhan pendampingan kegiatan integrasi aplikasi.')
+            ->set('memoContent', 'Nama: Muhammad Hasbi Ash Shiddiqi'.PHP_EOL.'NIP: 231210013')
+            ->set('memoClosing', $closing)
+            ->set('memoSignatory', 'Deni Mulyana')
+            ->set('memoPageSize', 'auto')
+            ->call('generateConfiguredMemo')
+            ->assertHasNoErrors()
+            ->assertDispatched('memo-document-ready');
+
+        $memo = Memo::firstOrFail();
+
+        $this->assertSame($closing, $memo->configuration['closing']);
+        Http::assertSent(fn ($request) => $request['configuration']['closing'] === $closing);
+    }
+
+    public function test_loading_memo_without_optional_closing_clears_stale_form_values(): void
+    {
+        $user = User::factory()->create(['email_verified_at' => now()]);
+        $closing = 'Demikian disampaikan, atas perhatian dan kerja samanya diucapkan terima kasih.';
+
+        $memoWithClosing = Memo::create([
+            'user_id' => $user->id,
+            'title' => 'Memo Dengan Penutup',
+            'memo_type' => 'memo_internal',
+            'status' => Memo::STATUS_GENERATED,
+            'configuration' => [
+                'number' => 'EVAL-01/IST/YK/05/2026',
+                'recipient' => 'Kepala Bagian SDM',
+                'sender' => 'Kepala Istana Kepresidenan Yogyakarta',
+                'subject' => 'Memo Dengan Penutup',
+                'date' => '7 Mei 2026',
+                'content' => 'Isi memo pertama.',
+                'closing' => $closing,
+                'additional_instruction' => 'Gunakan bahasa sangat formal.',
+                'signatory' => 'Deni Mulyana',
+                'page_size' => 'letter',
+            ],
+        ]);
+
+        $memoWithoutClosing = Memo::create([
+            'user_id' => $user->id,
+            'title' => 'Memo Tanpa Penutup',
+            'memo_type' => 'memo_internal',
+            'status' => Memo::STATUS_GENERATED,
+            'configuration' => [
+                'number' => 'EVAL-02/IST/YK/05/2026',
+                'recipient' => 'Kepala Bagian Administrasi',
+                'sender' => 'Kepala Istana Kepresidenan Yogyakarta',
+                'subject' => 'Memo Tanpa Penutup',
+                'date' => '7 Mei 2026',
+                'content' => 'Isi memo kedua.',
+                'signatory' => 'Deni Mulyana',
+                'page_size' => 'letter',
+            ],
+        ]);
+
+        Livewire::actingAs($user)
+            ->test(MemoWorkspace::class)
+            ->call('loadMemo', $memoWithClosing->id)
+            ->assertSet('memoClosing', $closing)
+            ->assertSet('memoAdditionalInstruction', 'Gunakan bahasa sangat formal.')
+            ->call('loadMemo', $memoWithoutClosing->id)
+            ->assertSet('memoClosing', '')
+            ->assertSet('memoAdditionalInstruction', '');
+    }
+
     public function test_revision_chat_applies_carbon_copy_instruction_before_regenerating(): void
     {
         Storage::fake('local');

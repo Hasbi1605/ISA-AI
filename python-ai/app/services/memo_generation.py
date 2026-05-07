@@ -36,6 +36,10 @@ PERSON_DATA_LABEL_PATTERN = (
     r"|pangkat/gol(?:ongan|\.)?"
     r"|jabatan"
     r"|unit\s+kerja"
+    r"|jadwal(?:\s+(?:pendampingan|kegiatan|pelaksanaan))?"
+    r"|batas\s+waktu"
+    r"|lokasi(?:\s+(?:asal|tujuan))?"
+    r"|peserta"
     r"|nomor\s+kontak"
     r"|keperluan"
 )
@@ -52,8 +56,14 @@ SIGNATURE_TABLE_WIDTH_IN = 1.56
 SIGNATURE_SPACE_BEFORE_SHORT_PT = 110
 SIGNATURE_SPACE_BEFORE_MEDIUM_PT = 76
 SIGNATURE_SPACE_BEFORE_DEFAULT_PT = 56
-SIGNATURE_SPACE_BEFORE_COMPACT_PT = 34
+SIGNATURE_SPACE_BEFORE_COMPACT_PT = 84
+SIGNATURE_SPACE_BEFORE_COMPACT_DENSE_PT = 56
 SEPARATOR_SPACE_AFTER_PT = 39
+
+AI_UNAVAILABLE_MARKERS = (
+    "semua layanan ai sedang tidak tersedia",
+    "silakan coba lagi nanti",
+)
 
 INDONESIAN_SMALL_NUMBERS = {
     "satu": 1,
@@ -765,6 +775,7 @@ def _sanitize_memo_body(body: str, config: dict[str, str]) -> str:
     clean = _strip_body_closing_sentences(clean)
     clean = _remove_configured_closing(clean, config.get("closing", ""))
     clean = _strip_instruction_artifacts(clean, config)
+    clean = _strip_trailing_fragments(clean)
     clean = _normalize_person_data_sequences(clean)
     clean = _dedupe_consecutive_blocks(clean)
     return _normalize_generated_text(clean)
@@ -785,7 +796,7 @@ def _enforce_revision_constraints(body: str, config: dict[str, str]) -> str:
     blocks = _split_blocks(body)
     source_word_count = _word_count(config.get("content", ""))
     violates_short_request = wants_shorter and source_word_count > 0 and _word_count(body) >= source_word_count
-    violates_paragraph_limit = max_paragraphs is not None and len(blocks) > max_paragraphs
+    violates_paragraph_limit = max_paragraphs is not None and _paragraph_block_count(blocks) > max_paragraphs
 
     if not violates_short_request and not violates_paragraph_limit:
         return body
@@ -793,12 +804,20 @@ def _enforce_revision_constraints(body: str, config: dict[str, str]) -> str:
     concise = _build_concise_revision_body(config, fallback_body=body)
     if concise:
         concise_blocks = _split_blocks(concise)
-        if max_paragraphs is None or len(concise_blocks) <= max_paragraphs:
+        if max_paragraphs is None or _paragraph_block_count(concise_blocks) <= max_paragraphs:
             if not wants_shorter or _word_count(concise) < _word_count(body):
                 return concise
 
     if max_paragraphs is not None:
-        return "\n".join(blocks[:max_paragraphs]).strip()
+        limited_blocks: list[str] = []
+        paragraph_count = 0
+        for block in blocks:
+            if not _is_structured_body_block(block):
+                paragraph_count += 1
+            if paragraph_count > max_paragraphs:
+                break
+            limited_blocks.append(block)
+        return "\n".join(limited_blocks).strip()
 
     return body
 
@@ -826,7 +845,7 @@ def _build_concise_revision_body(config: dict[str, str], *, fallback_body: str) 
 
     items = _extract_numbered_items(source) or _extract_numbered_items(fallback_body)
     if items:
-        return f"{lead}, disampaikan hal-hal sebagai berikut: {_join_numbered_items(items)}"
+        return f"{lead}, disampaikan hal-hal sebagai berikut:\n{_format_numbered_items(items)}"
 
     source_blocks = _split_blocks(source)
     if source_blocks:
@@ -852,6 +871,27 @@ def _join_numbered_items(items: list[str]) -> str:
         return f"{fragments[0]}."
 
     return f"{'; '.join(fragments[:-1])}; dan {fragments[-1]}."
+
+
+def _format_numbered_items(items: list[str]) -> str:
+    return "\n".join(
+        f"{index}. {item.rstrip(' .;')}."
+        for index, item in enumerate(items, start=1)
+        if item.strip()
+    )
+
+
+def _paragraph_block_count(blocks: list[str]) -> int:
+    return sum(1 for block in blocks if not _is_structured_body_block(block))
+
+
+def _is_structured_body_block(block: str) -> bool:
+    stripped = block.strip()
+    if re.match(r"^\d+[.)]\s+.+$", stripped):
+        return True
+    if re.match(r"^[-*]\s+.+$", stripped):
+        return True
+    return _parse_person_data_block(stripped) is not None
 
 
 def _word_count(text: str) -> int:
@@ -979,7 +1019,8 @@ def _strip_body_closing_sentences(text: str) -> str:
         if _looks_like_closing_block(block):
             continue
 
-        clean = re.sub(r"(?is)\s+demikian\b.*$", "", block).strip()
+        clean = re.sub(r"(?is)\s+dengan\s+demikian\b.*$", "", block).strip()
+        clean = re.sub(r"(?is)\s+demikian\b.*$", "", clean).strip()
         clean = re.sub(r"(?is)\s+atas\s+perhatian\b.*?terima\s+kasih\.?$", "", clean).strip()
 
         if clean and not _looks_like_closing_block(clean):
@@ -994,12 +1035,37 @@ def _looks_like_closing_block(block: str) -> bool:
         return False
 
     closing_starters = (
+        "dengan demikian",
         "demikian",
         "atas perhatian",
         "atas kerja sama",
         "mohon arahan lebih lanjut",
     )
     return normalized.startswith(closing_starters)
+
+
+def _strip_trailing_fragments(text: str) -> str:
+    blocks = _split_blocks(text)
+
+    while blocks and _looks_like_trailing_fragment(blocks[-1]):
+        blocks.pop()
+
+    if blocks:
+        blocks[-1] = re.sub(r"(?is)\s+(?:dengan|untuk\s+itu)$", "", blocks[-1]).strip(" ,;")
+        if _looks_like_trailing_fragment(blocks[-1]):
+            blocks.pop()
+
+    return "\n".join(block for block in blocks if block).strip()
+
+
+def _looks_like_trailing_fragment(block: str) -> bool:
+    normalized = _normalize_comparison_text(block)
+    return normalized in {
+        "dengan",
+        "dengan demikian",
+        "untuk itu",
+        "sehubungan hal tersebut",
+    }
 
 
 def _remove_configured_closing(text: str, closing: str) -> str:
@@ -1025,6 +1091,10 @@ def _strip_instruction_artifacts(text: str, config: dict[str, str]) -> str:
 
     output: list[str] = []
     for block in _split_blocks(clean):
+        if not _looks_like_instruction_artifact(block):
+            output.append(block)
+            continue
+
         sentences = _split_sentence_like_parts(block)
         kept = [sentence for sentence in sentences if not _looks_like_instruction_artifact(sentence)]
         cleaned_block = " ".join(sentence.strip() for sentence in kept if sentence.strip())
@@ -1134,6 +1204,10 @@ def _should_use_compact_layout(config: dict[str, str], body: str) -> bool:
 
 def _signature_space_before(config: dict[str, str], body: str, *, compact: bool) -> float:
     if compact:
+        body_length = len(body or "")
+        carbon_copy_count = len(_split_lines(config.get("carbon_copy", "")))
+        if body_length >= 2200 or carbon_copy_count >= 3:
+            return SIGNATURE_SPACE_BEFORE_COMPACT_DENSE_PT
         return SIGNATURE_SPACE_BEFORE_COMPACT_PT
 
     body_length = len(body or "")
@@ -1174,34 +1248,81 @@ def _parse_person_data_block(block: str) -> tuple[str, str] | None:
     if not match:
         return None
 
-    raw_label = match.group("label").lower().rstrip(".")
-    value = match.group("value").strip()
-
-    if raw_label.startswith("nama"):
-        label = "nama"
-    elif raw_label == "nip":
-        label = "NIP"
-    elif raw_label.startswith("pangkat/gol"):
-        label = "pangkat/gol."
-    elif raw_label == "jabatan":
-        label = "jabatan"
-    elif raw_label.startswith("unit kerja"):
-        label = "unit kerja"
-    elif raw_label.startswith("nomor kontak"):
-        label = "nomor kontak"
-    else:
-        label = "keperluan"
+    raw_label = match.group("label")
+    value = _clean_inline_person_data_value(match.group("value"))
+    label = _normalize_person_data_label(raw_label)
 
     return label, value
 
 
+def _normalize_person_data_label(raw_label: str) -> str:
+    normalized = raw_label.lower().rstrip(".")
+    normalized = re.sub(r"\s+", " ", normalized)
+
+    if normalized.startswith("nama"):
+        return "nama"
+    if normalized == "nip":
+        return "NIP"
+    if normalized.startswith("pangkat/gol"):
+        return "pangkat/gol."
+    if normalized == "jabatan":
+        return "jabatan"
+    if normalized.startswith("unit kerja"):
+        return "unit kerja"
+    if normalized.startswith("jadwal"):
+        return "jadwal pendampingan" if "pendampingan" in normalized else "jadwal"
+    if normalized.startswith("batas waktu"):
+        return "batas waktu"
+    if normalized.startswith("lokasi"):
+        return normalized
+    if normalized == "peserta":
+        return "peserta"
+    if normalized.startswith("nomor kontak"):
+        return "nomor kontak"
+    return "keperluan"
+
+
 def _normalize_person_data_sequences(text: str) -> str:
     label = PERSON_DATA_LABEL_PATTERN
-    return re.sub(
+    clean = re.sub(
         rf"(?i)(?<!^)(?<!\n)\s+(\d+[.)]\s*(?:{label})\s*(?::|adalah))",
         r"\n\1",
         text,
     ).strip()
+    return _split_inline_person_data_sequences(clean)
+
+
+def _split_inline_person_data_sequences(text: str) -> str:
+    pattern = re.compile(
+        rf"(?i)(?:^|[\s,;])(?:\d+[.)]\s*)?(?P<label>{PERSON_DATA_LABEL_PATTERN})\s*(?::|adalah)\s*"
+    )
+    output: list[str] = []
+
+    for block in _split_blocks(text):
+        matches = list(pattern.finditer(block))
+        if len(matches) < 2:
+            output.append(block)
+            continue
+
+        prefix = block[: matches[0].start()].strip(" ,;")
+        if prefix:
+            output.append(prefix)
+
+        for index, match in enumerate(matches):
+            next_start = matches[index + 1].start() if index + 1 < len(matches) else len(block)
+            raw_value = block[match.end() : next_start]
+            value = _clean_inline_person_data_value(raw_value)
+            if not value:
+                continue
+            output.append(f"{_normalize_person_data_label(match.group('label'))}: {value}")
+
+    return "\n".join(output).strip()
+
+
+def _clean_inline_person_data_value(value: str) -> str:
+    clean = re.sub(r"\s+", " ", value or "").strip(" ,;")
+    clean = re.sub(r"^\d+[.)]\s*", "", clean).strip()
+    return clean.rstrip(" ,;.")
 
 
 def _clean_title(title: str) -> str:
@@ -1217,9 +1338,16 @@ def _normalize_generated_text(text: str) -> str:
     clean = (text or "").strip()
     if "[MODEL:" in clean and "]" in clean:
         clean = clean.split("]", 1)[1].strip()
+    if _looks_like_ai_unavailable_message(clean):
+        raise ValueError("Layanan AI sedang tidak tersedia. Silakan coba lagi nanti.")
     if not clean:
         raise ValueError("AI tidak menghasilkan isi memo.")
     return clean
+
+
+def _looks_like_ai_unavailable_message(text: str) -> bool:
+    normalized = _normalize_comparison_text(text).lstrip("❌ ").strip()
+    return any(marker in normalized for marker in AI_UNAVAILABLE_MARKERS)
 
 
 def _split_blocks(text: str) -> list[str]:
