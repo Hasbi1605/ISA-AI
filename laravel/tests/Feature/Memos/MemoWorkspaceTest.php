@@ -798,4 +798,38 @@ class MemoWorkspaceTest extends TestCase
 
         $this->assertSoftDeleted('memos', ['id' => $memo->id]);
     }
+
+    public function test_edit_configuration_hides_active_memo_chat_history(): void
+    {
+        $user = User::factory()->create(['email_verified_at' => now()]);
+        $memo = Memo::create([
+            'user_id' => $user->id,
+            'title' => 'Memo Panjang Format Folio Eksplisit',
+            'memo_type' => 'memo_internal',
+            'status' => Memo::STATUS_GENERATED,
+            'chat_messages' => [
+                ['role' => 'assistant', 'content' => 'Memo "Memo Panjang Format Folio Eksplisit" dimuat.', 'timestamp' => '17:09'],
+            ],
+            'configuration' => [
+                'number' => 'EVAL-25/IST/YK/05/2026',
+                'recipient' => 'Kepala Pusat Pengembangan Layanan',
+                'sender' => 'Kepala Istana Kepresidenan Yogyakarta',
+                'subject' => 'Memo Panjang Format Folio Eksplisit',
+                'date' => '7 Mei 2026',
+                'content' => 'Isi memo.',
+                'signatory' => 'Deni Mulyana',
+                'page_size' => 'folio',
+                'page_size_mode' => 'folio',
+            ],
+        ]);
+
+        Livewire::actingAs($user)
+            ->test(MemoWorkspace::class)
+            ->call('loadMemo', $memo->id)
+            ->set('showMemoConfiguration', true)
+            ->assertSee('Konfigurasi Memo', false)
+            ->assertSee('Regenerate dari Konfigurasi', false)
+            ->assertDontSee('Memo "Memo Panjang Format Folio Eksplisit" dimuat.', false)
+            ->assertDontSee('Tulis revisi untuk memo ini', false);
+    }
 }

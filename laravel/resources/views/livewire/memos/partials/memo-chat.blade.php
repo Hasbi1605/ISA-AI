@@ -191,7 +191,7 @@
             </form>
         @endif
 
-        @if ($activeMemoId || ! $showMemoConfiguration)
+        @if (! $showMemoConfiguration)
             @foreach ($memoChatMessages as $index => $msg)
                 @php
                     $isUserMessage = $msg['role'] === 'user';
@@ -226,45 +226,47 @@
             @endforeach
         @endif
 
-        <template x-if="memoRevisionText">
-            <div class="flex justify-end">
-                <div class="w-full flex items-start gap-2.5 flex-row-reverse">
-                    <div class="shrink-0 h-8 w-8 rounded-full flex items-center justify-center bg-[#E2E8F0] dark:bg-white text-[#62748E] dark:text-black">
-                        <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M16 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2m12-10a4 4 0 11-8 0 4 4 0 018 0z" />
-                        </svg>
-                    </div>
-                    <div class="flex max-w-[82%] flex-col gap-1 items-end text-right">
-                        <div class="flex items-center gap-2 mb-1 justify-end">
-                            <span class="text-[13px] font-bold text-stone-800 dark:text-[#F8FAFC]">Anda</span>
+        @if (! $showMemoConfiguration)
+            <template x-if="memoRevisionText">
+                <div class="flex justify-end">
+                    <div class="w-full flex items-start gap-2.5 flex-row-reverse">
+                        <div class="shrink-0 h-8 w-8 rounded-full flex items-center justify-center bg-[#E2E8F0] dark:bg-white text-[#62748E] dark:text-black">
+                            <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M16 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2m12-10a4 4 0 11-8 0 4 4 0 018 0z" />
+                            </svg>
                         </div>
-                        <div class="bg-ista-primary text-white rounded-lg rounded-br-sm px-4 py-3">
-                            <p class="text-[14px] leading-relaxed whitespace-pre-wrap" x-text="memoRevisionText"></p>
+                        <div class="flex max-w-[82%] flex-col gap-1 items-end text-right">
+                            <div class="flex items-center gap-2 mb-1 justify-end">
+                                <span class="text-[13px] font-bold text-stone-800 dark:text-[#F8FAFC]">Anda</span>
+                            </div>
+                            <div class="bg-ista-primary text-white rounded-lg rounded-br-sm px-4 py-3">
+                                <p class="text-[14px] leading-relaxed whitespace-pre-wrap" x-text="memoRevisionText"></p>
+                            </div>
                         </div>
                     </div>
                 </div>
-            </div>
-        </template>
+            </template>
 
-        <div class="flex justify-start" x-show="memoRevisionLoading || $wire.isGenerating" x-cloak>
-            <div class="w-full flex items-start gap-2.5">
-                <div class="shrink-0 h-8 w-8 rounded-full bg-white border border-stone-200 shadow-sm p-1 flex items-center justify-center">
-                    <img src="{{ asset('images/ista/logo.png') }}" alt="ISTA AI" class="h-full w-full object-contain" />
-                </div>
-                <div class="flex max-w-[82%] flex-col gap-1 items-start text-left">
-                    <div class="flex items-center gap-2 mb-1">
-                        <span class="text-[13px] font-bold text-stone-800 dark:text-[#F8FAFC]">ISTA AI</span>
+            <div class="flex justify-start" x-show="memoRevisionLoading || $wire.isGenerating" x-cloak>
+                <div class="w-full flex items-start gap-2.5">
+                    <div class="shrink-0 h-8 w-8 rounded-full bg-white border border-stone-200 shadow-sm p-1 flex items-center justify-center">
+                        <img src="{{ asset('images/ista/logo.png') }}" alt="ISTA AI" class="h-full w-full object-contain" />
                     </div>
-                    <div class="inline-flex w-auto items-center rounded-xl rounded-bl-md border border-stone-200/60 bg-white/80 px-4 py-3 backdrop-blur-sm dark:border-gray-800 dark:bg-gray-800">
-                        <div class="flex space-x-1.5 py-1">
-                            <div class="h-2 w-2 bg-gray-400 dark:bg-[#64748B] rounded-full animate-bounce"></div>
-                            <div class="h-2 w-2 bg-gray-400 dark:bg-[#64748B] rounded-full animate-bounce [animation-delay:-0.15s]"></div>
-                            <div class="h-2 w-2 bg-gray-400 dark:bg-[#64748B] rounded-full animate-bounce [animation-delay:-0.3s]"></div>
+                    <div class="flex max-w-[82%] flex-col gap-1 items-start text-left">
+                        <div class="flex items-center gap-2 mb-1">
+                            <span class="text-[13px] font-bold text-stone-800 dark:text-[#F8FAFC]">ISTA AI</span>
+                        </div>
+                        <div class="inline-flex w-auto items-center rounded-xl rounded-bl-md border border-stone-200/60 bg-white/80 px-4 py-3 backdrop-blur-sm dark:border-gray-800 dark:bg-gray-800">
+                            <div class="flex space-x-1.5 py-1">
+                                <div class="h-2 w-2 bg-gray-400 dark:bg-[#64748B] rounded-full animate-bounce"></div>
+                                <div class="h-2 w-2 bg-gray-400 dark:bg-[#64748B] rounded-full animate-bounce [animation-delay:-0.15s]"></div>
+                                <div class="h-2 w-2 bg-gray-400 dark:bg-[#64748B] rounded-full animate-bounce [animation-delay:-0.3s]"></div>
+                            </div>
                         </div>
                     </div>
                 </div>
             </div>
-        </div>
+        @endif
     </div>
 
     {{-- Revision Chat Input --}}

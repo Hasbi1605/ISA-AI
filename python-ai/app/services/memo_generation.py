@@ -91,6 +91,7 @@ INSTRUCTION_ARTIFACT_PATTERNS = (
     r"\barahan\s+tambahan\b",
     r"\bkontrol\s+kerja\b",
     r"\bpenutup\s+manual\s+apa\s+adanya\b",
+    r"\bpenutup\s+manual\b.*\bapa\s+adanya\b",
     r"\b(?:pertahankan|mempertahankan)\s+penutup\s+manual\b",
     r"^catatan\s*:.*\b(?:penutup|manual|dipertahankan|format|instruksi|revisi)\b",
 )
@@ -393,6 +394,8 @@ def _add_body(
             configured_key_values,
             start_index=insert_at + len(configured_blocks),
         )
+    elif len(configured_key_values) >= 2:
+        blocks = _clean_redundant_blocks_around_existing_key_values(blocks, configured_key_values)
 
     index = 0
     line_spacing_pt = 13.1 if compact else 13.8
@@ -468,12 +471,52 @@ def _blocks_contain_key_value_table(blocks: list[str]) -> bool:
     return False
 
 
+def _key_value_table_span(blocks: list[str]) -> tuple[int, int] | None:
+    for index in range(len(blocks)):
+        key_value_items = _collect_person_data_blocks(blocks, index)
+        if len(key_value_items) >= 2:
+            return index, index + len(key_value_items)
+    return None
+
+
+def _clean_redundant_blocks_around_existing_key_values(
+    blocks: list[str],
+    configured_items: list[tuple[str, str]],
+) -> list[str]:
+    span = _key_value_table_span(blocks)
+    if not span:
+        return blocks
+
+    start_index, end_index = span
+    configured_labels = {_key_value_label_key(label) for label, _value in configured_items}
+    configured_values = _normalized_configured_values(configured_items)
+
+    if (
+        start_index > 0
+        and configured_labels & ACTIVITY_KEY_VALUE_LABEL_KEYS
+        and _looks_like_redundant_activity_detail_block(
+            blocks[start_index - 1],
+            configured_labels,
+            configured_values,
+        )
+    ):
+        blocks = [*blocks[: start_index - 1], *blocks[start_index:]]
+        start_index -= 1
+        end_index -= 1
+
+    return _remove_redundant_blocks_after_configured_key_values(
+        blocks,
+        configured_items,
+        start_index=end_index,
+    )
+
+
 def _should_add_space_after_key_value_table(blocks: list[str], next_index: int) -> bool:
     if next_index >= len(blocks):
         return False
 
     next_block = blocks[next_index].strip()
-    return bool(next_block) and not _is_structured_body_block(next_block)
+    return bool(next_block)
 
 
 def _remove_redundant_blocks_after_configured_key_values(
@@ -486,11 +529,7 @@ def _remove_redundant_blocks_after_configured_key_values(
         return blocks
 
     configured_labels = {_key_value_label_key(label) for label, _value in configured_items}
-    configured_values = {
-        _normalize_comparison_text(value)
-        for _label, value in configured_items
-        if len(_normalize_comparison_text(value)) >= 5
-    }
+    configured_values = _normalized_configured_values(configured_items)
     has_activity_details = bool(configured_labels & ACTIVITY_KEY_VALUE_LABEL_KEYS)
     output = blocks[:start_index]
     removed = False
@@ -525,8 +564,32 @@ def _looks_like_redundant_activity_detail_block(
     if not normalized:
         return False
 
+    matched_value_count = _configured_value_match_count(normalized, configured_values)
+    has_activity_label = any(label in normalized for label in configured_labels & ACTIVITY_KEY_VALUE_LABEL_KEYS)
+    starts_with_detail = normalized.startswith(
+        (
+            "hari/tanggal",
+            "tanggal",
+            "pukul",
+            "jam",
+            "tempat",
+            "agenda",
+            "lokasi",
+            "periode",
+            "waktu pelaksanaan",
+            "rapat akan dilaksanakan",
+            "rapat dilaksanakan",
+            "kegiatan akan dilaksanakan",
+            "kegiatan dilaksanakan",
+        )
+    )
+
     if not is_list_block:
-        return False
+        return (
+            (starts_with_detail and (has_activity_label or matched_value_count >= 1))
+            or matched_value_count >= 2
+            or (normalized.startswith("agenda ") and matched_value_count >= 1)
+        )
 
     detail_starters = (
         "hari/tanggal",
@@ -544,15 +607,79 @@ def _looks_like_redundant_activity_detail_block(
         "kegiatan dilaksanakan",
     )
     if not normalized.startswith(detail_starters):
-        return False
+        return matched_value_count >= 2
 
     if normalized.endswith("pada:") or normalized.endswith("pada"):
         return bool(configured_labels & {"hari/tanggal", "pukul", "tempat"})
 
-    if any(label in normalized for label in configured_labels & ACTIVITY_KEY_VALUE_LABEL_KEYS):
+    if has_activity_label:
         return True
 
-    return any(value and value in normalized for value in configured_values)
+    return matched_value_count >= 1
+
+
+def _normalized_configured_values(configured_items: list[tuple[str, str]]) -> set[str]:
+    return {
+        _normalize_comparison_text(value)
+        for _label, value in configured_items
+        if len(_normalize_comparison_text(value)) >= 5
+    }
+
+
+def _configured_value_match_count(normalized_block: str, configured_values: set[str]) -> int:
+    return sum(
+        1
+        for value in configured_values
+        if _configured_value_matches_block(normalized_block, value)
+    )
+
+
+def _configured_value_matches_block(normalized_block: str, normalized_value: str) -> bool:
+    if not normalized_block or not normalized_value:
+        return False
+    if normalized_value in normalized_block:
+        return True
+
+    flat_block = _flatten_comparison_text(normalized_block)
+    flat_value = _flatten_comparison_text(normalized_value)
+    if flat_value and flat_value in flat_block:
+        return True
+
+    value_tokens = _significant_comparison_tokens(flat_value)
+    if len(value_tokens) < 3:
+        return False
+
+    block_tokens = set(_significant_comparison_tokens(flat_block))
+    matched = sum(1 for token in set(value_tokens) if token in block_tokens)
+    return matched >= 3 and matched / len(set(value_tokens)) >= 0.72
+
+
+def _flatten_comparison_text(text: str) -> str:
+    return re.sub(r"[^0-9a-zA-ZÀ-ÿ/]+", " ", text or "").strip()
+
+
+def _significant_comparison_tokens(text: str) -> list[str]:
+    stopwords = {
+        "dan",
+        "serta",
+        "yang",
+        "dengan",
+        "pada",
+        "untuk",
+        "dari",
+        "ke",
+        "di",
+        "dalam",
+        "akan",
+        "telah",
+        "rapat",
+        "kegiatan",
+    }
+    return [
+        token
+        for token in re.findall(r"[0-9a-zA-ZÀ-ÿ/]+", text or "")
+        if len(token) > 2 and token.lower() not in stopwords
+    ]
 
 
 def _renumber_numbered_block_sequences(blocks: list[str], *, from_index: int = 0) -> list[str]:
@@ -862,7 +989,7 @@ def _add_carbon_copy(document: Document, carbon_copy: str, *, compact: bool = Fa
     _format_paragraph(
         heading,
         line_spacing_pt=13.1 if compact else 13.8,
-        space_before_pt=30 if compact else 48,
+        space_before_pt=24 if compact else 28,
         keep_with_next=True,
         keep_together=True,
     )
@@ -1161,6 +1288,7 @@ def _sanitize_memo_body(body: str, config: dict[str, str]) -> str:
     clean = _remove_configured_closing(clean, config.get("closing", ""))
     clean = _strip_instruction_artifacts(clean, config)
     clean = _strip_unconfigured_honorific_data(clean, config)
+    clean = _replace_empty_person_data_placeholders(clean)
     clean = _strip_trailing_fragments(clean)
     clean = _normalize_person_data_sequences(clean)
     clean = _clean_official_language_fragments(clean)
@@ -1188,7 +1316,11 @@ def _enforce_revision_constraints(body: str, config: dict[str, str]) -> str:
     if not violates_short_request and not violates_paragraph_limit:
         return body
 
-    concise = _build_concise_revision_body(config, fallback_body=body)
+    concise = _build_concise_revision_body(
+        config,
+        fallback_body=body,
+        paragraph_limit=max_paragraphs if wants_shorter else None,
+    )
     if concise:
         concise_blocks = _split_blocks(concise)
         if max_paragraphs is None or _paragraph_block_count(concise_blocks) <= max_paragraphs:
@@ -1225,13 +1357,20 @@ def _extract_max_paragraphs(instruction: str) -> int | None:
     return INDONESIAN_SMALL_NUMBERS.get(raw_limit)
 
 
-def _build_concise_revision_body(config: dict[str, str], *, fallback_body: str) -> str:
+def _build_concise_revision_body(
+    config: dict[str, str],
+    *,
+    fallback_body: str,
+    paragraph_limit: int | None = None,
+) -> str:
     source = config.get("content", "").strip()
     basis = config.get("basis", "").strip().rstrip(".")
     lead = basis if basis else "Sehubungan hal tersebut"
 
     items = _extract_numbered_items(source) or _extract_numbered_items(fallback_body)
     if items:
+        if paragraph_limit is not None:
+            return _format_numbered_items_as_concise_paragraph(lead, items)
         return f"{lead}, disampaikan hal-hal sebagai berikut:\n{_format_numbered_items(items)}"
 
     source_blocks = _split_blocks(source)
@@ -1241,6 +1380,17 @@ def _build_concise_revision_body(config: dict[str, str], *, fallback_body: str) 
 
     fallback_blocks = _split_blocks(fallback_body)
     return " ".join(fallback_blocks[:2]).strip()
+
+
+def _format_numbered_items_as_concise_paragraph(lead: str, items: list[str]) -> str:
+    clean_items = [item.rstrip(" .;") for item in items if item.strip()]
+    if not clean_items:
+        return lead
+    if len(clean_items) == 1:
+        summary = clean_items[0]
+    else:
+        summary = "; ".join(clean_items[:-1]) + f"; dan {clean_items[-1]}"
+    return f"{lead}, hal-hal yang perlu ditindaklanjuti meliputi {summary}."
 
 
 def _preserve_configured_numbered_items(body: str, config: dict[str, str]) -> str:
@@ -1614,6 +1764,54 @@ def _strip_unconfigured_honorific_data(text: str, config: dict[str, str]) -> str
         output.append(block)
 
     return "\n".join(output).strip()
+
+
+def _replace_empty_person_data_placeholders(text: str) -> str:
+    blocks = _split_blocks(text)
+    output: list[str] = []
+    placeholder_labels: list[str] = []
+
+    def flush_placeholders() -> None:
+        nonlocal placeholder_labels
+        if not placeholder_labels:
+            return
+        if len(placeholder_labels) >= 2:
+            output.append(_generic_placeholder_replacement(placeholder_labels))
+        placeholder_labels = []
+
+    for block in blocks:
+        label = _empty_person_data_placeholder_label(block)
+        if label:
+            placeholder_labels.append(label)
+            continue
+
+        flush_placeholders()
+        output.append(block)
+
+    flush_placeholders()
+    return "\n".join(output).strip()
+
+
+def _empty_person_data_placeholder_label(block: str) -> str | None:
+    match = re.match(
+        rf"^\s*(?:\d+[.)]\s*)?(?P<label>{PERSON_DATA_LABEL_PATTERN})\s*:\s*$",
+        block.strip(),
+        flags=re.IGNORECASE,
+    )
+    if not match:
+        return None
+    return _normalize_person_data_label(match.group("label"))
+
+
+def _generic_placeholder_replacement(labels: list[str]) -> str:
+    normalized = {_key_value_label_key(label) for label in labels}
+    if normalized & {"nama", "nip", "jabatan", "unit kerja", "jadwal", "jadwal pendampingan"}:
+        return "Staf pendamping dan kelengkapan data pegawai ditetapkan oleh unit terkait."
+    if "peserta" in normalized:
+        return "Daftar peserta ditetapkan oleh unit terkait sesuai kebutuhan kegiatan."
+    if "nomor kontak" in normalized:
+        return "Nomor kontak koordinasi ditetapkan oleh unit terkait."
+    return "Data pendukung ditetapkan oleh unit terkait sesuai kebutuhan."
 
 
 def _config_contains_person_name(config_text: str) -> bool:

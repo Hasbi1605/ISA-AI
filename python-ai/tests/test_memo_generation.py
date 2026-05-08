@@ -106,6 +106,13 @@ def _paragraph_space_before_twips(paragraph):
     return int(spacing.get(qn("w:before"), "0"))
 
 
+def _find_paragraph(document, text):
+    for paragraph in document.paragraphs:
+        if paragraph.text == text:
+            return paragraph
+    raise AssertionError(f"Paragraph {text!r} not found")
+
+
 def test_generate_memo_docx_builds_official_memorandum_document():
     configuration = {
         "number": "M-02/I-Yog/IT.02/04/2026",
@@ -1024,9 +1031,9 @@ def test_generate_memo_docx_enforces_short_revision_constraints():
     assert "efisiensi dan efektifitas adalah kunci" not in draft.searchable_text
     assert "Menyusun rencana kerja secara ringkas" in draft.searchable_text
     assert "Melakukan evaluasi berkala" in draft.searchable_text
-    assert "sebagai berikut: 1." not in draft.searchable_text
-    assert "sebagai berikut:\n1. Menyusun rencana kerja" in draft.searchable_text
-    assert "\n5. Melakukan evaluasi berkala" in draft.searchable_text
+    assert "hal-hal yang perlu ditindaklanjuti meliputi" in draft.searchable_text
+    assert "\n1. Menyusun rencana kerja" not in draft.searchable_text
+    assert "\n5. Melakukan evaluasi berkala" not in draft.searchable_text
     assert len(draft.searchable_text.split()) < len(generated.split())
 
 
@@ -1037,8 +1044,10 @@ def test_generate_memo_docx_formats_activity_details_as_official_key_value_block
         context="Undangan rapat persiapan kegiatan kunjungan.",
         text_generator=lambda prompt: (
             "Sehubungan dengan persiapan kegiatan kunjungan tamu pada tanggal 16 Mei 2026, "
-            "diminta kepada seluruh unit terkait untuk hadir dalam rapat persiapan yang akan dilaksanakan pada:\n"
-            "Agenda rapat meliputi pembahasan alur tamu, kesiapan ruang, serta pendampingan acara."
+            "dapat kami sampaikan sebagai berikut.\n"
+            "1. Mohon mengundang unit terkait untuk menghadiri rapat persiapan di ruang rapat utama.\n"
+            "2. Rapat akan dilaksanakan pada:\n"
+            "3. Agenda rapat meliputi pembahasan alur tamu, kesiapan ruang, serta pendampingan acara."
         ),
         configuration={
             "number": "EVAL-05/IST/YK/05/2026",
@@ -1056,6 +1065,7 @@ def test_generate_memo_docx_formats_activity_details_as_official_key_value_block
     )
 
     document = Document(BytesIO(draft.content))
+    all_text = _all_document_text(document)
     detail_table = _find_table_containing(document, "hari/tanggal")
 
     assert detail_table.cell(0, 2).text == "10 Mei 2026"
@@ -1066,6 +1076,51 @@ def test_generate_memo_docx_formats_activity_details_as_official_key_value_block
     assert detail_table.cell(3, 0).text == "agenda"
     assert "alur tamu" in detail_table.cell(3, 2).text
     assert _spacing_after_table_twips(detail_table) >= 160
+    assert "Rapat akan dilaksanakan pada" not in all_text
+    assert "Agenda rapat meliputi" not in all_text
+    assert "1.\tMohon mengundang unit terkait" in all_text
+
+
+def test_generate_memo_docx_removes_repeated_existing_schedule_table_details():
+    draft = generate_memo_docx(
+        memo_type="memo_internal",
+        title="Revisi Tanggal Kegiatan",
+        context="Revisi tanggal kegiatan.",
+        text_generator=lambda prompt: (
+            "Menindaklanjuti persiapan rapat koordinasi kegiatan, sehubungan hal tersebut dapat kami sampaikan sebagai berikut.\n"
+            "1. Tanggal pelaksanaan rapat: 13 Mei 2026\n"
+            "hari/tanggal: 13 Mei 2026\n"
+            "pukul: 09.00 WIB\n"
+            "tempat: ruang rapat utama\n"
+            "agenda: rapat meliputi pembagian peran serta pengecekan kesiapan setiap bagian terkait\n"
+            "Agenda rapat meliputi pembagian peran serta pengecekan kesiapan setiap bagian terkait."
+        ),
+        configuration={
+            "number": "EVAL-39/IST/YK/05/2026",
+            "recipient": "Kepala Bagian Protokol",
+            "sender": "Kepala Istana Kepresidenan Yogyakarta",
+            "subject": "Revisi Tanggal Kegiatan",
+            "date": "7 Mei 2026",
+            "content": (
+                "1. Tanggal pelaksanaan rapat direvisi menjadi 13 Mei 2026 pukul 09.00 WIB, "
+                "bertempat di ruang rapat utama.\n"
+                "2. Agenda rapat meliputi pembagian peran serta pengecekan kesiapan setiap bagian terkait."
+            ),
+            "signatory": "Deni Mulyana",
+            "page_size": "letter",
+        },
+    )
+
+    document = Document(BytesIO(draft.content))
+    all_text = _all_document_text(document)
+    detail_table = _find_table_containing(document, "hari/tanggal")
+
+    assert detail_table.cell(0, 2).text == "13 Mei 2026"
+    assert detail_table.cell(1, 2).text == "09.00 WIB"
+    assert detail_table.cell(2, 2).text == "ruang rapat utama"
+    assert "pembagian peran" in detail_table.cell(3, 2).text
+    assert "Tanggal pelaksanaan rapat:" not in all_text
+    assert "Agenda rapat meliputi" not in all_text
 
 
 def test_generate_memo_docx_preserves_decimal_time_in_activity_key_value_block():
@@ -1135,10 +1190,11 @@ def test_generate_memo_docx_trims_activity_period_and_removes_redundant_detail_l
         context="Pemindahan lokasi penugasan sementara.",
         text_generator=lambda prompt: (
             "Dalam rangka penyesuaian kebutuhan layanan sementara, sehubungan hal tersebut, dapat kami sampaikan sebagai berikut.\n"
-            "1. Lokasi penugasan asal: Ruang Layanan Administrasi.\n"
-            "2. Lokasi tujuan pemindahan: Ruang Koordinasi Terpadu.\n"
-            "3. Periode pelaksanaan: 13 sampai 17 Mei 2026.\n"
-            "4. Pegawai wajib melaporkan progres harian kepada atasan langsung."
+            "lokasi asal: Ruang Layanan Administrasi\n"
+            "lokasi tujuan: Ruang Koordinasi Terpadu\n"
+            "periode: 13 sampai 17 Mei 2026\n"
+            "1. Penugasan sementara pegawai dari lokasi asal di Ruang Layanan Administrasi ke lokasi tujuan di Ruang Koordinasi Terpadu.\n"
+            "2. Pegawai wajib melaporkan progres harian kepada atasan langsung."
         ),
         configuration={
             "number": "EVAL-13/IST/YK/05/2026",
@@ -1162,9 +1218,7 @@ def test_generate_memo_docx_trims_activity_period_and_removes_redundant_detail_l
     assert detail_table.cell(0, 2).text == "Ruang Layanan Administrasi"
     assert detail_table.cell(1, 2).text == "Ruang Koordinasi Terpadu"
     assert detail_table.cell(2, 2).text == "13 sampai 17 Mei 2026"
-    assert "Lokasi penugasan asal" not in all_text
-    assert "Lokasi tujuan pemindahan" not in all_text
-    assert "Periode pelaksanaan" not in all_text
+    assert "Penugasan sementara pegawai dari lokasi asal" not in all_text
     assert "1.\tPegawai wajib melaporkan progres harian" in all_text
 
 
@@ -1199,6 +1253,75 @@ def test_generate_memo_docx_strips_bare_manual_closing_instruction_from_body():
 
     assert "Penutup manual apa adanya" not in all_text
     assert all_text.count(closing) == 1
+
+
+def test_generate_memo_docx_strips_manual_closing_instruction_variant_from_body():
+    closing = "Demikian untuk menjadi bahan gerak cepat bersama."
+    draft = generate_memo_docx(
+        memo_type="memo_internal",
+        title="Penutup Manual Tidak Lazim",
+        context="Penutup manual tidak lazim.",
+        text_generator=lambda prompt: (
+            "Menindaklanjuti kebutuhan tindak lanjut cepat, dapat kami sampaikan sebagai berikut.\n"
+            "1. Unit terkait agar segera menyiapkan data yang diperlukan.\n"
+            "2. Harap menetapkan PIC untuk pelaksanaan kegiatan dimaksud.\n"
+            "3. Progres pelaksanaan agar dilaporkan secara berkala sesuai ketentuan.\n"
+            "Penutup manual tidak lazim apa adanya.\n"
+            f"{closing}"
+        ),
+        configuration={
+            "number": "EVAL-30/IST/YK/05/2026",
+            "recipient": "Kepala Bagian Administrasi",
+            "sender": "Kepala Istana Kepresidenan Yogyakarta",
+            "subject": "Penutup Manual Tidak Lazim",
+            "date": "7 Mei 2026",
+            "content": "Sampaikan arahan agar unit terkait menyiapkan data, menetapkan PIC, dan melaporkan progres.",
+            "closing": closing,
+            "signatory": "Deni Mulyana",
+            "page_size": "letter",
+            "additional_instruction": "Pertahankan penutup manual apa adanya.",
+        },
+    )
+
+    document = Document(BytesIO(draft.content))
+    all_text = _all_document_text(document)
+
+    assert "Penutup manual tidak lazim apa adanya" not in all_text
+    assert all_text.count(closing) == 1
+
+
+def test_generate_memo_docx_replaces_empty_person_placeholders_with_generic_text():
+    draft = generate_memo_docx(
+        memo_type="memo_internal",
+        title="Penugasan Staf Pendamping Kegiatan",
+        context="Penugasan staf pendamping kegiatan.",
+        text_generator=lambda prompt: (
+            "Dalam rangka pelaksanaan kegiatan integrasi aplikasi layanan internal, sehubungan hal tersebut, dapat kami sampaikan sebagai berikut.\n"
+            "1. Nama:\n"
+            "2. NIP:\n"
+            "3. Jabatan:\n"
+            "4. Unit Kerja:\n"
+            "5. Jadwal Pendampingan:"
+        ),
+        configuration={
+            "number": "EVAL-06/IST/YK/05/2026",
+            "recipient": "Kepala Bagian SDM",
+            "sender": "Kepala Istana Kepresidenan Yogyakarta",
+            "subject": "Penugasan Staf Pendamping Kegiatan",
+            "date": "7 Mei 2026",
+            "content": "Tugaskan satu staf pendamping kegiatan, cantumkan nama, NIP, jabatan, unit kerja, dan jadwal pendampingan.",
+            "signatory": "Deni Mulyana",
+            "page_size": "letter",
+        },
+    )
+
+    document = Document(BytesIO(draft.content))
+    all_text = _all_document_text(document)
+
+    assert "Nama:" not in all_text
+    assert "NIP:" not in all_text
+    assert "Jabatan:" not in all_text
+    assert "Staf pendamping dan kelengkapan data pegawai ditetapkan oleh unit terkait." in all_text
 
 
 def test_generate_memo_docx_removes_invented_pic_names_when_not_configured():
@@ -1332,6 +1455,30 @@ def test_generate_memo_docx_moves_dimohon_sentence_to_closing_block():
     assert len(closing_paragraphs) == 1
     assert _paragraph_space_before_twips(closing_paragraphs[0]) >= 280
     assert draft.searchable_text.count(closing) == 1
+
+
+def test_generate_memo_docx_keeps_carbon_copy_close_to_signature_on_short_document():
+    draft = generate_memo_docx(
+        memo_type="memo_internal",
+        title="Revisi Tanggal Kegiatan",
+        context="Revisi tanggal kegiatan.",
+        text_generator=lambda prompt: "Menindaklanjuti persiapan rapat koordinasi kegiatan, dapat kami sampaikan agar unit terkait menyesuaikan jadwal pelaksanaan.",
+        configuration={
+            "number": "EVAL-39/IST/YK/05/2026",
+            "recipient": "Kepala Bagian Protokol",
+            "sender": "Kepala Istana Kepresidenan Yogyakarta",
+            "subject": "Revisi Tanggal Kegiatan",
+            "date": "7 Mei 2026",
+            "signatory": "Deni Mulyana",
+            "carbon_copy": "Kepala Bagian Keamanan",
+            "page_size": "letter",
+        },
+    )
+
+    document = Document(BytesIO(draft.content))
+    tembusan = _find_paragraph(document, "Tembusan:")
+
+    assert 360 <= _paragraph_space_before_twips(tembusan) <= 560
 
 
 def test_generate_memo_docx_italicizes_foreign_terms_without_italicizing_system_names():
