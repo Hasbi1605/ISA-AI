@@ -37,6 +37,10 @@ PERSON_DATA_LABEL_PATTERN = (
     r"|jabatan"
     r"|unit\s+kerja"
     r"|jadwal(?:\s+(?:pendampingan|kegiatan|pelaksanaan))?"
+    r"|hari/tanggal"
+    r"|pukul"
+    r"|tempat"
+    r"|agenda"
     r"|batas\s+waktu"
     r"|lokasi(?:\s+(?:asal|tujuan))?"
     r"|periode(?:\s+(?:kegiatan|pelaksanaan))?"
@@ -86,6 +90,23 @@ INSTRUCTION_ARTIFACT_PATTERNS = (
     r"\binstruksi\s+revisi\b",
     r"\barahan\s+tambahan\b",
     r"\bkontrol\s+kerja\b",
+    r"^catatan\s*:.*\b(?:penutup|manual|dipertahankan|format|instruksi|revisi)\b",
+)
+
+FOREIGN_ITALIC_PATTERNS = (
+    r"\be-book\b",
+    r"\bsign\s+up\b",
+    r"\bcritical\s+thinking\b",
+    r"\bKnow\s+Your\s+Customer\b",
+    r"\bonline\b",
+    r"\boffline\b",
+    r"\bhybrid\b",
+    r"\bvirtual\s+meeting\b",
+)
+
+ORDINAL_ITEM_PATTERN = re.compile(
+    r"^(?:pertama|kedua|ketiga|keempat|kelima|keenam|ketujuh|kedelapan|kesembilan|kesepuluh),\s+(.+)$",
+    re.IGNORECASE,
 )
 
 
@@ -152,12 +173,15 @@ def build_memo_prompt(
         "- Gunakan rumusan naskah dinas yang hemat, misalnya 'Sehubungan hal tersebut, dapat kami sampaikan sebagai berikut.' bila sesuai konteks.\n"
         "- Hindari frasa generik atau terlalu operasional seperti 'beberapa hal yang perlu diperhatikan' bila data dapat langsung disampaikan.\n"
         "- Jika ada beberapa butir keputusan/permohonan, gunakan daftar bernomor 1., 2., 3.\n"
+        "- Jika input sudah memakai penomoran 1., 2., 3., pertahankan nomor dan urutan tersebut; jangan ubah menjadi Pertama/Kedua/Ketiga.\n"
         "- Awali dengan dasar atau tindak lanjut bila konteks menyediakannya.\n"
+        "- Jangan mengarang nama orang, NIP, jabatan, nomor kontak, unit kerja, atau PIC bila tidak tertulis eksplisit di konfigurasi.\n"
         "- Instruksi revisi dan arahan tambahan adalah kontrol kerja, bukan bagian naskah; jangan salin frasa seperti 'jangan diubah', 'metadata jangan berubah', atau 'perbaiki typo'.\n"
         "- Perlakukan kata seperti baseline, uji, skenario evaluasi, dan auto format sebagai instruksi internal; jangan salin ke naskah memo.\n"
         "- Jangan menulis blok Tembusan karena tembusan diambil dari konfigurasi.\n"
         "- Jangan mencantumkan sumber, URL, JSON, kutipan tool, atau blok [SOURCES: ...] dalam naskah memo.\n"
         "- Untuk data PIC/pegawai, tulis setiap label dari konfigurasi sebagai baris terpisah; jangan menggabungkan nama, NIP, jabatan, unit kerja, keperluan, jadwal, atau nomor kontak ke dalam paragraf naratif.\n"
+        "- Untuk detail kegiatan seperti hari/tanggal, pukul, dan tempat, tulis setiap label sebagai baris terpisah seperti naskah dinas resmi.\n"
         "- Jika field Penutup berisi teks, jangan ubah atau hilangkan kalimat penutup tersebut.\n"
         f"{revision_rules}"
         "- Jangan gunakan markdown, tabel, salam pembuka, atau salam penutup.\n"
@@ -185,6 +209,7 @@ def generate_memo_docx(
     raw_body = config["body_override"] or generator(prompt)
     body = _sanitize_memo_body(_normalize_generated_text(raw_body), config)
     body = _enforce_revision_constraints(body, config)
+    body = _preserve_configured_numbered_items(body, config)
     body, generated_closing = _separate_generated_closing(body, config)
     if generated_closing and not config["closing"]:
         config["closing"] = generated_closing
@@ -370,7 +395,7 @@ def _add_body(
 
         block = blocks[index]
         numbered = re.match(r"^(\d+)[.)]\s+(.+)$", block)
-        bulleted = re.match(r"^([-*])\s+(.+)$", block)
+        bulleted = re.match(r"^([-*•])\s+(.+)$", block)
 
         if numbered:
             paragraph = document.add_paragraph()
@@ -398,7 +423,7 @@ def _add_body(
                 keep_together=True,
             )
             paragraph.paragraph_format.tab_stops.add_tab_stop(Inches(0.28))
-            _append_text_run(paragraph, f"-\t{bulleted.group(2).strip()}")
+            _append_text_run(paragraph, f"•\t{bulleted.group(2).strip()}")
             index += 1
             continue
 
@@ -441,6 +466,7 @@ def _extract_configured_key_value_items(config: dict[str, str]) -> list[tuple[st
         if parsed:
             items.append(parsed)
 
+    items.extend(_extract_activity_key_value_items(content))
     return _dedupe_key_value_items(items)
 
 
@@ -465,7 +491,11 @@ def _dedupe_key_value_items(items: list[tuple[str, str]]) -> list[tuple[str, str
 
     for label, value in items:
         key = _key_value_label_key(label)
-        clean_value = _clean_inline_person_data_value(value)
+        clean_value = (
+            _clean_activity_value(value)
+            if key in {"hari/tanggal", "pukul", "tempat", "agenda"}
+            else _clean_inline_person_data_value(value)
+        )
         if not key or not clean_value or key in seen:
             continue
         output.append((label, clean_value))
@@ -476,6 +506,49 @@ def _dedupe_key_value_items(items: list[tuple[str, str]]) -> list[tuple[str, str
 
 def _key_value_label_key(label: str) -> str:
     return _normalize_comparison_text(label)
+
+
+def _extract_activity_key_value_items(text: str) -> list[tuple[str, str]]:
+    clean = re.sub(r"\s+", " ", text or "").strip()
+    if not clean:
+        return []
+
+    items: list[tuple[str, str]] = []
+    date_match = re.search(
+        r"\bpada\s+(?:hari\s+)?(?P<date>\d{1,2}\s+[A-Za-zÀ-ÿ]+\s+\d{4})\b",
+        clean,
+        flags=re.IGNORECASE,
+    )
+    time_match = re.search(
+        r"\b(?:pukul|jam)\s+(?P<time>\d{1,2}[.:]\d{2}(?:\s*(?:s\.?d\.?|-|hingga|sampai)\s*\d{1,2}[.:]\d{2})?\s*WIB)\b",
+        clean,
+        flags=re.IGNORECASE,
+    )
+    place_match = re.search(
+        r"\bdi\s+(?P<place>[^.]+?)\s+pada\s+(?:hari\s+)?\d{1,2}\s+[A-Za-zÀ-ÿ]+\s+\d{4}\b",
+        clean,
+        flags=re.IGNORECASE,
+    )
+    agenda_match = re.search(
+        r"\bdengan\s+agenda\s+(?P<agenda>[^.]+)",
+        clean,
+        flags=re.IGNORECASE,
+    )
+
+    if date_match:
+        items.append(("hari/tanggal", _clean_activity_value(date_match.group("date"))))
+    if time_match:
+        items.append(("pukul", _clean_activity_value(time_match.group("time"))))
+    if place_match:
+        items.append(("tempat", _clean_activity_value(place_match.group("place"))))
+    if agenda_match:
+        items.append(("agenda", _clean_activity_value(agenda_match.group("agenda"))))
+
+    return items if len(items) >= 2 else []
+
+
+def _clean_activity_value(value: str) -> str:
+    return re.sub(r"\s+", " ", value or "").strip(" ,;.")
 
 
 def _add_key_value_body_table(
@@ -695,9 +768,42 @@ def _format_paragraph(
 
 
 def _append_text_run(paragraph, text: str):
-    run = paragraph.add_run(text)
-    _format_run(run, size_pt=11)
-    return run
+    return _append_official_text_runs(paragraph, text, size_pt=11)
+
+
+def _append_official_text_runs(paragraph, text: str, *, size_pt: float = 11):
+    parts = _split_foreign_italic_parts(text)
+    last_run = None
+    for part, italic in parts:
+        if not part:
+            continue
+        last_run = paragraph.add_run(part)
+        _format_run(last_run, size_pt=size_pt, italic=italic)
+
+    if last_run is None:
+        last_run = paragraph.add_run("")
+        _format_run(last_run, size_pt=size_pt)
+
+    return last_run
+
+
+def _split_foreign_italic_parts(text: str) -> list[tuple[str, bool]]:
+    if not text:
+        return [("", False)]
+
+    combined = re.compile("|".join(f"({pattern})" for pattern in FOREIGN_ITALIC_PATTERNS), re.IGNORECASE)
+    parts: list[tuple[str, bool]] = []
+    cursor = 0
+    for match in combined.finditer(text):
+        if match.start() > cursor:
+            parts.append((text[cursor : match.start()], False))
+        parts.append((match.group(0), True))
+        cursor = match.end()
+
+    if cursor < len(text):
+        parts.append((text[cursor:], False))
+
+    return parts
 
 
 def _format_run(run, *, size_pt: float, bold: bool = False, italic: bool = False, color: str | None = None) -> None:
@@ -883,6 +989,7 @@ def _sanitize_memo_body(body: str, config: dict[str, str]) -> str:
     clean = _strip_body_closing_sentences(clean)
     clean = _remove_configured_closing(clean, config.get("closing", ""))
     clean = _strip_instruction_artifacts(clean, config)
+    clean = _strip_unconfigured_honorific_data(clean, config)
     clean = _strip_trailing_fragments(clean)
     clean = _normalize_person_data_sequences(clean)
     clean = _clean_official_language_fragments(clean)
@@ -965,6 +1072,36 @@ def _build_concise_revision_body(config: dict[str, str], *, fallback_body: str) 
     return " ".join(fallback_blocks[:2]).strip()
 
 
+def _preserve_configured_numbered_items(body: str, config: dict[str, str]) -> str:
+    if config.get("revision_instruction"):
+        return body
+
+    configured_items = _extract_numbered_items(config.get("content", ""))
+    if len(configured_items) < 2:
+        return body
+
+    body_blocks = _split_blocks(body)
+    has_ordinal_rewrite = any(ORDINAL_ITEM_PATTERN.match(block) for block in body_blocks)
+    body_numbered_count = len(_extract_numbered_items(body))
+    if not has_ordinal_rewrite and body_numbered_count >= len(configured_items):
+        return body
+
+    intro_blocks: list[str] = []
+    for block in body_blocks:
+        if _is_structured_body_block(block) or ORDINAL_ITEM_PATTERN.match(block):
+            break
+        if _looks_like_closing_block(block):
+            break
+        intro_blocks.append(block)
+
+    if not intro_blocks:
+        basis = config.get("basis", "").strip().rstrip(".")
+        lead = basis if basis else "Sehubungan hal tersebut"
+        intro_blocks = [f"{lead}, dapat kami sampaikan sebagai berikut."]
+
+    return "\n".join([*intro_blocks[:1], _format_numbered_items(configured_items)]).strip()
+
+
 def _extract_numbered_items(text: str) -> list[str]:
     items: list[str] = []
     for block in _split_blocks(text):
@@ -998,7 +1135,7 @@ def _is_structured_body_block(block: str) -> bool:
     stripped = block.strip()
     if re.match(r"^\d+[.)]\s+.+$", stripped):
         return True
-    if re.match(r"^[-*]\s+.+$", stripped):
+    if re.match(r"^[-*•]\s+.+$", stripped):
         return True
     return _parse_person_data_block(stripped) is not None
 
@@ -1207,6 +1344,7 @@ def _looks_like_closing_block(block: str) -> bool:
         "demikian",
         "atas perhatian",
         "atas kerja sama",
+        "dimohon",
         "mohon arahan lebih lanjut",
         "mohon tindak lanjut",
         "mohon untuk dapat",
@@ -1274,6 +1412,41 @@ def _strip_instruction_artifacts(text: str, config: dict[str, str]) -> str:
             output.append(cleaned_block)
 
     return "\n".join(output).strip()
+
+
+def _strip_unconfigured_honorific_data(text: str, config: dict[str, str]) -> str:
+    config_text = _normalize_comparison_text(
+        "\n".join(
+            str(config.get(key, ""))
+            for key in ("basis", "content", "closing", "additional_instruction", "revision_instruction")
+        )
+    )
+    if any(marker in config_text for marker in ("bapak ", "ibu ", "sdr.", "sdr ")):
+        return text
+
+    output: list[str] = []
+    for block in _split_blocks(text):
+        normalized = _normalize_comparison_text(block)
+        has_unconfigured_honorific = re.search(r"\b(?:bapak|ibu|sdr\.?)\s+[a-z]", normalized) is not None
+        if "pic" in normalized and "sebagai berikut" in normalized and not _config_contains_person_name(config_text):
+            numbered = re.match(r"^(\d+[.)]\s+)", block)
+            prefix = numbered.group(1) if numbered else ""
+            output.append(
+                f"{prefix}Penunjukan Person In Charge (PIC) pada tiap layanan agar ditetapkan oleh masing-masing unit."
+            )
+            continue
+        if has_unconfigured_honorific and re.match(r"^[-*•]\s+", block):
+            continue
+        if has_unconfigured_honorific and "pic" in normalized:
+            output.append("Penunjukan Person In Charge (PIC) pada tiap layanan agar ditetapkan oleh masing-masing unit.")
+            continue
+        output.append(block)
+
+    return "\n".join(output).strip()
+
+
+def _config_contains_person_name(config_text: str) -> bool:
+    return bool(re.search(r"\bnama\s*:", config_text) or re.search(r"\b(?:bapak|ibu|sdr\.?)\s+[a-z]", config_text))
 
 
 def _remove_exact_instruction_text(text: str, instruction: str) -> str:
@@ -1463,6 +1636,14 @@ def _normalize_person_data_label(raw_label: str) -> str:
         return "unit kerja"
     if normalized.startswith("jadwal"):
         return "jadwal pendampingan" if "pendampingan" in normalized else "jadwal"
+    if normalized.startswith("hari/tanggal"):
+        return "hari/tanggal"
+    if normalized.startswith("pukul"):
+        return "pukul"
+    if normalized.startswith("tempat"):
+        return "tempat"
+    if normalized.startswith("agenda"):
+        return "agenda"
     if normalized.startswith("batas waktu"):
         return "batas waktu"
     if normalized.startswith("lokasi"):
