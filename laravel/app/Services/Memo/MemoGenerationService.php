@@ -82,6 +82,36 @@ class MemoGenerationService
         return $version;
     }
 
+    public function generateRevisionFromBody(Memo $memo, string $body, array $configuration = [], ?string $revisionInstruction = null): MemoVersion
+    {
+        if ($revisionInstruction !== null && trim($revisionInstruction) !== '') {
+            $configuration['revision_instruction'] = $revisionInstruction;
+        }
+
+        $storedConfiguration = $this->normalizeConfiguration($configuration);
+        $title = (string) ($storedConfiguration['subject'] ?? $memo->title);
+        $requestConfiguration = array_merge($storedConfiguration, [
+            'body_override' => trim($body),
+        ]);
+        $draft = $this->requestDraft($memo->memo_type, $title, $body, $requestConfiguration);
+        $storedConfiguration = $this->applyResolvedPageSize($storedConfiguration, $draft['page_size']);
+        $versionNumber = ((int) $memo->versions()->max('version_number')) + 1;
+        $path = $this->storeDraft($memo, $draft['content'], $versionNumber);
+
+        $version = $this->createVersion(
+            $memo,
+            $versionNumber,
+            $path,
+            $storedConfiguration,
+            $draft['searchable_text'],
+            $storedConfiguration['revision_instruction'] ?? null,
+        );
+
+        $this->activateVersion($memo, $version);
+
+        return $version;
+    }
+
     public function activateVersion(Memo $memo, MemoVersion $version, bool $touch = true): Memo
     {
         if ((int) $version->memo_id !== (int) $memo->id) {

@@ -59,6 +59,20 @@ def _cell_margin_twips(cell, margin_name):
     return int(margin.get(qn("w:w")))
 
 
+def _cell_width_twips(cell):
+    width = cell._tc.get_or_add_tcPr().find(qn("w:tcW"))
+    assert width is not None
+    return int(width.get(qn("w:w")))
+
+
+def _spacing_after_table_twips(table):
+    paragraph = table._tbl.getnext()
+    assert paragraph is not None
+    spacing = paragraph.find(qn("w:pPr")).find(qn("w:spacing"))
+    assert spacing is not None
+    return int(spacing.get(qn("w:after"), "0"))
+
+
 def _signature_qr_center_ratio(document, table):
     indent_in = _table_indent_twips(table) / 1440
     page_width_in = document.sections[0].page_width.inches
@@ -480,6 +494,85 @@ def test_generate_memo_docx_removes_carbon_copy_from_body_but_keeps_configuratio
     assert all_text.count("Purbaya Yudhi Sadewa") == 1
 
 
+def test_generate_memo_docx_removes_bare_configured_carbon_copy_line_from_body():
+    draft = generate_memo_docx(
+        memo_type="memo_internal",
+        title="Revisi Kapitalisasi Tembusan",
+        context="Kapitalisasi tembusan.",
+        text_generator=lambda prompt: (
+            "Menindaklanjuti kebutuhan distribusi informasi, diminta agar setiap unit memastikan tindak lanjut.\n"
+            "Kepala Bagian Keamanan"
+        ),
+        configuration={
+            "number": "EVAL-40/IST/YK/05/2026",
+            "recipient": "Kepala Bagian Administrasi",
+            "sender": "Kepala Istana Kepresidenan Yogyakarta",
+            "subject": "Revisi Kapitalisasi Tembusan",
+            "date": "7 Mei 2026",
+            "signatory": "Deni Mulyana",
+            "carbon_copy": "Kepala Bagian Keamanan",
+            "page_size": "letter",
+        },
+    )
+
+    all_text = _all_document_text(Document(BytesIO(draft.content)))
+
+    assert all_text.count("Kepala Bagian Keamanan") == 1
+    assert draft.searchable_text.count("Kepala Bagian Keamanan") == 1
+
+
+def test_generate_memo_docx_uses_body_override_without_calling_text_generator():
+    draft = generate_memo_docx(
+        memo_type="memo_internal",
+        title="Revisi Ubah Penerima Memo",
+        context="Isi fallback tidak boleh dipakai.",
+        text_generator=lambda prompt: (_ for _ in ()).throw(AssertionError("text generator should not be called")),
+        configuration={
+            "number": "EVAL-32/IST/YK/05/2026",
+            "recipient": "Kepala Pusat Pengembangan Layanan",
+            "sender": "Kepala Istana Kepresidenan Yogyakarta",
+            "subject": "Revisi Ubah Penerima Memo",
+            "date": "7 Mei 2026",
+            "body_override": "Isi memo saat ini tetap dipertahankan.",
+            "signatory": "Deni Mulyana",
+            "page_size": "letter",
+        },
+    )
+
+    assert "Isi memo saat ini tetap dipertahankan." in draft.searchable_text
+
+
+def test_generate_memo_docx_treats_mohon_tindak_lanjut_as_generated_closing():
+    closing = "Mohon tindak lanjut sesuai poin-poin tersebut agar proses pembaruan aplikasi dapat terlaksana dengan lancar dan terkoordinasi dengan baik."
+
+    draft = generate_memo_docx(
+        memo_type="memo_internal",
+        title="Koordinasi Teknis Pembaruan Aplikasi Internal",
+        context="Koordinasi pembaruan aplikasi internal.",
+        text_generator=lambda prompt: (
+            "Sehubungan dengan rencana pembaruan aplikasi internal persuratan, dapat kami sampaikan hal-hal sebagai berikut.\n"
+            "1. Lakukan koordinasi teknis dengan tim terkait.\n"
+            "2. Pastikan seluruh data penting telah dicadangkan.\n"
+            f"{closing}"
+        ),
+        configuration={
+            "number": "EVAL-04/IST/YK/05/2026",
+            "recipient": "Kepala Pusat Pengembangan dan Layanan Sistem Informasi",
+            "sender": "Kepala Istana Kepresidenan Yogyakarta",
+            "subject": "Koordinasi Teknis Pembaruan Aplikasi Internal",
+            "date": "7 Mei 2026",
+            "signatory": "Deni Mulyana",
+            "page_size": "letter",
+        },
+    )
+
+    document = Document(BytesIO(draft.content))
+    closing_paragraph = [paragraph for paragraph in document.paragraphs if paragraph.text == closing][0]
+
+    assert _paragraph_space_before_twips(closing_paragraph) >= 280
+    assert draft.searchable_text.count(closing) == 1
+
+
 def test_generate_memo_docx_formats_pic_data_as_key_value_table():
     draft = generate_memo_docx(
         memo_type="memo_internal",
@@ -546,6 +639,45 @@ def test_generate_memo_docx_keeps_schedule_inside_key_value_table():
     assert data_table.cell(0, 0).text == "nama"
     assert data_table.cell(4, 0).text == "jadwal pendampingan"
     assert data_table.cell(4, 2).text == "Senin hingga Jumat, pukul 08.00-16.00 WIB"
+    assert _cell_width_twips(data_table.cell(4, 0)) >= 2000
+
+
+def test_generate_memo_docx_formats_period_inline_key_value_and_spaces_following_paragraph():
+    draft = generate_memo_docx(
+        memo_type="memo_internal",
+        title="Pemindahan Lokasi Penugasan Sementara",
+        context="Pemindahan lokasi penugasan sementara.",
+        text_generator=lambda prompt: (
+            "Sehubungan dengan penyesuaian kebutuhan layanan sementara, dapat kami sampaikan bahwa "
+            "lokasi asal: Ruang Layanan Administrasi lokasi tujuan: Ruang Koordinasi Terpadu. "
+            "Periode: 13 sampai 17 Mei 2026.\n"
+            "Selama periode tersebut, setiap pegawai wajib melaporkan progres tugas harian."
+        ),
+        configuration={
+            "number": "EVAL-13/IST/YK/05/2026",
+            "recipient": "Kepala Subbagian Kepegawaian",
+            "sender": "Kepala Istana Kepresidenan Yogyakarta",
+            "subject": "Pemindahan Lokasi Penugasan Sementara",
+            "date": "7 Mei 2026",
+            "content": (
+                "Lokasi asal: Ruang Layanan Administrasi\n"
+                "Lokasi tujuan: Ruang Koordinasi Terpadu\n"
+                "Periode: 13 sampai 17 Mei 2026"
+            ),
+            "signatory": "Deni Mulyana",
+            "page_size": "letter",
+        },
+    )
+
+    document = Document(BytesIO(draft.content))
+    data_table = _find_table_containing(document, "periode")
+
+    assert data_table.cell(0, 0).text == "lokasi asal"
+    assert data_table.cell(1, 0).text == "lokasi tujuan"
+    assert data_table.cell(1, 2).text == "Ruang Koordinasi Terpadu"
+    assert data_table.cell(2, 0).text == "periode"
+    assert data_table.cell(2, 2).text == "13 sampai 17 Mei 2026"
+    assert _spacing_after_table_twips(data_table) >= 160
 
 
 def test_generate_memo_docx_strips_source_json_urls_and_markdown_artifacts():

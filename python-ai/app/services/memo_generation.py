@@ -39,6 +39,8 @@ PERSON_DATA_LABEL_PATTERN = (
     r"|jadwal(?:\s+(?:pendampingan|kegiatan|pelaksanaan))?"
     r"|batas\s+waktu"
     r"|lokasi(?:\s+(?:asal|tujuan))?"
+    r"|periode(?:\s+(?:kegiatan|pelaksanaan))?"
+    r"|waktu\s+pelaksanaan"
     r"|peserta"
     r"|nomor\s+kontak"
     r"|keperluan"
@@ -180,7 +182,8 @@ def generate_memo_docx(
     config = _normalize_configuration(configuration, clean_title, clean_context)
     generator = text_generator or _default_text_generator
     prompt = build_memo_prompt(normalized_type, clean_title, clean_context, config)
-    body = _sanitize_memo_body(_normalize_generated_text(generator(prompt)), config)
+    raw_body = config["body_override"] or generator(prompt)
+    body = _sanitize_memo_body(_normalize_generated_text(raw_body), config)
     body = _enforce_revision_constraints(body, config)
     body, generated_closing = _separate_generated_closing(body, config)
     if generated_closing and not config["closing"]:
@@ -355,7 +358,13 @@ def _add_body(
                 table_items = _merge_key_value_items(key_value_items, configured_key_values)
                 configured_key_values_used = True
 
-            _add_key_value_body_table(document, table_items, compact=compact, add_space_before=index > 0)
+            _add_key_value_body_table(
+                document,
+                table_items,
+                compact=compact,
+                add_space_before=index > 0,
+                add_space_after=_should_add_space_after_key_value_table(blocks, index + len(key_value_items)),
+            )
             index += len(key_value_items)
             continue
 
@@ -410,6 +419,14 @@ def _blocks_contain_key_value_table(blocks: list[str]) -> bool:
         if len(_collect_person_data_blocks(blocks, index)) >= 2:
             return True
     return False
+
+
+def _should_add_space_after_key_value_table(blocks: list[str], next_index: int) -> bool:
+    if next_index >= len(blocks):
+        return False
+
+    next_block = blocks[next_index].strip()
+    return bool(next_block) and not _is_structured_body_block(next_block)
 
 
 def _extract_configured_key_value_items(config: dict[str, str]) -> list[tuple[str, str]]:
@@ -467,6 +484,7 @@ def _add_key_value_body_table(
     *,
     compact: bool = False,
     add_space_before: bool = False,
+    add_space_after: bool = False,
 ) -> None:
     if add_space_before:
         spacer = document.add_paragraph()
@@ -482,7 +500,7 @@ def _add_key_value_body_table(
     _set_table_indent(table, 0.5)
     _set_table_width(table, 5.22)
 
-    widths = [Inches(1.08), Inches(0.18), Inches(3.96)]
+    widths = [Inches(1.45), Inches(0.18), Inches(3.59)]
     for row_index, (label, value) in enumerate(items):
         row = table.rows[row_index]
         _set_row_cant_split(row)
@@ -496,6 +514,15 @@ def _add_key_value_body_table(
         _set_cell_text(cells[0], label)
         _set_cell_text(cells[1], ":")
         _set_cell_text(cells[2], value)
+
+    if add_space_after:
+        spacer = document.add_paragraph()
+        _format_paragraph(
+            spacer,
+            line_spacing_pt=1,
+            space_before_pt=0,
+            space_after_pt=8 if compact else 12,
+        )
 
 
 def _add_closing(document: Document, closing: str, *, compact: bool = False) -> None:
@@ -807,6 +834,7 @@ def _normalize_configuration(
         "closing": _clean_config_value(raw.get("closing")),
         "signatory": _clean_config_value(raw.get("signatory")),
         "carbon_copy": _clean_config_value(raw.get("carbon_copy")),
+        "body_override": _clean_config_value(raw.get("body_override")),
         "page_size": page_size,
         "page_size_mode": page_size_mode,
         "additional_instruction": _clean_config_value(raw.get("additional_instruction")),
@@ -849,6 +877,7 @@ def _build_searchable_text(memo_type: str, config: dict[str, str], body: str) ->
 def _sanitize_memo_body(body: str, config: dict[str, str]) -> str:
     clean = _strip_external_source_artifacts(body)
     clean = _strip_forbidden_body_sections(clean)
+    clean = _strip_configured_carbon_copy_lines(clean, config.get("carbon_copy", ""))
     clean = _strip_markdown_artifacts(clean)
     clean = _strip_evaluation_artifacts(clean)
     clean = _strip_body_closing_sentences(clean)
@@ -1006,6 +1035,26 @@ def _strip_forbidden_body_sections(text: str) -> str:
     return "\n".join(output).strip()
 
 
+def _strip_configured_carbon_copy_lines(text: str, carbon_copy: str) -> str:
+    carbon_copy_keys = {
+        _normalize_comparison_text(re.sub(r"^\s*\d+[.)]\s*", "", line))
+        for line in _split_lines(carbon_copy)
+    }
+    carbon_copy_keys.discard("")
+
+    if not carbon_copy_keys:
+        return text
+
+    output: list[str] = []
+    for block in _split_blocks(text):
+        clean_block = re.sub(r"^\s*\d+[.)]\s*", "", block).strip()
+        if _normalize_comparison_text(clean_block) in carbon_copy_keys:
+            continue
+        output.append(block)
+
+    return "\n".join(output).strip()
+
+
 def _strip_external_source_artifacts(text: str) -> str:
     clean = re.sub(r"(?is)\[SOURCES\s*:.*?(?:\]\]|\n\s*\n|$)", "", text or "")
     clean = re.sub(r"\\n", " ", clean)
@@ -1159,6 +1208,9 @@ def _looks_like_closing_block(block: str) -> bool:
         "atas perhatian",
         "atas kerja sama",
         "mohon arahan lebih lanjut",
+        "mohon tindak lanjut",
+        "mohon untuk dapat",
+        "kami harapkan",
     )
     return normalized.startswith(closing_starters)
 
@@ -1415,6 +1467,10 @@ def _normalize_person_data_label(raw_label: str) -> str:
         return "batas waktu"
     if normalized.startswith("lokasi"):
         return normalized
+    if normalized.startswith("periode"):
+        return "periode"
+    if normalized.startswith("waktu pelaksanaan"):
+        return "waktu pelaksanaan"
     if normalized == "peserta":
         return "peserta"
     if normalized.startswith("nomor kontak"):

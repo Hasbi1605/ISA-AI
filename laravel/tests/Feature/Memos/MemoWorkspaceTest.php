@@ -463,8 +463,8 @@ class MemoWorkspaceTest extends TestCase
         Http::assertSent(fn ($request) => str_ends_with($request->url(), '/api/memos/generate-body')
             && $request['configuration']['carbon_copy'] === "1. Kepala Dinas Sekretariat Negara\n2. Kepala IKY\n3. Kepala KOMDIGI\n4. Kepala Istana Kapak"
             && $request['configuration']['revision_instruction'] === 'tambahkan tembusan nomor 4, untuk Kepala Istana Kapak'
-            && str_contains($request['context'], 'Isi memo saat ini')
-            && str_contains($request['context'], 'Instruksi revisi wajib diterapkan')
+            && $request['configuration']['body_override'] === 'Isi memo saat ini.'
+            && $request['context'] === 'Isi memo saat ini.'
             && ! str_contains($request['context'], 'Tembusan:')
             && ! str_contains($request['context'], 'Deni Mulyana'));
 
@@ -476,6 +476,7 @@ class MemoWorkspaceTest extends TestCase
             "1. Kepala Dinas Sekretariat Negara\n2. Kepala IKY\n3. Kepala KOMDIGI\n4. Kepala Istana Kapak",
             $revisedMemo->configuration['carbon_copy'],
         );
+        $this->assertArrayNotHasKey('body_override', $revisedMemo->configuration);
         $this->assertSame('tambahkan tembusan nomor 4, untuk Kepala Istana Kapak', $revisedMemo->configuration['revision_instruction']);
         $this->assertSame($memo->id, $revisedMemo->id);
         $this->assertNotSame($originalVersion->id, $revisedMemo->current_version_id);
@@ -586,10 +587,12 @@ class MemoWorkspaceTest extends TestCase
             ->assertDispatched('memo-document-ready');
 
         Http::assertSent(fn ($request) => $request['configuration']['recipient'] === 'Kepala Pusat Pengembangan Layanan'
-            && str_contains($request['context'], 'Isi memo saat ini tetap dipertahankan.')
+            && $request['configuration']['body_override'] === 'Isi memo saat ini tetap dipertahankan.'
+            && $request['context'] === 'Isi memo saat ini tetap dipertahankan.'
             && ! str_contains($request['context'], 'Tembusan:')
             && ! str_contains($request['context'], 'Deni Mulyana'));
         $this->assertSame('Kepala Pusat Pengembangan Layanan', $memo->refresh()->configuration['recipient']);
+        $this->assertArrayNotHasKey('body_override', $memo->configuration);
     }
 
     public function test_revision_chat_applies_new_date_when_instruction_mentions_old_and_new_dates(): void
@@ -641,7 +644,8 @@ class MemoWorkspaceTest extends TestCase
             ->assertHasNoErrors()
             ->assertDispatched('memo-document-ready');
 
-        Http::assertSent(fn ($request) => $request['configuration']['date'] === '13 Mei 2026');
+        Http::assertSent(fn ($request) => $request['configuration']['date'] === '13 Mei 2026'
+            && ! array_key_exists('body_override', $request['configuration']));
         $this->assertSame('13 Mei 2026', $memo->refresh()->configuration['date']);
     }
 

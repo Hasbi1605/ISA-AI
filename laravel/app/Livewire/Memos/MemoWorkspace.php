@@ -178,6 +178,7 @@ class MemoWorkspace extends Component
         $this->isGenerating = true;
 
         try {
+            $bodyOverride = $this->currentMemoBodyForRevision();
             $this->applyRevisionInstruction($instruction);
 
             $generationService = app(MemoGenerationService::class);
@@ -189,12 +190,19 @@ class MemoWorkspace extends Component
                 ->where('user_id', Auth::id())
                 ->firstOrFail();
 
-            $version = $generationService->generateRevision(
-                $memo,
-                $this->memoRevisionContext($instruction),
-                $configuration,
-                trim($instruction),
-            );
+            $version = $this->shouldPreserveCurrentBodyForRevision($instruction) && $bodyOverride !== ''
+                ? $generationService->generateRevisionFromBody(
+                    $memo,
+                    $bodyOverride,
+                    $configuration,
+                    trim($instruction),
+                )
+                : $generationService->generateRevision(
+                    $memo,
+                    $this->memoRevisionContext($instruction),
+                    $configuration,
+                    trim($instruction),
+                );
 
             $memo = $version->memo()->firstOrFail();
 
@@ -559,6 +567,17 @@ class MemoWorkspace extends Component
             "Instruksi revisi wajib diterapkan:\n".trim($instruction),
         ];
 
+        $bodyOnly = $this->currentMemoBodyForRevision();
+
+        if ($bodyOnly !== '') {
+            array_unshift($sections, "Isi memo saat ini:\n".$bodyOnly);
+        }
+
+        return implode("\n\n", array_filter($sections, fn (string $section) => trim($section) !== ''));
+    }
+
+    protected function currentMemoBodyForRevision(): string
+    {
         $activeMemoText = null;
 
         if ($this->activeMemoVersionId) {
@@ -573,15 +592,46 @@ class MemoWorkspace extends Component
                 ->value('searchable_text');
         }
 
-        if (trim((string) $activeMemoText) !== '') {
-            $bodyOnly = $this->memoBodyForRevision((string) $activeMemoText);
+        if (trim((string) $activeMemoText) === '') {
+            return '';
+        }
 
-            if ($bodyOnly !== '') {
-                array_unshift($sections, "Isi memo saat ini:\n".$bodyOnly);
+        return $this->memoBodyForRevision((string) $activeMemoText);
+    }
+
+    protected function shouldPreserveCurrentBodyForRevision(string $instruction): bool
+    {
+        $normalized = mb_strtolower(trim($instruction));
+
+        if ($normalized === '') {
+            return false;
+        }
+
+        $bodyChangePatterns = [
+            '/\bpoin\b/u',
+            '/\bparagraf\b/u',
+            '/\blebih\s+singkat\b/u',
+            '/\bringkas\b/u',
+            '/\bdipersingkat\b/u',
+            '/\bformat\b/u',
+            '/\btypo\b/u',
+            '/\btanggal\s+(?:rapat|kegiatan)\b/u',
+            '/\bdalam\s+isi\b/u',
+            '/\bbagian\s+isi\b/u',
+            '/\bdata\s+utama\b/u',
+            '/\brapikan\s+bagian\b/u',
+        ];
+
+        foreach ($bodyChangePatterns as $pattern) {
+            if (preg_match($pattern, $normalized)) {
+                return false;
             }
         }
 
-        return implode("\n\n", array_filter($sections, fn (string $section) => trim($section) !== ''));
+        return preg_match(
+            '/\b(?:tembusan|penerima|yth\.?|kalimat\s+penutup|penutup|penandatangan|tanda\s+tangan|tanggal\s+memo)\b/u',
+            $normalized,
+        ) === 1;
     }
 
     protected function memoConfigurationSummary(): string
