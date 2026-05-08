@@ -180,6 +180,7 @@ class MemoWorkspace extends Component
         try {
             $bodyOverride = $this->currentMemoBodyForRevision();
             $this->applyRevisionInstruction($instruction);
+            $bodyOverride = $this->applyBodyOnlyRevisionInstruction($bodyOverride, $instruction);
 
             $generationService = app(MemoGenerationService::class);
             $configuration = array_merge($this->memoConfigurationPayload(), [
@@ -190,7 +191,7 @@ class MemoWorkspace extends Component
                 ->where('user_id', Auth::id())
                 ->firstOrFail();
 
-            $version = $this->shouldPreserveCurrentBodyForRevision($instruction) && $bodyOverride !== ''
+            $version = $this->shouldPreserveCurrentBodyForRevision($instruction, $bodyOverride) && $bodyOverride !== ''
                 ? $generationService->generateRevisionFromBody(
                     $memo,
                     $bodyOverride,
@@ -599,12 +600,21 @@ class MemoWorkspace extends Component
         return $this->memoBodyForRevision((string) $activeMemoText);
     }
 
-    protected function shouldPreserveCurrentBodyForRevision(string $instruction): bool
+    protected function shouldPreserveCurrentBodyForRevision(string $instruction, string $body = ''): bool
     {
         $normalized = mb_strtolower(trim($instruction));
 
         if ($normalized === '') {
             return false;
+        }
+
+        if ($this->isNarrowTypoNameRevision($instruction)) {
+            return $this->extractTypoNameRevisionValue($instruction) !== ''
+                && $this->bodyContainsConfiguredNameLine($body);
+        }
+
+        if ($this->isNumberedFormatRevision($normalized)) {
+            return $this->bodyHasNumberedList($body);
         }
 
         $bodyChangePatterns = [
@@ -661,6 +671,88 @@ class MemoWorkspace extends Component
         $this->applySignatoryRevision($instruction);
         $this->applyCarbonCopyRevision($instruction);
         $this->applyCarbonCopyCasingRevision($instruction);
+        $this->applyTypoNameRevision($instruction);
+    }
+
+    protected function applyBodyOnlyRevisionInstruction(string $body, string $instruction): string
+    {
+        $cleanBody = trim($body);
+
+        if ($cleanBody === '') {
+            return '';
+        }
+
+        if ($this->isNarrowTypoNameRevision($instruction)) {
+            $value = $this->extractTypoNameRevisionValue($instruction);
+
+            if ($value !== '') {
+                return $this->replaceConfiguredNameLine($cleanBody, $value);
+            }
+        }
+
+        return $cleanBody;
+    }
+
+    protected function applyTypoNameRevision(string $instruction): void
+    {
+        if (! $this->isNarrowTypoNameRevision($instruction)) {
+            return;
+        }
+
+        $value = $this->extractTypoNameRevisionValue($instruction);
+
+        if ($value === '') {
+            return;
+        }
+
+        $this->memoContent = $this->replaceConfiguredNameLine($this->memoContent, $value);
+    }
+
+    protected function isNarrowTypoNameRevision(string $instruction): bool
+    {
+        return preg_match('/\btypo\b/iu', $instruction) === 1
+            && preg_match('/\bnama\b/iu', $instruction) === 1;
+    }
+
+    protected function isNumberedFormatRevision(string $normalizedInstruction): bool
+    {
+        return preg_match('/\b(?:format|ubah|jadikan|menjadi)\b.*\bpoin\s+bernomor\b/u', $normalizedInstruction) === 1
+            || preg_match('/\bpoin\s+bernomor\b.*\b(?:format|ubah|jadikan|menjadi)\b/u', $normalizedInstruction) === 1;
+    }
+
+    protected function extractTypoNameRevisionValue(string $instruction): string
+    {
+        if (! preg_match('/\b(?:menjadi|jadi)\s+(.+?)(?:,?\s+(?:bagian|metadata|data|yang\s+lain)\b|\.|$)/iu', $instruction, $matches)) {
+            return '';
+        }
+
+        return $this->cleanRevisionValue((string) $matches[1]);
+    }
+
+    protected function bodyContainsConfiguredNameLine(string $body): bool
+    {
+        return preg_match('/^\s*(?:\d+[.)]\s*)?nama(?:\s+(?:pic|pegawai)(?:\s+yang\s+benar)?)?\s*:/imu', $body) === 1;
+    }
+
+    protected function bodyHasNumberedList(string $body): bool
+    {
+        return preg_match('/^\s*\d+[.)]\s+\S+/mu', $body) === 1;
+    }
+
+    protected function replaceConfiguredNameLine(string $text, string $value): string
+    {
+        $lines = preg_split('/\R/u', $text) ?: [];
+
+        return collect($lines)
+            ->map(function (string $line) use ($value): string {
+                return preg_replace(
+                    '/^(\s*(?:\d+[.)]\s*)?nama(?:\s+(?:pic|pegawai)(?:\s+yang\s+benar)?)?\s*:\s*).+$/iu',
+                    '$1'.$value,
+                    $line,
+                    1,
+                ) ?? $line;
+            })
+            ->implode(PHP_EOL);
     }
 
     protected function memoBodyForRevision(string $searchableText): string

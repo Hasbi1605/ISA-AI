@@ -649,6 +649,131 @@ class MemoWorkspaceTest extends TestCase
         $this->assertSame('13 Mei 2026', $memo->refresh()->configuration['date']);
     }
 
+    public function test_revision_chat_applies_name_typo_without_regenerating_unrelated_body(): void
+    {
+        Storage::fake('local');
+        Http::fake([
+            '*/api/memos/generate-body' => Http::response('revised-docx-bytes', 200, [
+                'X-Memo-Searchable-Text-B64' => base64_encode('Memo revisi typo nama'),
+                'X-Memo-Page-Size' => 'letter',
+                'Content-Type' => 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+            ]),
+        ]);
+
+        $user = User::factory()->create(['email_verified_at' => now()]);
+        $body = "Berdasarkan tindak lanjut proses pendataan pegawai pendamping kegiatan integrasi aplikasi, dapat kami sampaikan sebagai berikut.\n"
+            ."Nama pegawai yang benar: Muhamad Hasbi Ash Shiddiqi\n"
+            ."NIP: 231210013\n"
+            ."Keperluan: Pendampingan kegiatan integrasi aplikasi";
+        $memo = Memo::create([
+            'user_id' => $user->id,
+            'title' => 'Revisi Typo Nama Orang',
+            'memo_type' => 'memo_internal',
+            'file_path' => 'memos/'.$user->id.'/memo-awal.docx',
+            'status' => Memo::STATUS_GENERATED,
+            'searchable_text' => $body."\nDeni Mulyana",
+            'configuration' => [
+                'number' => 'EVAL-38/IST/YK/05/2026',
+                'recipient' => 'Kepala Bagian SDM',
+                'sender' => 'Kepala Istana Kepresidenan Yogyakarta',
+                'subject' => 'Revisi Typo Nama Orang',
+                'date' => '7 Mei 2026',
+                'content' => "Nama pegawai yang benar: Muhamad Hasbi Ash Shiddiqi\nNIP: 231210013\nKeperluan: Pendampingan kegiatan integrasi aplikasi",
+                'signatory' => 'Deni Mulyana',
+                'carbon_copy' => 'Kepala Subbagian Kepegawaian',
+                'page_size' => 'letter',
+                'page_size_mode' => 'auto',
+            ],
+        ]);
+        $version = $memo->versions()->create([
+            'version_number' => 1,
+            'label' => 'Versi 1',
+            'file_path' => $memo->file_path,
+            'status' => Memo::STATUS_GENERATED,
+            'configuration' => $memo->configuration,
+            'searchable_text' => $memo->searchable_text,
+        ]);
+        $memo->forceFill(['current_version_id' => $version->id])->save();
+
+        Livewire::actingAs($user)
+            ->test(MemoWorkspace::class)
+            ->call('loadMemo', $memo->id)
+            ->set('memoPrompt', 'Perbaiki typo nama menjadi Muhammad Hasbi Ash Shiddiqi, bagian lain jangan diubah.')
+            ->call('sendMemoChat')
+            ->assertHasNoErrors()
+            ->assertDispatched('memo-document-ready');
+
+        $expectedBody = str_replace('Muhamad Hasbi Ash Shiddiqi', 'Muhammad Hasbi Ash Shiddiqi', $body);
+
+        Http::assertSent(fn ($request) => $request['configuration']['content'] === "Nama pegawai yang benar: Muhammad Hasbi Ash Shiddiqi\nNIP: 231210013\nKeperluan: Pendampingan kegiatan integrasi aplikasi"
+            && $request['configuration']['body_override'] === $expectedBody
+            && $request['context'] === $expectedBody
+            && ! str_contains($request['context'], 'Menindaklanjuti proses pendataan pegawai pendamping'));
+        $this->assertStringContainsString(
+            'Nama pegawai yang benar: Muhammad Hasbi Ash Shiddiqi',
+            $memo->refresh()->configuration['content'],
+        );
+    }
+
+    public function test_revision_chat_preserves_existing_numbered_body_for_numbered_format_request(): void
+    {
+        Storage::fake('local');
+        Http::fake([
+            '*/api/memos/generate-body' => Http::response('revised-docx-bytes', 200, [
+                'X-Memo-Searchable-Text-B64' => base64_encode('Memo revisi format bernomor'),
+                'X-Memo-Page-Size' => 'letter',
+                'Content-Type' => 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+            ]),
+        ]);
+
+        $user = User::factory()->create(['email_verified_at' => now()]);
+        $body = "Sehubungan dengan tindak lanjut untuk memperjelas pelaksanaan layanan, dapat kami sampaikan sebagai berikut:\n"
+            ."1. Unit layanan wajib menunjuk satu orang penanggung jawab.\n"
+            ."2. Unit layanan wajib menyusun daftar kendala.\n"
+            ."3. Unit layanan wajib mengirimkan laporan singkat sesuai batas waktu yang telah ditentukan.";
+        $memo = Memo::create([
+            'user_id' => $user->id,
+            'title' => 'Revisi Format Menjadi Poin Bernomor',
+            'memo_type' => 'memo_internal',
+            'file_path' => 'memos/'.$user->id.'/memo-awal.docx',
+            'status' => Memo::STATUS_GENERATED,
+            'searchable_text' => $body."\nDeni Mulyana\nTembusan:\nKepala Bagian Administrasi",
+            'configuration' => [
+                'number' => 'EVAL-37/IST/YK/05/2026',
+                'recipient' => 'Kepala Unit Layanan',
+                'sender' => 'Kepala Istana Kepresidenan Yogyakarta',
+                'subject' => 'Revisi Format Menjadi Poin Bernomor',
+                'date' => '7 Mei 2026',
+                'content' => "Unit layanan wajib menunjuk penanggung jawab, menyusun daftar kendala, dan mengirimkan laporan singkat.",
+                'signatory' => 'Deni Mulyana',
+                'carbon_copy' => 'Kepala Bagian Administrasi',
+                'page_size' => 'letter',
+                'page_size_mode' => 'auto',
+            ],
+        ]);
+        $version = $memo->versions()->create([
+            'version_number' => 1,
+            'label' => 'Versi 1',
+            'file_path' => $memo->file_path,
+            'status' => Memo::STATUS_GENERATED,
+            'configuration' => $memo->configuration,
+            'searchable_text' => $memo->searchable_text,
+        ]);
+        $memo->forceFill(['current_version_id' => $version->id])->save();
+
+        Livewire::actingAs($user)
+            ->test(MemoWorkspace::class)
+            ->call('loadMemo', $memo->id)
+            ->set('memoPrompt', 'Ubah format menjadi poin bernomor, bagian lain jangan diubah.')
+            ->call('sendMemoChat')
+            ->assertHasNoErrors()
+            ->assertDispatched('memo-document-ready');
+
+        Http::assertSent(fn ($request) => $request['configuration']['body_override'] === $body
+            && $request['context'] === $body
+            && ! str_contains($request['context'], 'untuk koordinasi dan pelaporan'));
+    }
+
     public function test_memo_history_can_be_deleted_like_chat_history(): void
     {
         $user = User::factory()->create(['email_verified_at' => now()]);

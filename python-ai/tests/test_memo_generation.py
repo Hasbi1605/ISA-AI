@@ -1068,6 +1068,139 @@ def test_generate_memo_docx_formats_activity_details_as_official_key_value_block
     assert _spacing_after_table_twips(detail_table) >= 160
 
 
+def test_generate_memo_docx_preserves_decimal_time_in_activity_key_value_block():
+    draft = generate_memo_docx(
+        memo_type="memo_internal",
+        title="Konfirmasi Jadwal Kegiatan Koordinasi",
+        context="Konfirmasi jadwal kegiatan koordinasi.",
+        text_generator=lambda prompt: (
+            "Sehubungan dengan jadwal kegiatan koordinasi lintas unit, dapat kami sampaikan sebagai berikut."
+        ),
+        configuration={
+            "number": "EVAL-12/IST/YK/05/2026",
+            "recipient": "Kepala Bagian Protokol",
+            "sender": "Kepala Istana Kepresidenan Yogyakarta",
+            "subject": "Konfirmasi Jadwal Kegiatan Koordinasi",
+            "date": "10 Mei 2026",
+            "content": (
+                "Tanggal kegiatan 13 Mei 2026, pukul 09.00 WIB, ruang rapat utama, "
+                "agenda pembagian peran dan pengecekan kesiapan setiap bagian."
+            ),
+            "signatory": "Deni Mulyana",
+            "page_size": "letter",
+        },
+    )
+
+    document = Document(BytesIO(draft.content))
+    detail_table = _find_table_containing(document, "pukul")
+
+    assert detail_table.cell(0, 2).text == "13 Mei 2026"
+    assert detail_table.cell(1, 2).text == "09.00 WIB"
+    assert detail_table.cell(2, 2).text == "ruang rapat utama"
+    assert "pukul : 00 WIB" not in _all_document_text(document)
+    assert "pukul: 00 WIB" not in draft.searchable_text
+
+
+def test_generate_memo_docx_preserves_time_range_in_activity_key_value_block():
+    draft = generate_memo_docx(
+        memo_type="memo_internal",
+        title="Konfirmasi Kehadiran Rapat Singkat",
+        context="Konfirmasi kehadiran rapat singkat.",
+        text_generator=lambda prompt: (
+            "Sehubungan dengan rencana rapat singkat, dimohon agar peserta mengonfirmasi kehadiran."
+        ),
+        configuration={
+            "number": "EVAL-21/IST/YK/05/2026",
+            "recipient": "Kepala Subbagian Persuratan",
+            "sender": "Kepala Istana Kepresidenan Yogyakarta",
+            "subject": "Konfirmasi Kehadiran Rapat Singkat",
+            "date": "7 Mei 2026",
+            "content": "Rapat dilaksanakan 12 Mei 2026 pukul 09.00 s.d. 11.30 WIB.",
+            "signatory": "Deni Mulyana",
+            "page_size": "letter",
+        },
+    )
+
+    document = Document(BytesIO(draft.content))
+    detail_table = _find_table_containing(document, "pukul")
+
+    assert detail_table.cell(0, 2).text == "12 Mei 2026"
+    assert detail_table.cell(1, 2).text == "09.00 s.d. 11.30 WIB"
+
+
+def test_generate_memo_docx_trims_activity_period_and_removes_redundant_detail_list():
+    draft = generate_memo_docx(
+        memo_type="memo_internal",
+        title="Pemindahan Lokasi Penugasan Sementara",
+        context="Pemindahan lokasi penugasan sementara.",
+        text_generator=lambda prompt: (
+            "Dalam rangka penyesuaian kebutuhan layanan sementara, sehubungan hal tersebut, dapat kami sampaikan sebagai berikut.\n"
+            "1. Lokasi penugasan asal: Ruang Layanan Administrasi.\n"
+            "2. Lokasi tujuan pemindahan: Ruang Koordinasi Terpadu.\n"
+            "3. Periode pelaksanaan: 13 sampai 17 Mei 2026.\n"
+            "4. Pegawai wajib melaporkan progres harian kepada atasan langsung."
+        ),
+        configuration={
+            "number": "EVAL-13/IST/YK/05/2026",
+            "recipient": "Kepala Subbagian Kepegawaian",
+            "sender": "Kepala Istana Kepresidenan Yogyakarta",
+            "subject": "Pemindahan Lokasi Penugasan Sementara",
+            "date": "7 Mei 2026",
+            "content": (
+                "Lokasi asal: Ruang Layanan Administrasi. Lokasi tujuan: Ruang Koordinasi Terpadu. "
+                "Periode: 13 sampai 17 Mei 2026. Pegawai tetap melaporkan progres harian kepada atasan langsung."
+            ),
+            "signatory": "Deni Mulyana",
+            "page_size": "letter",
+        },
+    )
+
+    document = Document(BytesIO(draft.content))
+    all_text = _all_document_text(document)
+    detail_table = _find_table_containing(document, "periode")
+
+    assert detail_table.cell(0, 2).text == "Ruang Layanan Administrasi"
+    assert detail_table.cell(1, 2).text == "Ruang Koordinasi Terpadu"
+    assert detail_table.cell(2, 2).text == "13 sampai 17 Mei 2026"
+    assert "Lokasi penugasan asal" not in all_text
+    assert "Lokasi tujuan pemindahan" not in all_text
+    assert "Periode pelaksanaan" not in all_text
+    assert "1.\tPegawai wajib melaporkan progres harian" in all_text
+
+
+def test_generate_memo_docx_strips_bare_manual_closing_instruction_from_body():
+    closing = "Demikian untuk menjadi bahan gerak cepat bersama."
+    draft = generate_memo_docx(
+        memo_type="memo_internal",
+        title="Penutup Manual Tidak Lazim",
+        context="Penutup manual tidak lazim.",
+        text_generator=lambda prompt: (
+            "Sehubungan dengan kebutuhan tindak lanjut cepat, dapat kami sampaikan sebagai berikut.\n"
+            "1. Unit terkait agar segera menyiapkan data yang dibutuhkan.\n"
+            "Penutup manual apa adanya.\n"
+            f"{closing}"
+        ),
+        configuration={
+            "number": "EVAL-30/IST/YK/05/2026",
+            "recipient": "Kepala Bagian Administrasi",
+            "sender": "Kepala Istana Kepresidenan Yogyakarta",
+            "subject": "Penutup Manual Tidak Lazim",
+            "date": "7 Mei 2026",
+            "content": "Sampaikan arahan agar unit terkait menyiapkan data, menetapkan PIC, dan melaporkan progres.",
+            "closing": closing,
+            "signatory": "Deni Mulyana",
+            "page_size": "letter",
+            "additional_instruction": "Pertahankan penutup manual apa adanya.",
+        },
+    )
+
+    document = Document(BytesIO(draft.content))
+    all_text = _all_document_text(document)
+
+    assert "Penutup manual apa adanya" not in all_text
+    assert all_text.count(closing) == 1
+
+
 def test_generate_memo_docx_removes_invented_pic_names_when_not_configured():
     draft = generate_memo_docx(
         memo_type="memo_internal",

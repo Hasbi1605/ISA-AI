@@ -90,6 +90,8 @@ INSTRUCTION_ARTIFACT_PATTERNS = (
     r"\binstruksi\s+revisi\b",
     r"\barahan\s+tambahan\b",
     r"\bkontrol\s+kerja\b",
+    r"\bpenutup\s+manual\s+apa\s+adanya\b",
+    r"\b(?:pertahankan|mempertahankan)\s+penutup\s+manual\b",
     r"^catatan\s*:.*\b(?:penutup|manual|dipertahankan|format|instruksi|revisi)\b",
 )
 
@@ -108,6 +110,21 @@ ORDINAL_ITEM_PATTERN = re.compile(
     r"^(?:pertama|kedua|ketiga|keempat|kelima|keenam|ketujuh|kedelapan|kesembilan|kesepuluh),\s+(.+)$",
     re.IGNORECASE,
 )
+
+ACTIVITY_KEY_VALUE_LABEL_KEYS = {
+    "hari/tanggal",
+    "pukul",
+    "tempat",
+    "agenda",
+    "jadwal",
+    "jadwal pendampingan",
+    "batas waktu",
+    "lokasi",
+    "lokasi asal",
+    "lokasi tujuan",
+    "periode",
+    "waktu pelaksanaan",
+}
 
 
 @dataclass(slots=True)
@@ -371,6 +388,11 @@ def _add_body(
         insert_at = 1 if blocks and not _is_structured_body_block(blocks[0]) else 0
         configured_blocks = [f"{label}: {value}" for label, value in configured_key_values]
         blocks = [*blocks[:insert_at], *configured_blocks, *blocks[insert_at:]]
+        blocks = _remove_redundant_blocks_after_configured_key_values(
+            blocks,
+            configured_key_values,
+            start_index=insert_at + len(configured_blocks),
+        )
 
     index = 0
     line_spacing_pt = 13.1 if compact else 13.8
@@ -454,6 +476,102 @@ def _should_add_space_after_key_value_table(blocks: list[str], next_index: int) 
     return bool(next_block) and not _is_structured_body_block(next_block)
 
 
+def _remove_redundant_blocks_after_configured_key_values(
+    blocks: list[str],
+    configured_items: list[tuple[str, str]],
+    *,
+    start_index: int,
+) -> list[str]:
+    if not configured_items or start_index >= len(blocks):
+        return blocks
+
+    configured_labels = {_key_value_label_key(label) for label, _value in configured_items}
+    configured_values = {
+        _normalize_comparison_text(value)
+        for _label, value in configured_items
+        if len(_normalize_comparison_text(value)) >= 5
+    }
+    has_activity_details = bool(configured_labels & ACTIVITY_KEY_VALUE_LABEL_KEYS)
+    output = blocks[:start_index]
+    removed = False
+
+    for block in blocks[start_index:]:
+        parsed = _parse_person_data_block(block)
+        if parsed and _key_value_label_key(parsed[0]) in configured_labels:
+            removed = True
+            continue
+
+        if has_activity_details and _looks_like_redundant_activity_detail_block(
+            block,
+            configured_labels,
+            configured_values,
+        ):
+            removed = True
+            continue
+
+        output.append(block)
+
+    return _renumber_numbered_block_sequences(output, from_index=start_index) if removed else blocks
+
+
+def _looks_like_redundant_activity_detail_block(
+    block: str,
+    configured_labels: set[str],
+    configured_values: set[str],
+) -> bool:
+    stripped = block.strip()
+    is_list_block = re.match(r"^(?:\d+[.)]|[-*•])\s+", stripped) is not None
+    normalized = _normalize_comparison_text(re.sub(r"^\s*(?:\d+[.)]|[-*•])\s*", "", stripped))
+    if not normalized:
+        return False
+
+    if not is_list_block:
+        return False
+
+    detail_starters = (
+        "hari/tanggal",
+        "tanggal",
+        "pukul",
+        "jam",
+        "tempat",
+        "agenda",
+        "lokasi",
+        "periode",
+        "waktu pelaksanaan",
+        "rapat akan dilaksanakan",
+        "rapat dilaksanakan",
+        "kegiatan akan dilaksanakan",
+        "kegiatan dilaksanakan",
+    )
+    if not normalized.startswith(detail_starters):
+        return False
+
+    if normalized.endswith("pada:") or normalized.endswith("pada"):
+        return bool(configured_labels & {"hari/tanggal", "pukul", "tempat"})
+
+    if any(label in normalized for label in configured_labels & ACTIVITY_KEY_VALUE_LABEL_KEYS):
+        return True
+
+    return any(value and value in normalized for value in configured_values)
+
+
+def _renumber_numbered_block_sequences(blocks: list[str], *, from_index: int = 0) -> list[str]:
+    output = blocks[:from_index]
+    next_number = 1
+
+    for block in blocks[from_index:]:
+        match = re.match(r"^\s*\d+[.)]\s+(.+)$", block)
+        if match:
+            output.append(f"{next_number}. {match.group(1).strip()}")
+            next_number += 1
+            continue
+
+        output.append(block)
+        next_number = 1
+
+    return output
+
+
 def _extract_configured_key_value_items(config: dict[str, str]) -> list[tuple[str, str]]:
     content = config.get("content", "")
     if not content:
@@ -491,11 +609,7 @@ def _dedupe_key_value_items(items: list[tuple[str, str]]) -> list[tuple[str, str
 
     for label, value in items:
         key = _key_value_label_key(label)
-        clean_value = (
-            _clean_activity_value(value)
-            if key in {"hari/tanggal", "pukul", "tempat", "agenda"}
-            else _clean_inline_person_data_value(value)
-        )
+        clean_value = _clean_key_value_value(label, value)
         if not key or not clean_value or key in seen:
             continue
         output.append((label, clean_value))
@@ -514,23 +628,49 @@ def _extract_activity_key_value_items(text: str) -> list[tuple[str, str]]:
         return []
 
     items: list[tuple[str, str]] = []
+    date_pattern = r"\d{1,2}\s+[A-Za-zÀ-ÿ]+\s+\d{4}"
+    time_pattern = (
+        r"\d{1,2}[.:]\d{2}"
+        r"(?:\s*(?:s\.?d\.?|-|hingga|sampai)\s*\d{1,2}[.:]\d{2})?"
+        r"\s*WIB"
+    )
     date_match = re.search(
-        r"\bpada\s+(?:hari\s+)?(?P<date>\d{1,2}\s+[A-Za-zÀ-ÿ]+\s+\d{4})\b",
+        rf"\b(?:pada|tanggal(?:\s+kegiatan|\s+pelaksanaan|\s+rapat)?|"
+        rf"dilaksanakan(?:\s+pada)?|rapat\s+dilaksanakan|kegiatan\s+dilaksanakan)"
+        rf"\s+(?:hari\s+)?(?P<date>{date_pattern})\b",
         clean,
         flags=re.IGNORECASE,
     )
+    if not date_match:
+        date_match = re.search(
+            rf"\b(?P<date>{date_pattern})\b(?=[, ]+(?:pukul|jam|bertempat|di|ruang|agenda))",
+            clean,
+            flags=re.IGNORECASE,
+        )
     time_match = re.search(
-        r"\b(?:pukul|jam)\s+(?P<time>\d{1,2}[.:]\d{2}(?:\s*(?:s\.?d\.?|-|hingga|sampai)\s*\d{1,2}[.:]\d{2})?\s*WIB)\b",
+        rf"\b(?:pukul|jam)\s+(?P<time>{time_pattern})\b",
         clean,
         flags=re.IGNORECASE,
     )
     place_match = re.search(
-        r"\bdi\s+(?P<place>[^.]+?)\s+pada\s+(?:hari\s+)?\d{1,2}\s+[A-Za-zÀ-ÿ]+\s+\d{4}\b",
+        rf"\bdi\s+(?P<place>[^,.]+?)\s+pada\s+(?:hari\s+)?{date_pattern}\b",
         clean,
         flags=re.IGNORECASE,
     )
+    if not place_match and time_match:
+        place_match = re.search(
+            rf"\b(?:pukul|jam)\s+{time_pattern}\s*,\s*(?P<place>(?:ruang|gedung|aula|tempat|lokasi)[^,.;]+)",
+            clean,
+            flags=re.IGNORECASE,
+        )
+    if not place_match:
+        place_match = re.search(
+            r"\bbertempat\s+di\s+(?P<place>[^,.;]+)",
+            clean,
+            flags=re.IGNORECASE,
+        )
     agenda_match = re.search(
-        r"\bdengan\s+agenda\s+(?P<agenda>[^.]+)",
+        r"\b(?:dengan\s+)?agenda\s*:?\s+(?P<agenda>[^.]+)",
         clean,
         flags=re.IGNORECASE,
     )
@@ -548,7 +688,38 @@ def _extract_activity_key_value_items(text: str) -> list[tuple[str, str]]:
 
 
 def _clean_activity_value(value: str) -> str:
-    return re.sub(r"\s+", " ", value or "").strip(" ,;.")
+    clean = re.sub(r"\s+", " ", value or "").strip(" ,;")
+    clean = re.sub(r"^\d+[.)]\s+", "", clean).strip()
+    return clean.rstrip(" ,;.")
+
+
+def _clean_key_value_value(label: str, value: str) -> str:
+    key = _key_value_label_key(label)
+    if key in ACTIVITY_KEY_VALUE_LABEL_KEYS:
+        clean = _clean_activity_value(value)
+        return _trim_activity_value_tail(key, clean)
+    return _clean_inline_person_data_value(value)
+
+
+def _trim_activity_value_tail(key: str, value: str) -> str:
+    clean = value.strip()
+    if not clean:
+        return ""
+
+    if key in {"hari/tanggal", "periode", "waktu pelaksanaan", "batas waktu"}:
+        date_match = re.match(
+            r"(?P<value>.*?\d{1,2}\s+[A-Za-zÀ-ÿ]+\s+\d{4}"
+            r"(?:\s*(?:pukul|jam)\s+\d{1,2}[.:]\d{2}(?:\s*WIB)?)?)"
+            r"(?:\.\s+[A-ZÀ-Ý].*)?$",
+            clean,
+        )
+        if date_match:
+            clean = date_match.group("value")
+
+    if key in {"lokasi", "lokasi asal", "lokasi tujuan"}:
+        clean = re.split(r"\.\s+(?=[A-ZÀ-Ý])", clean, maxsplit=1)[0]
+
+    return clean.rstrip(" ,;.")
 
 
 def _add_key_value_body_table(
@@ -1614,8 +1785,8 @@ def _parse_person_data_block(block: str) -> tuple[str, str] | None:
         return None
 
     raw_label = match.group("label")
-    value = _clean_inline_person_data_value(match.group("value"))
     label = _normalize_person_data_label(raw_label)
+    value = _clean_key_value_value(label, match.group("value"))
 
     return label, value
 
@@ -1688,17 +1859,18 @@ def _split_inline_person_data_sequences(text: str) -> str:
         for index, match in enumerate(matches):
             next_start = matches[index + 1].start() if index + 1 < len(matches) else len(block)
             raw_value = block[match.end() : next_start]
-            value = _clean_inline_person_data_value(raw_value)
+            label_text = _normalize_person_data_label(match.group("label"))
+            value = _clean_key_value_value(label_text, raw_value)
             if not value:
                 continue
-            output.append(f"{_normalize_person_data_label(match.group('label'))}: {value}")
+            output.append(f"{label_text}: {value}")
 
     return "\n".join(output).strip()
 
 
 def _clean_inline_person_data_value(value: str) -> str:
     clean = re.sub(r"\s+", " ", value or "").strip(" ,;")
-    clean = re.sub(r"^\d+[.)]\s*", "", clean).strip()
+    clean = re.sub(r"^\d+[.)]\s+", "", clean).strip()
     return clean.rstrip(" ,;.")
 
 
