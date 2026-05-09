@@ -3,8 +3,10 @@
 namespace Tests\Feature\Memos;
 
 use App\Models\Memo;
+use App\Models\MemoVersion;
 use App\Models\User;
 use App\Services\OnlyOffice\JwtSigner;
+use App\Services\OnlyOffice\MemoDocumentKey;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Storage;
@@ -39,7 +41,7 @@ class OnlyOfficeCallbackTest extends TestCase
 
         $user = User::factory()->create(['email_verified_at' => now()]);
         $memo = $this->createMemo($user);
-        $key = 'memo-'.$memo->id.'-123';
+        $key = $this->callbackKey($memo);
         $url = 'https://onlyoffice.test/file.docx';
         $token = (new JwtSigner('callback-secret'))->sign([
             'status' => 2,
@@ -78,7 +80,7 @@ class OnlyOfficeCallbackTest extends TestCase
 
         $user = User::factory()->create(['email_verified_at' => now()]);
         $memo = $this->createMemo($user);
-        $key = 'memo-'.$memo->id.'-public';
+        $key = $this->callbackKey($memo);
         $url = 'https://ista-ai.app/cache/files/data/output.docx?md5=abc&expires=123';
         $token = (new JwtSigner('callback-secret'))->sign([
             'status' => 2,
@@ -114,7 +116,7 @@ class OnlyOfficeCallbackTest extends TestCase
         $memo = $this->createMemo($user);
         $body = [
             'status' => 2,
-            'key' => 'memo-'.$memo->id.'-header',
+            'key' => $this->callbackKey($memo),
             'url' => 'https://onlyoffice.test/header-file.docx',
         ];
         $token = (new JwtSigner('callback-secret'))->sign([
@@ -145,7 +147,7 @@ class OnlyOfficeCallbackTest extends TestCase
         $memo = $this->createMemo($user);
         $token = (new JwtSigner('callback-secret'))->sign([
             'status' => 2,
-            'key' => 'memo-'.$memo->id.'-body',
+            'key' => $this->callbackKey($memo),
             'url' => 'https://onlyoffice.test/body-file.docx',
         ]);
 
@@ -168,10 +170,11 @@ class OnlyOfficeCallbackTest extends TestCase
 
         $user = User::factory()->create(['email_verified_at' => now()]);
         $memo = $this->createMemo($user);
+        $key = $this->callbackKey($memo);
         $token = (new JwtSigner('callback-secret'))->sign([
             'payload' => [
                 'status' => 2,
-                'key' => 'memo-'.$memo->id.'-header',
+                'key' => $key,
                 'url' => 'https://onlyoffice.test/header-file.docx',
             ],
         ]);
@@ -179,7 +182,7 @@ class OnlyOfficeCallbackTest extends TestCase
         $this->withHeader('Authorization', 'Bearer '.$token)
             ->postJson(route('onlyoffice.callback', $memo), [
                 'status' => 2,
-                'key' => 'memo-'.$memo->id.'-header',
+                'key' => $key,
                 'url' => 'https://evil.test/header-file.docx',
             ])->assertForbidden();
 
@@ -197,7 +200,7 @@ class OnlyOfficeCallbackTest extends TestCase
 
         $user = User::factory()->create(['email_verified_at' => now()]);
         $memo = $this->createMemo($user);
-        $key = 'memo-'.$memo->id.'-123';
+        $key = $this->callbackKey($memo);
         $url = 'https://onlyoffice.test/file.docx';
         $token = (new JwtSigner('callback-secret'))->sign([
             'document' => [
@@ -227,7 +230,7 @@ class OnlyOfficeCallbackTest extends TestCase
         config(['services.onlyoffice.jwt_secret' => 'callback-secret']);
         $user = User::factory()->create(['email_verified_at' => now()]);
         $memo = $this->createMemo($user);
-        $key = 'memo-'.$memo->id.'-123';
+        $key = $this->callbackKey($memo);
         $url = 'https://onlyoffice.test/file.docx';
         $token = (new JwtSigner('callback-secret'))->sign([
             'status' => 2,
@@ -254,7 +257,7 @@ class OnlyOfficeCallbackTest extends TestCase
 
         $user = User::factory()->create(['email_verified_at' => now()]);
         $memo = $this->createMemo($user);
-        $key = 'memo-'.$memo->id.'-123';
+        $key = $this->callbackKey($memo);
         $url = 'https://evil.test/file.docx';
         $token = (new JwtSigner('callback-secret'))->sign([
             'status' => 2,
@@ -304,7 +307,7 @@ class OnlyOfficeCallbackTest extends TestCase
             'current_version_id' => $versionTwo->id,
         ])->save();
 
-        $key = 'memo-'.$memo->id.'-v'.$versionOne->id.'-123';
+        $key = $this->callbackKey($memo, $versionOne);
         $url = 'https://onlyoffice.test/version-one.docx';
         $token = (new JwtSigner('callback-secret'))->sign([
             'status' => 2,
@@ -334,7 +337,7 @@ class OnlyOfficeCallbackTest extends TestCase
         $this->assertSame(Memo::STATUS_GENERATED, $versionTwo->refresh()->status);
     }
 
-    public function test_legacy_callback_key_version_updates_only_that_version_file(): void
+    public function test_callback_rejects_stale_version_document_key(): void
     {
         config([
             'services.onlyoffice.jwt_secret' => 'callback-secret',
@@ -379,15 +382,55 @@ class OnlyOfficeCallbackTest extends TestCase
             'key' => $key,
             'url' => $url,
             'token' => $token,
-        ])->assertOk()
-            ->assertJson(['error' => 0]);
+        ])->assertConflict();
 
-        $this->assertSame('legacy-version-one-docx', Storage::disk('local')->get($versionOne->file_path));
+        Http::assertNothingSent();
+        $this->assertSame('original-version-one', Storage::disk('local')->get($versionOne->file_path));
         $this->assertSame('current-version-two', Storage::disk('local')->get($versionTwo->file_path));
 
         $memo->refresh();
         $this->assertSame($versionTwo->id, $memo->current_version_id);
         $this->assertSame($versionTwo->file_path, $memo->file_path);
+    }
+
+    public function test_callback_rejects_stale_current_document_key(): void
+    {
+        config([
+            'services.onlyoffice.jwt_secret' => 'callback-secret',
+            'services.onlyoffice.internal_url' => 'https://onlyoffice.test',
+        ]);
+        Storage::fake('local');
+        Http::fake([
+            'https://onlyoffice.test/stale-current.docx' => Http::response('stale-current-docx', 200),
+        ]);
+
+        $user = User::factory()->create(['email_verified_at' => now()]);
+        $memo = $this->createMemo($user);
+        Storage::disk('local')->put($memo->file_path, 'current-docx');
+
+        $key = 'memo-'.$memo->id.'-current-stale';
+        $url = 'https://onlyoffice.test/stale-current.docx';
+        $token = (new JwtSigner('callback-secret'))->sign([
+            'status' => 2,
+            'key' => $key,
+            'url' => $url,
+            'exp' => time() + 60,
+        ]);
+
+        $this->postJson(route('onlyoffice.callback', $memo), [
+            'status' => 2,
+            'key' => $key,
+            'url' => $url,
+            'token' => $token,
+        ])->assertConflict();
+
+        Http::assertNothingSent();
+        $this->assertSame('current-docx', Storage::disk('local')->get($memo->file_path));
+    }
+
+    protected function callbackKey(Memo $memo, ?MemoVersion $version = null): string
+    {
+        return app(MemoDocumentKey::class)->forEditor($memo->refresh(), $version?->refresh());
     }
 
     protected function createMemo(User $user): Memo

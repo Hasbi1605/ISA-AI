@@ -499,6 +499,39 @@ class MemoWorkspaceTest extends TestCase
         $this->assertSame((string) $originalVersion->id, $documentQuery['version_id']);
         $this->assertSame((string) $originalVersion->id, $callbackQuery['version_id']);
         $this->assertStringStartsWith('memo-'.$memo->id.'-v'.$originalVersion->id.'-', $editorConfig['document']['key']);
+        $this->assertMatchesRegularExpression('/^memo-'.$memo->id.'-v'.$originalVersion->id.'-[0-9]+-[a-f0-9]{12}$/', $editorConfig['document']['key']);
+    }
+
+    public function test_editor_config_document_key_changes_when_version_file_changes(): void
+    {
+        $user = User::factory()->create(['email_verified_at' => now()]);
+        $memo = Memo::create([
+            'user_id' => $user->id,
+            'title' => 'Memo Key Refresh',
+            'memo_type' => 'memo_internal',
+            'file_path' => 'memos/'.$user->id.'/memo.docx',
+            'status' => Memo::STATUS_GENERATED,
+        ]);
+        $version = $memo->versions()->create([
+            'version_number' => 1,
+            'label' => 'Versi 1',
+            'file_path' => $memo->file_path,
+            'status' => Memo::STATUS_GENERATED,
+            'configuration' => [],
+            'searchable_text' => 'Memo Key Refresh',
+        ]);
+        $memo->forceFill(['current_version_id' => $version->id])->save();
+
+        $component = Livewire::actingAs($user)
+            ->test(MemoWorkspace::class)
+            ->call('loadMemo', $memo->id);
+
+        $firstKey = $component->instance()->editorConfig()['document']['key'];
+        $version->forceFill(['file_path' => 'memos/'.$user->id.'/memo-revisi.docx'])->save();
+
+        $secondKey = $component->instance()->editorConfig()['document']['key'];
+
+        $this->assertNotSame($firstKey, $secondKey);
     }
 
     public function test_generate_configuration_allows_blank_signatory_and_preserves_it_for_ai_service(): void
@@ -664,7 +697,7 @@ class MemoWorkspaceTest extends TestCase
         $body = "Berdasarkan tindak lanjut proses pendataan pegawai pendamping kegiatan integrasi aplikasi, dapat kami sampaikan sebagai berikut.\n"
             ."Nama pegawai yang benar: Muhamad Hasbi Ash Shiddiqi\n"
             ."NIP: 231210013\n"
-            ."Keperluan: Pendampingan kegiatan integrasi aplikasi";
+            .'Keperluan: Pendampingan kegiatan integrasi aplikasi';
         $memo = Memo::create([
             'user_id' => $user->id,
             'title' => 'Revisi Typo Nama Orang',
@@ -730,7 +763,7 @@ class MemoWorkspaceTest extends TestCase
         $body = "Sehubungan dengan tindak lanjut untuk memperjelas pelaksanaan layanan, dapat kami sampaikan sebagai berikut:\n"
             ."1. Unit layanan wajib menunjuk satu orang penanggung jawab.\n"
             ."2. Unit layanan wajib menyusun daftar kendala.\n"
-            ."3. Unit layanan wajib mengirimkan laporan singkat sesuai batas waktu yang telah ditentukan.";
+            .'3. Unit layanan wajib mengirimkan laporan singkat sesuai batas waktu yang telah ditentukan.';
         $memo = Memo::create([
             'user_id' => $user->id,
             'title' => 'Revisi Format Menjadi Poin Bernomor',
@@ -744,7 +777,7 @@ class MemoWorkspaceTest extends TestCase
                 'sender' => 'Kepala Istana Kepresidenan Yogyakarta',
                 'subject' => 'Revisi Format Menjadi Poin Bernomor',
                 'date' => '7 Mei 2026',
-                'content' => "Unit layanan wajib menunjuk penanggung jawab, menyusun daftar kendala, dan mengirimkan laporan singkat.",
+                'content' => 'Unit layanan wajib menunjuk penanggung jawab, menyusun daftar kendala, dan mengirimkan laporan singkat.',
                 'signatory' => 'Deni Mulyana',
                 'carbon_copy' => 'Kepala Bagian Administrasi',
                 'page_size' => 'letter',
@@ -797,6 +830,49 @@ class MemoWorkspaceTest extends TestCase
             ->assertDontSee('Memo Untuk Dihapus', false);
 
         $this->assertSoftDeleted('memos', ['id' => $memo->id]);
+    }
+
+    public function test_loading_memo_merges_stale_cached_thread_and_restores_revision_prompt(): void
+    {
+        $user = User::factory()->create(['email_verified_at' => now()]);
+        $revisionInstruction = 'Ubah penutup menjadi lebih formal.';
+        $memo = Memo::create([
+            'user_id' => $user->id,
+            'title' => 'Memo Revisi Tersimpan',
+            'memo_type' => 'memo_internal',
+            'file_path' => 'memos/'.$user->id.'/memo.docx',
+            'status' => Memo::STATUS_GENERATED,
+            'chat_messages' => [
+                ['role' => 'assistant', 'content' => 'Memo awal dimuat.', 'timestamp' => '09:00'],
+            ],
+        ]);
+        $version = $memo->versions()->create([
+            'version_number' => 2,
+            'label' => 'Versi 2',
+            'file_path' => $memo->file_path,
+            'status' => Memo::STATUS_GENERATED,
+            'configuration' => [],
+            'searchable_text' => 'Memo Revisi Tersimpan',
+            'revision_instruction' => $revisionInstruction,
+        ]);
+        $memo->forceFill(['current_version_id' => $version->id])->save();
+
+        $component = Livewire::actingAs($user)
+            ->test(MemoWorkspace::class)
+            ->set('memoChatThreads', [
+                'memo-'.$memo->id => [
+                    ['role' => 'assistant', 'content' => 'Thread cache stale.', 'timestamp' => '08:59'],
+                ],
+            ])
+            ->call('loadMemo', $memo->id);
+
+        $contents = collect($component->instance()->memoChatMessages)->pluck('content')->all();
+        $storedContents = collect($memo->refresh()->chat_messages)->pluck('content')->all();
+
+        $this->assertContains('Memo awal dimuat.', $contents);
+        $this->assertContains('Thread cache stale.', $contents);
+        $this->assertContains($revisionInstruction, $contents);
+        $this->assertContains($revisionInstruction, $storedContents);
     }
 
     public function test_edit_configuration_hides_active_memo_chat_history(): void

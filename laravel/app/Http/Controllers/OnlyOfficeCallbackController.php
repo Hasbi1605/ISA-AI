@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Models\Memo;
 use App\Models\MemoVersion;
 use App\Services\OnlyOffice\JwtSigner;
+use App\Services\OnlyOffice\MemoDocumentKey;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Http;
@@ -31,6 +32,7 @@ class OnlyOfficeCallbackController extends Controller
         $callback = $this->normalizeSignedCallbackPayload($request, $payload);
         $this->validateSignedCallbackPayload($memo, $callback);
         $version = $this->resolveMemoVersion($request, $memo, $callback);
+        $this->validateFreshDocumentKey($memo, $version, $callback);
         $status = (int) $callback['status'];
 
         if (in_array($status, [2, 6], true)) {
@@ -147,6 +149,20 @@ class OnlyOfficeCallbackController extends Controller
         abort_unless(str_starts_with($key, 'memo-'.$memo->id.'-v'.$version->id.'-'), Response::HTTP_FORBIDDEN);
 
         return $version;
+    }
+
+    /**
+     * @param  array<string, mixed>  $callback
+     */
+    protected function validateFreshDocumentKey(Memo $memo, ?MemoVersion $version, array $callback): void
+    {
+        $memo->refresh();
+        $version?->refresh();
+
+        $key = (string) ($callback['key'] ?? '');
+        $expectedKey = app(MemoDocumentKey::class)->forEditor($memo, $version);
+
+        abort_unless(hash_equals($expectedKey, $key), Response::HTTP_CONFLICT, 'Sesi dokumen OnlyOffice sudah kedaluwarsa.');
     }
 
     protected function isTrustedOnlyOfficeUrl(string $url): bool

@@ -6,6 +6,7 @@ use App\Models\Memo;
 use App\Models\MemoVersion;
 use App\Services\Memo\MemoGenerationService;
 use App\Services\OnlyOffice\JwtSigner;
+use App\Services\OnlyOffice\MemoDocumentKey;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\URL;
 use Illuminate\Validation\ValidationException;
@@ -84,16 +85,15 @@ class MemoWorkspace extends Component
 
         $threadKey = $this->threadKey($memo->id);
 
-        if (! empty($this->memoChatThreads[$threadKey])) {
-            $this->memoChatMessages = $this->memoChatThreads[$threadKey];
+        $storedThread = $this->threadWithRevisionInstructions(
+            $this->normalizeStoredThread($memo->chat_messages ?? []),
+            $memo,
+        );
+        $cachedThread = $this->normalizeStoredThread($this->memoChatThreads[$threadKey] ?? []);
+        $mergedThread = $this->mergeMemoChatThreads($storedThread, $cachedThread);
 
-            return;
-        }
-
-        $storedThread = $this->normalizeStoredThread($memo->chat_messages ?? []);
-
-        if ($storedThread !== []) {
-            $this->memoChatMessages = $storedThread;
+        if ($mergedThread !== []) {
+            $this->memoChatMessages = $mergedThread;
             $this->rememberCurrentThread();
 
             return;
@@ -412,12 +412,11 @@ class MemoWorkspace extends Component
             'version_id' => $versionId,
         ], fn ($value) => filled($value)), false);
 
+        $documentKey = app(MemoDocumentKey::class)->forEditor($memo, $version);
         $config = [
             'document' => [
                 'fileType' => 'docx',
-                'key' => $version
-                    ? 'memo-'.$memo->id.'-v'.$version->id.'-'.$version->updated_at?->timestamp
-                    : 'memo-'.$memo->id.'-current-'.$memo->updated_at?->timestamp,
+                'key' => $documentKey,
                 'title' => $memo->title.'.docx',
                 'url' => $laravelInternalUrl.$documentPath,
             ],
@@ -1165,9 +1164,31 @@ class MemoWorkspace extends Component
             return;
         }
 
+        $memo = Memo::with('versions')
+            ->where('user_id', Auth::id())
+            ->where('id', $this->activeMemoId)
+            ->first();
+
+        if (! $memo) {
+            return;
+        }
+
+        $storedThread = $this->threadWithRevisionInstructions(
+            $this->normalizeStoredThread($memo->chat_messages ?? []),
+            $memo,
+        );
+        $currentThread = $this->threadWithRevisionInstructions(
+            $this->normalizeStoredThread($this->memoChatMessages),
+            $memo,
+        );
+        $mergedThread = $this->mergeMemoChatThreads($storedThread, $currentThread);
+
+        $this->memoChatMessages = $mergedThread;
+        $this->memoChatThreads[$this->threadKey($this->activeMemoId)] = $mergedThread;
+
         Memo::withoutTimestamps(fn () => Memo::where('id', $this->activeMemoId)
             ->where('user_id', Auth::id())
-            ->update(['chat_messages' => $this->memoChatMessages]));
+            ->update(['chat_messages' => $mergedThread]));
     }
 
     protected function normalizeStoredThread(array $messages): array
@@ -1182,5 +1203,71 @@ class MemoWorkspace extends Component
             ->filter(fn (array $message) => trim($message['content']) !== '')
             ->values()
             ->all();
+    }
+
+    protected function mergeMemoChatThreads(array $primaryThread, array $secondaryThread): array
+    {
+        $merged = [];
+        $seen = [];
+
+        foreach ([...$primaryThread, ...$secondaryThread] as $message) {
+            $content = trim((string) ($message['content'] ?? ''));
+            if ($content === '') {
+                continue;
+            }
+
+            $role = in_array(($message['role'] ?? null), ['assistant', 'user'], true) ? $message['role'] : 'assistant';
+            $key = $role.'|'.mb_strtolower(preg_replace('/\s+/', ' ', $content));
+            if (isset($seen[$key])) {
+                continue;
+            }
+
+            $seen[$key] = true;
+            $merged[] = [
+                'role' => $role,
+                'content' => $content,
+                'timestamp' => (string) ($message['timestamp'] ?? now()->format('H:i')),
+            ];
+        }
+
+        return $merged;
+    }
+
+    protected function threadWithRevisionInstructions(array $messages, Memo $memo): array
+    {
+        $versions = $memo->relationLoaded('versions') ? $memo->versions : $memo->versions()->get();
+        $existingUserMessages = collect($messages)
+            ->filter(fn (array $message) => ($message['role'] ?? null) === 'user')
+            ->map(fn (array $message) => trim((string) ($message['content'] ?? '')))
+            ->filter()
+            ->map(fn (string $content) => mb_strtolower(preg_replace('/\s+/', ' ', $content)))
+            ->all();
+
+        foreach ($versions->sortBy('version_number') as $version) {
+            $instruction = trim((string) $version->revision_instruction);
+            if ($instruction === '') {
+                continue;
+            }
+
+            $instructionKey = mb_strtolower(preg_replace('/\s+/', ' ', $instruction));
+            if (in_array($instructionKey, $existingUserMessages, true)) {
+                continue;
+            }
+
+            $timestamp = $version->created_at?->format('H:i') ?: now()->format('H:i');
+            $messages[] = [
+                'role' => 'user',
+                'content' => $instruction,
+                'timestamp' => $timestamp,
+            ];
+            $messages[] = [
+                'role' => 'assistant',
+                'content' => "Revisi memo \"{$memo->title}\" tersimpan sebagai {$version->label}.",
+                'timestamp' => $timestamp,
+            ];
+            $existingUserMessages[] = $instructionKey;
+        }
+
+        return $messages;
     }
 }

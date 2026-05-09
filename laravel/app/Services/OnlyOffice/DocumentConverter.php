@@ -92,11 +92,7 @@ class DocumentConverter
 
     protected function conversionKey(Memo $memo, ?MemoVersion $version = null): string
     {
-        if ($version) {
-            return 'memo-'.$memo->id.'-v'.$version->id.'-'.$version->updated_at?->timestamp.'-pdf';
-        }
-
-        return 'memo-'.$memo->id.'-current-'.$memo->updated_at?->timestamp.'-pdf';
+        return app(MemoDocumentKey::class)->forConversion($memo, $version);
     }
 
     protected function conversionUrl(string $key): string

@@ -30,6 +30,8 @@ FOOTER_NOTICE = (
     "yang diterbitkan oleh Balai Sertifikasi Elektronik (BSrE)."
 )
 
+DEFAULT_GENERATED_CLOSING = "Demikian disampaikan untuk menjadi perhatian dan tindak lanjut sebagaimana mestinya."
+
 PERSON_DATA_LABEL_PATTERN = (
     r"nama(?:\s+(?:pic|pegawai)(?:\s+yang\s+benar)?)?"
     r"|nip(?:\s+yang\s+bersangkutan)?"
@@ -41,10 +43,13 @@ PERSON_DATA_LABEL_PATTERN = (
     r"|pukul"
     r"|tempat"
     r"|agenda"
+    r"|(?:estimasi\s+)?durasi(?:\s+(?:rapat|kegiatan|pelaksanaan))?"
     r"|batas\s+waktu"
     r"|lokasi(?:\s+(?:asal|tujuan))?"
     r"|periode(?:\s+(?:kegiatan|pelaksanaan))?"
     r"|waktu\s+pelaksanaan"
+    r"|waktu\s+kejadian"
+    r"|pengguna\s+terdampak"
     r"|peserta"
     r"|nomor\s+kontak"
     r"|keperluan"
@@ -117,6 +122,8 @@ ACTIVITY_KEY_VALUE_LABEL_KEYS = {
     "pukul",
     "tempat",
     "agenda",
+    "durasi",
+    "estimasi durasi",
     "jadwal",
     "jadwal pendampingan",
     "batas waktu",
@@ -125,6 +132,7 @@ ACTIVITY_KEY_VALUE_LABEL_KEYS = {
     "lokasi tujuan",
     "periode",
     "waktu pelaksanaan",
+    "waktu kejadian",
 }
 
 
@@ -231,6 +239,8 @@ def generate_memo_docx(
     body, generated_closing = _separate_generated_closing(body, config)
     if generated_closing and not config["closing"]:
         config["closing"] = generated_closing
+    elif not config["closing"]:
+        config["closing"] = DEFAULT_GENERATED_CLOSING
     config["page_size"] = _resolve_page_size(config, body)
 
     document = _build_official_memo_document(normalized_type, config, body)
@@ -565,6 +575,7 @@ def _looks_like_redundant_activity_detail_block(
         return False
 
     matched_value_count = _configured_value_match_count(normalized, configured_values)
+    configured_token_coverage = _configured_value_token_coverage(normalized, configured_values)
     has_activity_label = any(label in normalized for label in configured_labels & ACTIVITY_KEY_VALUE_LABEL_KEYS)
     starts_with_detail = normalized.startswith(
         (
@@ -574,9 +585,12 @@ def _looks_like_redundant_activity_detail_block(
             "jam",
             "tempat",
             "agenda",
+            "durasi",
+            "estimasi durasi",
             "lokasi",
             "periode",
             "waktu pelaksanaan",
+            "waktu kejadian",
             "rapat akan dilaksanakan",
             "rapat dilaksanakan",
             "kegiatan akan dilaksanakan",
@@ -588,6 +602,7 @@ def _looks_like_redundant_activity_detail_block(
         return (
             (starts_with_detail and (has_activity_label or matched_value_count >= 1))
             or matched_value_count >= 2
+            or configured_token_coverage >= 0.66
             or (normalized.startswith("agenda ") and matched_value_count >= 1)
         )
 
@@ -598,16 +613,19 @@ def _looks_like_redundant_activity_detail_block(
         "jam",
         "tempat",
         "agenda",
+        "durasi",
+        "estimasi durasi",
         "lokasi",
         "periode",
         "waktu pelaksanaan",
+        "waktu kejadian",
         "rapat akan dilaksanakan",
         "rapat dilaksanakan",
         "kegiatan akan dilaksanakan",
         "kegiatan dilaksanakan",
     )
     if not normalized.startswith(detail_starters):
-        return matched_value_count >= 2
+        return matched_value_count >= 2 or configured_token_coverage >= 0.66
 
     if normalized.endswith("pada:") or normalized.endswith("pada"):
         return bool(configured_labels & {"hari/tanggal", "pukul", "tempat"})
@@ -632,6 +650,21 @@ def _configured_value_match_count(normalized_block: str, configured_values: set[
         for value in configured_values
         if _configured_value_matches_block(normalized_block, value)
     )
+
+
+def _configured_value_token_coverage(normalized_block: str, configured_values: set[str]) -> float:
+    block_tokens = set(_significant_comparison_tokens(_flatten_comparison_text(normalized_block)))
+    if not block_tokens:
+        return 0
+
+    configured_tokens: set[str] = set()
+    for value in configured_values:
+        configured_tokens.update(_significant_comparison_tokens(_flatten_comparison_text(value)))
+
+    if not configured_tokens:
+        return 0
+
+    return len(block_tokens & configured_tokens) / len(block_tokens)
 
 
 def _configured_value_matches_block(normalized_block: str, normalized_value: str) -> bool:
@@ -694,7 +727,6 @@ def _renumber_numbered_block_sequences(blocks: list[str], *, from_index: int = 0
             continue
 
         output.append(block)
-        next_number = 1
 
     return output
 
@@ -801,6 +833,18 @@ def _extract_activity_key_value_items(text: str) -> list[tuple[str, str]]:
         clean,
         flags=re.IGNORECASE,
     )
+    duration_match = re.search(
+        r"\b(?P<label>estimasi\s+durasi|durasi(?:\s+(?:rapat|kegiatan|pelaksanaan))?)\s*:?\s+"
+        r"(?P<duration>[^,.;]+)",
+        clean,
+        flags=re.IGNORECASE,
+    )
+    if not duration_match:
+        duration_match = re.search(
+            r"\b(?:selama|berdurasi)\s+(?P<duration>\d+\s*(?:jam|menit))\b",
+            clean,
+            flags=re.IGNORECASE,
+        )
 
     if date_match:
         items.append(("hari/tanggal", _clean_activity_value(date_match.group("date"))))
@@ -810,6 +854,9 @@ def _extract_activity_key_value_items(text: str) -> list[tuple[str, str]]:
         items.append(("tempat", _clean_activity_value(place_match.group("place"))))
     if agenda_match:
         items.append(("agenda", _clean_activity_value(agenda_match.group("agenda"))))
+    if duration_match:
+        label = duration_match.groupdict().get("label") or "estimasi durasi"
+        items.append((_normalize_person_data_label(label), _clean_activity_value(duration_match.group("duration"))))
 
     return items if len(items) >= 2 else []
 
@@ -892,7 +939,7 @@ def _add_key_value_body_table(
             spacer,
             line_spacing_pt=1,
             space_before_pt=0,
-            space_after_pt=8 if compact else 12,
+            space_after_pt=12 if compact else 16,
         )
 
 
@@ -1288,6 +1335,7 @@ def _sanitize_memo_body(body: str, config: dict[str, str]) -> str:
     clean = _remove_configured_closing(clean, config.get("closing", ""))
     clean = _strip_instruction_artifacts(clean, config)
     clean = _strip_unconfigured_honorific_data(clean, config)
+    clean = _strip_unconfigured_operational_data(clean, config)
     clean = _replace_empty_person_data_placeholders(clean)
     clean = _strip_trailing_fragments(clean)
     clean = _normalize_person_data_sequences(clean)
@@ -1383,7 +1431,8 @@ def _build_concise_revision_body(
 
 
 def _format_numbered_items_as_concise_paragraph(lead: str, items: list[str]) -> str:
-    clean_items = [item.rstrip(" .;") for item in items if item.strip()]
+    clean_items = [_normalize_concise_revision_item(item) for item in items if item.strip()]
+    clean_items = [item for item in clean_items if item]
     if not clean_items:
         return lead
     if len(clean_items) == 1:
@@ -1391,6 +1440,33 @@ def _format_numbered_items_as_concise_paragraph(lead: str, items: list[str]) -> 
     else:
         summary = "; ".join(clean_items[:-1]) + f"; dan {clean_items[-1]}"
     return f"{lead}, hal-hal yang perlu ditindaklanjuti meliputi {summary}."
+
+
+def _normalize_concise_revision_item(item: str) -> str:
+    clean = item.rstrip(" .;")
+    clean = re.sub(r"\s+", " ", clean).strip()
+    clean = re.sub(r",?\s+sehingga\b.*$", "", clean, flags=re.IGNORECASE).strip(" ,;")
+
+    replacements = (
+        (r"^menyusun\s+rencana\s+kerja\b", "penyusunan rencana kerja"),
+        (r"^menunjuk\s+pic\s+serta\s+menetapkan\s+jadwal\s+pelaksanaan\b", "penetapan PIC dan jadwal pelaksanaan"),
+        (r"^menunjuk\s+pic\b", "penetapan PIC"),
+        (r"^menetapkan\s+pic\b", "penetapan PIC"),
+        (r"^mengidentifikasi\s+kendala\s+dan\s+mengajukan\s+usulan\s+perbaikan\b", "identifikasi kendala dan usulan perbaikan"),
+        (r"^mengidentifikasi\s+kendala\b", "identifikasi kendala"),
+        (r"^menyampaikan\s+laporan\s+lengkap\b", "penyampaian laporan"),
+        (r"^menyampaikan\s+laporan\b", "penyampaian laporan"),
+        (r"^melakukan\s+evaluasi\s+berkala\b", "evaluasi berkala"),
+    )
+    for pattern, replacement in replacements:
+        if re.match(pattern, clean, flags=re.IGNORECASE):
+            clean = re.sub(pattern, replacement, clean, count=1, flags=re.IGNORECASE)
+            break
+    else:
+        clean = clean[:1].lower() + clean[1:] if clean else clean
+
+    clean = re.sub(r"\bPIC\b", "PIC", clean, flags=re.IGNORECASE)
+    return clean.rstrip(" .;")
 
 
 def _preserve_configured_numbered_items(body: str, config: dict[str, str]) -> str:
@@ -1607,6 +1683,14 @@ def _strip_body_closing_sentences(text: str) -> str:
             output.append(block)
             continue
 
+        trailing_closing = _split_trailing_closing_sentence(block)
+        if trailing_closing:
+            body_part, closing_part = trailing_closing
+            if body_part:
+                output.append(body_part)
+            output.append(closing_part)
+            continue
+
         clean = re.sub(r"(?is)\s+dengan\s+demikian\b.*$", "", block).strip()
         clean = re.sub(r"(?is)\s+demikian\b.*$", "", clean).strip()
         clean = re.sub(r"(?is)\s+atas\s+perhatian\b.*?terima\s+kasih\.?$", "", clean).strip()
@@ -1617,16 +1701,46 @@ def _strip_body_closing_sentences(text: str) -> str:
     return "\n".join(output).strip()
 
 
+def _split_trailing_closing_sentence(block: str) -> tuple[str, str] | None:
+    match = re.search(
+        r"(?is)(?P<body>.+?[.;])\s+"
+        r"(?P<closing>(?:dengan\s+demikian|demikian|atas\s+perhatian|atas\s+kerja\s+sama|"
+        r"dimohon|mohon\s+arahan\s+lebih\s+lanjut|mohon\s+tindak\s+lanjut|mohon\s+untuk\s+dapat|"
+        r"kami\s+harapkan)\b.+)$",
+        block.strip(),
+    )
+    if not match:
+        return None
+
+    body_part = match.group("body").strip()
+    closing_part = match.group("closing").strip()
+    if not body_part or not _looks_like_closing_block(closing_part):
+        return None
+    return body_part, closing_part
+
+
 def _separate_generated_closing(body: str, config: dict[str, str]) -> tuple[str, str]:
     blocks = _split_blocks(body)
     if not blocks:
         return body, ""
 
     generated_closing = ""
-    while blocks and _looks_like_closing_block(blocks[-1]):
-        closing_block = blocks.pop().strip()
-        if not config.get("closing") and not generated_closing:
-            generated_closing = closing_block
+    while blocks:
+        if _looks_like_closing_block(blocks[-1]):
+            closing_block = blocks.pop().strip()
+            if not config.get("closing") and not generated_closing:
+                generated_closing = closing_block
+            continue
+
+        trailing_closing = _split_trailing_closing_sentence(blocks[-1])
+        if trailing_closing:
+            body_part, closing_block = trailing_closing
+            blocks[-1] = body_part
+            if not config.get("closing") and not generated_closing:
+                generated_closing = closing_block
+            continue
+
+        break
 
     return "\n".join(blocks).strip(), generated_closing
 
@@ -1766,6 +1880,62 @@ def _strip_unconfigured_honorific_data(text: str, config: dict[str, str]) -> str
     return "\n".join(output).strip()
 
 
+def _strip_unconfigured_operational_data(text: str, config: dict[str, str]) -> str:
+    config_text = "\n".join(
+        str(config.get(key, ""))
+        for key in ("basis", "content", "closing", "additional_instruction", "revision_instruction")
+    )
+    normalized_config = _normalize_comparison_text(config_text)
+    config_requests_incident_time = "waktu kejadian" in normalized_config
+    config_requests_impacted_users = "pengguna terdampak" in normalized_config
+    has_configured_time = _config_contains_explicit_time(config_text)
+
+    if not (config_requests_incident_time or config_requests_impacted_users):
+        return text
+
+    output: list[str] = []
+    for block in _split_blocks(text):
+        normalized = _normalize_comparison_text(block)
+        prefix_match = re.match(r"^(\d+[.)]\s+)", block)
+        prefix = prefix_match.group(1) if prefix_match else ""
+
+        if (
+            config_requests_incident_time
+            and not has_configured_time
+            and re.search(r"\b(?:pukul|jam)\s+\d{1,2}[.:]\d{2}", normalized)
+            and any(marker in normalized for marker in ("waktu kejadian", "kejadian", "kendala", "terjadi"))
+        ):
+            output.append(f"{prefix}Waktu kejadian ditetapkan berdasarkan laporan unit terkait.")
+            continue
+
+        if config_requests_impacted_users and _contains_unconfigured_impacted_users(normalized, normalized_config):
+            output.append(f"{prefix}Pengguna terdampak diidentifikasi oleh unit terkait.")
+            continue
+
+        output.append(block)
+
+    return "\n".join(output).strip()
+
+
+def _config_contains_explicit_time(config_text: str) -> bool:
+    return re.search(r"\b(?:pukul|jam)?\s*\d{1,2}[.:]\d{2}\s*(?:WIB)?\b", config_text, re.IGNORECASE) is not None
+
+
+def _contains_unconfigured_impacted_users(normalized_block: str, normalized_config: str) -> bool:
+    if "pengguna" not in normalized_block and "terdampak" not in normalized_block:
+        return False
+    if "seluruh staf persuratan" in normalized_block and "seluruh staf persuratan" not in normalized_config:
+        return True
+    if "seluruh pegawai" in normalized_block and "seluruh pegawai" not in normalized_config:
+        return True
+    if "seluruh staf" in normalized_block and "seluruh staf" not in normalized_config:
+        return True
+    return (
+        re.search(r"\bpengguna(?:\s+yang)?\s+terdampak\b.*\bseluruh\b", normalized_block) is not None
+        and "seluruh" not in normalized_config
+    )
+
+
 def _replace_empty_person_data_placeholders(text: str) -> str:
     blocks = _split_blocks(text)
     output: list[str] = []
@@ -1807,6 +1977,12 @@ def _generic_placeholder_replacement(labels: list[str]) -> str:
     normalized = {_key_value_label_key(label) for label in labels}
     if normalized & {"nama", "nip", "jabatan", "unit kerja", "jadwal", "jadwal pendampingan"}:
         return "Staf pendamping dan kelengkapan data pegawai ditetapkan oleh unit terkait."
+    if {"waktu kejadian", "pengguna terdampak"} <= normalized:
+        return "Waktu kejadian dan pengguna terdampak ditetapkan berdasarkan laporan unit terkait."
+    if "waktu kejadian" in normalized:
+        return "Waktu kejadian ditetapkan berdasarkan laporan unit terkait."
+    if "pengguna terdampak" in normalized:
+        return "Pengguna terdampak diidentifikasi oleh unit terkait."
     if "peserta" in normalized:
         return "Daftar peserta ditetapkan oleh unit terkait sesuai kebutuhan kegiatan."
     if "nomor kontak" in normalized:
@@ -2013,6 +2189,10 @@ def _normalize_person_data_label(raw_label: str) -> str:
         return "tempat"
     if normalized.startswith("agenda"):
         return "agenda"
+    if normalized.startswith("estimasi durasi"):
+        return "estimasi durasi"
+    if normalized.startswith("durasi"):
+        return "durasi"
     if normalized.startswith("batas waktu"):
         return "batas waktu"
     if normalized.startswith("lokasi"):
@@ -2021,6 +2201,10 @@ def _normalize_person_data_label(raw_label: str) -> str:
         return "periode"
     if normalized.startswith("waktu pelaksanaan"):
         return "waktu pelaksanaan"
+    if normalized.startswith("waktu kejadian"):
+        return "waktu kejadian"
+    if normalized.startswith("pengguna terdampak"):
+        return "pengguna terdampak"
     if normalized == "peserta":
         return "peserta"
     if normalized.startswith("nomor kontak"):

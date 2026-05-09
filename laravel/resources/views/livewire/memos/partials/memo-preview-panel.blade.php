@@ -71,24 +71,36 @@
         @if ($editorConfig)
             <div
                 wire:ignore
-                wire:key="memo-editor-{{ $activeMemoId }}-{{ $activeMemoVersionId ?? 'current' }}"
+                wire:key="memo-editor-{{ $activeMemoId }}-{{ $activeMemoVersionId ?? 'current' }}-{{ md5($editorConfig['document']['key'] ?? '') }}"
                 class="h-full min-h-[640px]"
                 x-data="{
                     config: @js($editorConfig),
                     apiUrl: @js($onlyOfficeApiUrl),
+                    containerId: 'memo-workspace-editor-{{ md5($editorConfig['document']['key'] ?? '') }}',
                     editor: null,
                     load() {
-                        const boot = () => { this.editor = new DocsAPI.DocEditor('memo-workspace-editor', this.config); };
+                        this.destroy();
+                        const boot = () => {
+                            const container = document.getElementById(this.containerId);
+                            if (container) { container.innerHTML = ''; }
+                            this.editor = new DocsAPI.DocEditor(this.containerId, this.config);
+                        };
                         if (window.DocsAPI) { boot(); return; }
                         const script = document.createElement('script');
                         script.src = this.apiUrl;
                         script.onload = boot;
                         document.head.appendChild(script);
+                    },
+                    destroy() {
+                        if (this.editor && typeof this.editor.destroyEditor === 'function') {
+                            this.editor.destroyEditor();
+                        }
+                        this.editor = null;
                     }
                 }"
                 x-init="load()"
             >
-                <div id="memo-workspace-editor" class="h-full min-h-[640px] w-full"></div>
+                <div id="memo-workspace-editor-{{ md5($editorConfig['document']['key'] ?? '') }}" class="h-full min-h-[640px] w-full"></div>
             </div>
         @else
             <div wire:loading.flex wire:target="generateConfiguredMemo,generateFromChat" class="h-full min-h-[400px] items-center justify-center px-6 text-center">
