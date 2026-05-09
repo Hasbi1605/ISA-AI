@@ -7,8 +7,43 @@
     @apply relative w-full max-w-[640px] overflow-hidden rounded-[3rem] border border-white/60 bg-white/50 shadow-[0_30px_70px_-15px_rgba(159,18,57,0.15)] backdrop-blur-xl transition-all duration-500 hover:-translate-y-1 hover:shadow-[0_40px_80px_-15px_rgba(159,18,57,0.25)];
 }
 
+.dark .ista-glass-card {
+    @apply border-gray-700/80 bg-gray-900/70 shadow-[0_30px_70px_-20px_rgba(0,0,0,0.75)] hover:shadow-[0_40px_80px_-18px_rgba(0,0,0,0.85)];
+}
+
 .ista-input {
     @apply block w-full rounded-2xl border border-white/60 bg-stone-50/60 px-14 py-4 text-[15px] font-medium text-ista-dark placeholder-stone-400/80 shadow-sm outline-none transition-all duration-300 hover:bg-white/50 focus:border-ista-gold/80 focus:bg-white/90 focus:ring-2 focus:ring-ista-gold/20;
+}
+
+.dark .ista-input {
+    @apply border-gray-700 bg-gray-950/60 text-gray-100 placeholder-gray-500 hover:bg-gray-900/80 focus:border-ista-gold/70 focus:bg-gray-950 focus:ring-ista-gold/20;
+}
+
+.dark .ista-glass-card label,
+.dark .ista-glass-card .text-stone-600,
+.dark .ista-glass-card .text-stone-700 {
+    @apply text-gray-300;
+}
+
+.dark .ista-glass-card .text-stone-500,
+.dark .ista-glass-card .text-rose-950\/60 {
+    @apply text-gray-400;
+}
+
+.dark .ista-glass-card .text-stone-900,
+.dark .ista-glass-card .text-stone-800,
+.dark .ista-glass-card .text-ista-dark,
+.dark .ista-glass-card .text-rose-900 {
+    @apply text-gray-100;
+}
+
+.dark .ista-glass-card .border-white\/30,
+.dark .ista-glass-card .border-rose-900\/10 {
+    @apply border-gray-700/80;
+}
+
+.dark .ista-glass-card svg.text-stone-500 {
+    @apply text-gray-400;
 }
 
 .ista-login-button {

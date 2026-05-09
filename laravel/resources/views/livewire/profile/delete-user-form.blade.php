@@ -29,7 +29,7 @@ new class extends Component
             Hapus Akun
         </h2>
 
-        <p class="mt-1 text-sm text-stone-600 font-medium">
+        <p class="mt-1 text-sm text-stone-600 font-medium dark:text-gray-300">
             Setelah akun Anda dihapus, semua sumber daya dan data di dalamnya akan dihapus secara permanen. Sebelum menghapus akun Anda, harap unduh data atau informasi yang ingin Anda simpan.
         </p>
     </header>
@@ -43,21 +43,21 @@ new class extends Component
     </button>
 
     <x-modal name="confirm-user-deletion" :show="$errors->isNotEmpty()" maxWidth="md" focusable>
-        <form wire:submit="deleteUser" class="p-6 bg-[#fafaf9] rounded-2xl border border-white/40">
+        <form wire:submit="deleteUser" class="p-6 bg-[#fafaf9] rounded-2xl border border-white/40 dark:border-gray-700 dark:bg-gray-950">
 
-            <h2 class="text-lg font-bold text-stone-900">
+            <h2 class="text-lg font-bold text-stone-900 dark:text-gray-100">
                 Apakah Anda yakin ingin menghapus akun ini?
             </h2>
 
-            <p class="mt-1 text-sm text-stone-600 font-medium">
+            <p class="mt-1 text-sm text-stone-600 font-medium dark:text-gray-300">
                 Setelah akun Anda dihapus, semua sumber daya dan data di dalamnya akan dihapus secara permanen. Masukkan kata sandi Anda untuk mengonfirmasi bahwa Anda ingin menghapus akun secara permanen.
             </p>
 
             <div class="mt-6 group space-y-2">
-                <label for="password" class="ml-1 cursor-text text-[13px] font-bold text-stone-600 transition-all duration-300 group-focus-within:translate-x-1 group-focus-within:text-rose-900">Kata Sandi</label>
+            <label for="password" class="ml-1 cursor-text text-[13px] font-bold text-stone-600 transition-all duration-300 group-focus-within:translate-x-1 group-focus-within:text-rose-900 dark:text-gray-300 dark:group-focus-within:text-gray-100">Kata Sandi</label>
                 <div class="relative transform transition-transform duration-300 group-focus-within:scale-[1.01]">
                     <div class="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-5">
-                        <svg class="h-5 w-5 text-stone-500 transition-colors duration-300 group-focus-within:text-rose-700" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <svg class="h-5 w-5 text-stone-500 transition-colors duration-300 group-focus-within:text-rose-700 dark:text-gray-400 dark:group-focus-within:text-amber-300" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 00-2 2zm10-10V7a4 4 0 00-8 0v4h8z" />
                         </svg>
                     </div>
@@ -69,7 +69,7 @@ new class extends Component
             </div>
 
             <div class="mt-6 flex justify-end gap-3">
-                <button type="button" x-on:click="$dispatch('close')" class="rounded-xl border border-stone-200 bg-white px-4 py-2 text-sm font-semibold text-stone-600 transition hover:bg-stone-50 hover:text-stone-900 focus:outline-none">
+                <button type="button" x-on:click="$dispatch('close')" class="rounded-xl border border-stone-200 bg-white px-4 py-2 text-sm font-semibold text-stone-600 transition hover:bg-stone-50 hover:text-stone-900 focus:outline-none dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300 dark:hover:bg-gray-800 dark:hover:text-white">
                     Batal
                 </button>
 

@@ -36,7 +36,7 @@
         <main class="flex-1 flex flex-col relative w-full h-full bg-transparent z-0 overflow-hidden min-w-0">
 
                 <!-- Header for Chat Space -->
-                <div class="h-[61px] flex-shrink-0 flex items-center justify-between px-3 sm:px-6 z-20 border-b border-stone-200/60/70 dark:border-[#1E293B]/70 backdrop-blur-sm">
+                <div class="h-[61px] flex-shrink-0 flex items-center justify-between px-3 sm:px-6 z-20 border-b border-stone-200/70 dark:border-[#1E293B]/70 backdrop-blur-sm">
                     <!-- Left toggler and title -->
                     <div class="flex items-center gap-2 sm:gap-4">
                         <button type="button" @click="showLeftSidebar = !showLeftSidebar" class="p-2 rounded-[10px] hover:bg-[#F1F5F9] dark:hover:bg-gray-800 transition-colors flex-shrink-0">
@@ -56,7 +56,7 @@
                     <!-- Right toggles -->
                     <div class="flex items-center gap-1 sm:gap-3">
                         <!-- Theme Toggle Button -->
-                        <button type="button" @click="darkMode = !darkMode" class="p-2 rounded-[10px] hover:bg-[#F1F5F9] dark:hover:bg-gray-800 transition-colors">
+                        <button type="button" @click="darkMode = !darkMode" :aria-pressed="darkMode ? 'true' : 'false'" class="p-2 rounded-[10px] hover:bg-[#F1F5F9] dark:hover:bg-gray-800 transition-colors">
                             <svg x-show="darkMode === false" xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 text-[#64748B]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M12 3v2.5M12 18.5V21M4.9 4.9l1.8 1.8M17.3 17.3l1.8 1.8M3 12h2.5M18.5 12H21M4.9 19.1l1.8-1.8M17.3 6.7l1.8-1.8M12 16a4 4 0 100-8 4 4 0 000 8z" />
                             </svg>
@@ -69,16 +69,6 @@
                             <img src="{{ $uiIcons['collapseRightLight'] }}" alt="" class="h-5 w-5 dark:hidden transition-transform duration-300 ease-in-out" :class="showRightSidebar ? 'rotate-0' : 'rotate-180'" />
                             <img src="{{ $uiIcons['collapseRightDark'] }}" alt="" class="h-5 w-5 hidden dark:block transition-transform duration-300 ease-in-out" :class="showRightSidebar ? 'rotate-0' : 'rotate-180'" />
                         </button>
-                    </div>
-                </div>
-
-                <div x-show="isSwitchingConversation"
-                     x-transition.opacity
-                     class="pointer-events-none absolute left-0 right-0 top-[77px] z-30 px-3 sm:px-6"
-                     style="display: none;">
-                    <div class="mx-auto flex max-w-3xl items-center gap-2 rounded-xl border border-stone-200/60 bg-white/95 px-4 py-3 text-[13px] text-[#64748B] shadow-sm backdrop-blur-sm dark:border-gray-800 dark:bg-gray-800/95 dark:text-[#94A3B8]">
-                        <span class="h-3.5 w-3.5 rounded-full border-2 border-current border-t-transparent animate-spin"></span>
-                        <span>Membuka chat...</span>
                     </div>
                 </div>
 

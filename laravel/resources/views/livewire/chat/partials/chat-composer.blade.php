@@ -14,7 +14,7 @@
     })"
      x-on:show-drop-error.window="sendError = $event.detail.message"
      x-on:conversation-documents-preview.window="previewConversationDocuments($event)"
-     class="chat-composer-safe shrink-0 px-3 sm:px-6 pt-2 bg-transparent w-full"
+     class="chat-composer-safe mx-auto w-full max-w-4xl shrink-0 px-3 pt-1 sm:px-6 bg-transparent"
 >
     <input
         x-ref="chatAttachmentInput"
@@ -23,7 +23,7 @@
         accept=".pdf,.docx,.xlsx,.csv"
         class="hidden"
     >
-    <form x-on:submit.prevent="submitPrompt($event)" class="chat-form max-w-3xl mx-auto relative rounded-xl shadow-sm bg-white dark:bg-gray-800 border border-stone-200/60 dark:border-gray-700 transition-colors">
+    <form x-on:submit.prevent="submitPrompt($event)" class="chat-form max-w-3xl mx-auto relative rounded-[1.35rem] border border-stone-200/70 bg-white/[0.82] shadow-[0_18px_50px_-32px_rgba(15,23,42,0.55)] backdrop-blur-xl transition-colors dark:border-gray-700/80 dark:bg-gray-800/[0.82]">
         <div class="flex flex-col w-full">
             <!-- Error Notification -->
             <div x-show="sendError" x-transition class="absolute -top-14 left-0 right-0 z-30">

@@ -44,17 +44,17 @@ new class extends Component
             Perbarui Kata Sandi
         </h2>
 
-        <p class="mt-1 text-sm text-stone-600 font-medium">
+        <p class="mt-1 text-sm text-stone-600 font-medium dark:text-gray-300">
             Pastikan akun Anda menggunakan kata sandi yang panjang dan acak untuk tetap aman.
         </p>
     </header>
 
     <form wire:submit="updatePassword" class="mt-6 space-y-6">
         <div class="group space-y-2">
-            <label for="update_password_current_password" class="ml-1 cursor-text text-[13px] font-bold text-stone-600 transition-all duration-300 group-focus-within:translate-x-1 group-focus-within:text-rose-900">Kata Sandi Saat Ini</label>
+            <label for="update_password_current_password" class="ml-1 cursor-text text-[13px] font-bold text-stone-600 transition-all duration-300 group-focus-within:translate-x-1 group-focus-within:text-rose-900 dark:text-gray-300 dark:group-focus-within:text-gray-100">Kata Sandi Saat Ini</label>
             <div class="relative transform transition-transform duration-300 group-focus-within:scale-[1.01]">
                 <div class="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-5">
-                    <svg class="h-5 w-5 text-stone-500 transition-colors duration-300 group-focus-within:text-rose-700" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <svg class="h-5 w-5 text-stone-500 transition-colors duration-300 group-focus-within:text-rose-700 dark:text-gray-400 dark:group-focus-within:text-amber-300" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 00-2 2zm10-10V7a4 4 0 00-8 0v4h8z" />
                     </svg>
                 </div>
@@ -66,10 +66,10 @@ new class extends Component
         </div>
 
         <div class="group space-y-2">
-            <label for="update_password_password" class="ml-1 cursor-text text-[13px] font-bold text-stone-600 transition-all duration-300 group-focus-within:translate-x-1 group-focus-within:text-rose-900">Kata Sandi Baru</label>
+            <label for="update_password_password" class="ml-1 cursor-text text-[13px] font-bold text-stone-600 transition-all duration-300 group-focus-within:translate-x-1 group-focus-within:text-rose-900 dark:text-gray-300 dark:group-focus-within:text-gray-100">Kata Sandi Baru</label>
             <div class="relative transform transition-transform duration-300 group-focus-within:scale-[1.01]">
                 <div class="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-5">
-                    <svg class="h-5 w-5 text-stone-500 transition-colors duration-300 group-focus-within:text-rose-700" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <svg class="h-5 w-5 text-stone-500 transition-colors duration-300 group-focus-within:text-rose-700 dark:text-gray-400 dark:group-focus-within:text-amber-300" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 00-2 2zm10-10V7a4 4 0 00-8 0v4h8z" />
                     </svg>
                 </div>
@@ -81,10 +81,10 @@ new class extends Component
         </div>
 
         <div class="group space-y-2">
-            <label for="update_password_password_confirmation" class="ml-1 cursor-text text-[13px] font-bold text-stone-600 transition-all duration-300 group-focus-within:translate-x-1 group-focus-within:text-rose-900">Konfirmasi Kata Sandi Baru</label>
+            <label for="update_password_password_confirmation" class="ml-1 cursor-text text-[13px] font-bold text-stone-600 transition-all duration-300 group-focus-within:translate-x-1 group-focus-within:text-rose-900 dark:text-gray-300 dark:group-focus-within:text-gray-100">Konfirmasi Kata Sandi Baru</label>
             <div class="relative transform transition-transform duration-300 group-focus-within:scale-[1.01]">
                 <div class="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-5">
-                    <svg class="h-5 w-5 text-stone-500 transition-colors duration-300 group-focus-within:text-rose-700" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <svg class="h-5 w-5 text-stone-500 transition-colors duration-300 group-focus-within:text-rose-700 dark:text-gray-400 dark:group-focus-within:text-amber-300" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 00-2 2zm10-10V7a4 4 0 00-8 0v4h8z" />
                     </svg>
                 </div>

@@ -68,17 +68,17 @@ new class extends Component
             Informasi Profil
         </h2>
 
-        <p class="mt-1 text-sm text-stone-600 font-medium">
+        <p class="mt-1 text-sm text-stone-600 font-medium dark:text-gray-300">
             Perbarui informasi profil dan alamat email akun Anda.
         </p>
     </header>
 
     <form wire:submit="updateProfileInformation" class="mt-6 space-y-6">
         <div class="group space-y-2">
-            <label for="name" class="ml-1 cursor-text text-[13px] font-bold text-stone-600 transition-all duration-300 group-focus-within:translate-x-1 group-focus-within:text-rose-900">Nama</label>
+            <label for="name" class="ml-1 cursor-text text-[13px] font-bold text-stone-600 transition-all duration-300 group-focus-within:translate-x-1 group-focus-within:text-rose-900 dark:text-gray-300 dark:group-focus-within:text-gray-100">Nama</label>
             <div class="relative transform transition-transform duration-300 group-focus-within:scale-[1.01]">
                 <div class="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-5">
-                    <svg class="h-5 w-5 text-stone-500 transition-colors duration-300 group-focus-within:text-rose-700" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <svg class="h-5 w-5 text-stone-500 transition-colors duration-300 group-focus-within:text-rose-700 dark:text-gray-400 dark:group-focus-within:text-amber-300" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
                     </svg>
                 </div>
@@ -90,10 +90,10 @@ new class extends Component
         </div>
 
         <div class="group space-y-2">
-            <label for="email" class="ml-1 cursor-text text-[13px] font-bold text-stone-600 transition-all duration-300 group-focus-within:translate-x-1 group-focus-within:text-rose-900">Email</label>
+            <label for="email" class="ml-1 cursor-text text-[13px] font-bold text-stone-600 transition-all duration-300 group-focus-within:translate-x-1 group-focus-within:text-rose-900 dark:text-gray-300 dark:group-focus-within:text-gray-100">Email</label>
             <div class="relative transform transition-transform duration-300 group-focus-within:scale-[1.01]">
                 <div class="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-5">
-                    <svg class="h-5 w-5 text-stone-500 transition-colors duration-300 group-focus-within:text-rose-700" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <svg class="h-5 w-5 text-stone-500 transition-colors duration-300 group-focus-within:text-rose-700 dark:text-gray-400 dark:group-focus-within:text-amber-300" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
                     </svg>
                 </div>
@@ -105,7 +105,7 @@ new class extends Component
 
             @if (auth()->user() instanceof \Illuminate\Contracts\Auth\MustVerifyEmail && ! auth()->user()->hasVerifiedEmail())
                 <div>
-                    <p class="text-[13px] mt-2 text-stone-800 font-medium">
+                    <p class="text-[13px] mt-2 text-stone-800 font-medium dark:text-gray-200">
                         Alamat email Anda belum terverifikasi.
 
                         <button wire:click.prevent="sendVerification" class="underline text-sm text-ista-primary hover:text-ista-gold rounded-md focus:outline-none">

@@ -209,7 +209,7 @@ new #[Layout('layouts.auth-canvas')] class extends Component
     }
 }; ?>
 
-<div class="relative flex min-h-screen w-full items-center justify-center overflow-hidden bg-[#fafaf9]">
+<div class="relative flex min-h-screen w-full items-center justify-center overflow-hidden bg-[#fafaf9] transition-colors duration-300 dark:bg-gray-950">
     @include('livewire.pages.auth.partials.auth-background')
 
     @include('livewire.pages.auth.partials.auth-card')

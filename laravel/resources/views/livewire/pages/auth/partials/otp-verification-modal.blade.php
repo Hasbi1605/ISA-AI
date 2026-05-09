@@ -1,7 +1,7 @@
 <div class="fixed inset-0" style="z-index: 9998; background-color: rgba(0, 0, 0, 0.88); backdrop-filter: blur(8px);"></div>
 
 <div class="fixed inset-0 z-[9999] flex items-center justify-center p-4">
-    <div class="ista-glass-card relative w-full max-w-md p-8 animate-enter-1 border-white/95 bg-white/80 shadow-[0_0_0_1px_rgba(255,255,255,0.65),0_0_110px_rgba(255,255,255,0.4),0_30px_70px_-15px_rgba(0,0,0,0.58)] hover:translate-y-0 hover:shadow-[0_0_0_1px_rgba(255,255,255,0.65),0_0_110px_rgba(255,255,255,0.4),0_30px_70px_-15px_rgba(0,0,0,0.58)]" style="background: linear-gradient(150deg, rgba(255, 255, 255, 0.94), rgba(255, 255, 255, 0.78)); backdrop-filter: blur(22px) saturate(135%);">
+    <div class="ista-glass-card relative w-full max-w-md p-8 animate-enter-1 border-white/95 bg-white/80 shadow-[0_0_0_1px_rgba(255,255,255,0.65),0_0_110px_rgba(255,255,255,0.4),0_30px_70px_-15px_rgba(0,0,0,0.58)] hover:translate-y-0 hover:shadow-[0_0_0_1px_rgba(255,255,255,0.65),0_0_110px_rgba(255,255,255,0.4),0_30px_70px_-15px_rgba(0,0,0,0.58)] dark:border-gray-700/90 dark:bg-gray-900/90 dark:shadow-[0_0_0_1px_rgba(31,41,55,0.9),0_30px_70px_-15px_rgba(0,0,0,0.8)] dark:hover:shadow-[0_0_0_1px_rgba(31,41,55,0.9),0_30px_70px_-15px_rgba(0,0,0,0.8)]" style="backdrop-filter: blur(22px) saturate(135%);">
         <button wire:click="cancelVerification" class="absolute right-4 top-4 text-stone-500 transition-colors hover:text-stone-700" type="button" aria-label="Tutup popup verifikasi">
             <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
@@ -57,7 +57,7 @@
                             :id="'otp_' + index"
                             @input="focusNext(index)"
                             @keydown="handleBackspace($event, index)"
-                            class="h-14 w-12 rounded-xl border border-stone-300 bg-white text-center text-2xl font-bold text-stone-800 shadow-inner transition-all focus:border-ista-primary focus:outline-none focus:ring-4 focus:ring-ista-primary/10"
+                            class="h-14 w-12 rounded-xl border border-stone-300 bg-white text-center text-2xl font-bold text-stone-800 shadow-inner transition-all focus:border-ista-primary focus:outline-none focus:ring-4 focus:ring-ista-primary/10 dark:border-gray-700 dark:bg-gray-950 dark:text-gray-100"
                             required
                             autofocus
                         >
@@ -91,7 +91,7 @@
                     wire:click="resendOtp"
                     wire:loading.attr="disabled"
                     wire:target="resendOtp"
-                    class="mt-3 w-full rounded-xl border border-stone-300 bg-white px-4 py-3 text-sm font-semibold text-stone-700 transition-colors hover:border-stone-400 hover:text-stone-900 disabled:cursor-not-allowed disabled:opacity-60"
+                    class="mt-3 w-full rounded-xl border border-stone-300 bg-white px-4 py-3 text-sm font-semibold text-stone-700 transition-colors hover:border-stone-400 hover:text-stone-900 disabled:cursor-not-allowed disabled:opacity-60 dark:border-gray-700 dark:bg-gray-950 dark:text-gray-200 dark:hover:text-white"
                 >
                     <span wire:loading.remove wire:target="resendOtp">Kirim Ulang OTP</span>
                     <span wire:loading wire:target="resendOtp">Mengirim ulang...</span>
