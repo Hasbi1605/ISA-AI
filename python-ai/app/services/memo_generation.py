@@ -401,6 +401,11 @@ def _add_body(
         insert_at = 1 if blocks and not _is_structured_body_block(blocks[0]) else 0
         configured_blocks = [f"{label}: {value}" for label, value in configured_key_values]
         blocks = [*blocks[:insert_at], *configured_blocks, *blocks[insert_at:]]
+        blocks = _clean_redundant_block_before_configured_key_values(
+            blocks,
+            configured_key_values,
+            table_start_index=insert_at,
+        )
         blocks = _remove_redundant_blocks_after_configured_key_values(
             blocks,
             configured_key_values,
@@ -523,6 +528,54 @@ def _clean_redundant_blocks_around_existing_key_values(
     )
 
 
+def _clean_redundant_block_before_configured_key_values(
+    blocks: list[str],
+    configured_items: list[tuple[str, str]],
+    *,
+    table_start_index: int,
+) -> list[str]:
+    if not configured_items or table_start_index <= 0:
+        return blocks
+
+    configured_labels = {_key_value_label_key(label) for label, _value in configured_items}
+    if not configured_labels & ACTIVITY_KEY_VALUE_LABEL_KEYS:
+        return blocks
+
+    configured_values = _normalized_configured_values(configured_items)
+    previous_block = blocks[table_start_index - 1]
+    if not _looks_like_redundant_activity_detail_block(
+        previous_block,
+        configured_labels,
+        configured_values,
+    ):
+        return blocks
+
+    replacement = _activity_intro_without_repeated_details(previous_block)
+    if not replacement:
+        replacement = "Sehubungan hal tersebut, dapat kami sampaikan sebagai berikut:"
+
+    return [*blocks[: table_start_index - 1], replacement, *blocks[table_start_index:]]
+
+
+def _activity_intro_without_repeated_details(block: str) -> str:
+    clean = re.sub(r"\s+", " ", block or "").strip()
+    if not clean:
+        return ""
+
+    prefix_match = re.match(
+        r"^(?P<prefix>sehubungan\s+dengan\s+[^,.;]+)",
+        clean,
+        flags=re.IGNORECASE,
+    )
+    if prefix_match:
+        return f"{prefix_match.group('prefix').strip()}, dapat kami sampaikan sebagai berikut:"
+
+    if re.search(r"\bdapat\s+kami\s+sampaikan\b", clean, flags=re.IGNORECASE):
+        return "Sehubungan hal tersebut, dapat kami sampaikan sebagai berikut:"
+
+    return ""
+
+
 def _should_add_space_after_key_value_table(blocks: list[str], next_index: int) -> bool:
     if next_index >= len(blocks):
         return False
@@ -626,9 +679,14 @@ def _looks_like_redundant_activity_detail_block(
             "waktu pelaksanaan",
             "waktu kejadian",
             "rapat akan dilaksanakan",
+            "rapat akan diselenggarakan",
             "rapat dilaksanakan",
+            "rapat diselenggarakan",
             "kegiatan akan dilaksanakan",
+            "kegiatan akan diselenggarakan",
             "kegiatan dilaksanakan",
+            "kegiatan diselenggarakan",
+            "data tersebut agar disampaikan paling lambat",
         )
     )
 
@@ -655,9 +713,14 @@ def _looks_like_redundant_activity_detail_block(
         "waktu pelaksanaan",
         "waktu kejadian",
         "rapat akan dilaksanakan",
+        "rapat akan diselenggarakan",
         "rapat dilaksanakan",
+        "rapat diselenggarakan",
         "kegiatan akan dilaksanakan",
+        "kegiatan akan diselenggarakan",
         "kegiatan dilaksanakan",
+        "kegiatan diselenggarakan",
+        "data tersebut agar disampaikan paling lambat",
     )
     if not normalized.startswith(detail_starters):
         return matched_value_count >= 2 or configured_token_coverage >= 0.66
@@ -1387,7 +1450,28 @@ def _sanitize_memo_body(body: str, config: dict[str, str]) -> str:
     clean = _normalize_person_data_sequences(clean)
     clean = _clean_official_language_fragments(clean)
     clean = _dedupe_consecutive_blocks(clean)
+    clean = _merge_orphan_numbered_markers(clean)
     return _normalize_generated_text(clean)
+
+
+def _merge_orphan_numbered_markers(text: str) -> str:
+    blocks = _split_blocks(text)
+    if len(blocks) < 2:
+        return text
+
+    output: list[str] = []
+    index = 0
+    while index < len(blocks):
+        block = blocks[index].strip()
+        if re.fullmatch(r"\d+[.)]", block) and index + 1 < len(blocks):
+            output.append(f"{block} {blocks[index + 1].strip()}")
+            index += 2
+            continue
+
+        output.append(block)
+        index += 1
+
+    return "\n".join(output)
 
 
 def _enforce_revision_constraints(body: str, config: dict[str, str]) -> str:

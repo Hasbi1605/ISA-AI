@@ -691,6 +691,109 @@ def test_generate_memo_docx_formats_period_inline_key_value_and_spaces_following
     assert _spacing_after_table_twips(data_table) >= 160
 
 
+def test_generate_memo_docx_rewrites_intro_that_repeats_configured_activity_table():
+    draft = generate_memo_docx(
+        memo_type="memo_internal",
+        title="Permohonan Persetujuan Jadwal Pemeliharaan Sistem",
+        context="Permohonan persetujuan jadwal pemeliharaan sistem.",
+        text_generator=lambda prompt: (
+            "Sehubungan dengan kebutuhan pemeliharaan sistem aplikasi internal, kami bermaksud "
+            "melaksanakan pemeliharaan sistem pada tanggal 11 Mei 2026 pukul 19.00 WIB "
+            "dengan estimasi durasi selama dua jam, dapat kami sampaikan sebagai berikut.\n"
+            "Mohon persetujuan atas jadwal dimaksud."
+        ),
+        configuration={
+            "number": "EVAL-09/IST/YK/05/2026",
+            "recipient": "Kepala Bagian Administrasi",
+            "sender": "Kepala Istana Kepresidenan Yogyakarta",
+            "subject": "Permohonan Persetujuan Jadwal Pemeliharaan Sistem",
+            "date": "7 Mei 2026",
+            "content": (
+                "Jadwal pemeliharaan pada 11 Mei 2026 pukul 19.00 WIB. "
+                "Estimasi durasi dua jam."
+            ),
+            "signatory": "Deni Mulyana",
+            "page_size": "letter",
+        },
+    )
+
+    document = Document(BytesIO(draft.content))
+    paragraphs = [paragraph.text for paragraph in document.paragraphs if paragraph.text]
+    data_table = _find_table_containing(document, "hari/tanggal")
+
+    assert data_table.cell(0, 2).text == "11 Mei 2026"
+    assert data_table.cell(1, 2).text == "19.00 WIB"
+    assert data_table.cell(2, 0).text == "estimasi durasi"
+    assert all("11 Mei 2026" not in paragraph for paragraph in paragraphs)
+    assert all("19.00 WIB" not in paragraph for paragraph in paragraphs)
+
+
+def test_generate_memo_docx_removes_numbered_schedule_duplicate_after_key_value_table():
+    draft = generate_memo_docx(
+        memo_type="memo_internal",
+        title="Daftar Peserta Rapat Evaluasi Layanan",
+        context="Daftar peserta rapat evaluasi layanan.",
+        text_generator=lambda prompt: (
+            "Sehubungan dengan akan dilaksanakannya rapat evaluasi layanan internal, dapat kami sampaikan sebagai berikut:\n"
+            "1. Peserta rapat wajib dihadiri oleh Kepala Bagian Administrasi dan Koordinator TI.\n"
+            "2. Rapat akan diselenggarakan pada tanggal 12 Mei 2026 pukul 10.00 WIB.\n"
+            "3. Peserta agar hadir tepat waktu."
+        ),
+        configuration={
+            "number": "EVAL-14/IST/YK/05/2026",
+            "recipient": "Para Kepala Subbagian",
+            "sender": "Kepala Istana Kepresidenan Yogyakarta",
+            "subject": "Daftar Peserta Rapat Evaluasi Layanan",
+            "date": "7 Mei 2026",
+            "content": (
+                "Peserta wajib: Kepala Bagian Administrasi dan Koordinator TI. "
+                "Rapat dilaksanakan 12 Mei 2026 pukul 10.00 WIB."
+            ),
+            "signatory": "Deni Mulyana",
+            "page_size": "letter",
+        },
+    )
+
+    document = Document(BytesIO(draft.content))
+    paragraphs = [paragraph.text for paragraph in document.paragraphs if paragraph.text]
+    data_table = _find_table_containing(document, "hari/tanggal")
+
+    assert data_table.cell(0, 2).text == "12 Mei 2026"
+    assert data_table.cell(1, 2).text == "10.00 WIB"
+    assert all("Rapat akan diselenggarakan" not in paragraph for paragraph in paragraphs)
+    assert any(paragraph.startswith("1.\tPeserta rapat wajib") for paragraph in paragraphs)
+    assert any(paragraph.startswith("2.\tPeserta agar hadir") for paragraph in paragraphs)
+
+
+def test_generate_memo_docx_merges_orphan_numbered_marker_with_following_text():
+    draft = generate_memo_docx(
+        memo_type="memo_internal",
+        title="Koordinasi Lintas Unit Persiapan Kegiatan",
+        context="Koordinasi lintas unit persiapan kegiatan.",
+        text_generator=lambda prompt: (
+            "Sehubungan dengan kebutuhan koordinasi kegiatan, dapat kami sampaikan sebagai berikut.\n"
+            "1.\n"
+            "Dimohon untuk menjadwalkan rapat koordinasi lintas unit.\n"
+            "2. Setiap unit menyiapkan data dukung."
+        ),
+        configuration={
+            "number": "EVAL-40/IST/YK/05/2026",
+            "recipient": "Para Kepala Subbagian",
+            "sender": "Kepala Istana Kepresidenan Yogyakarta",
+            "subject": "Koordinasi Lintas Unit Persiapan Kegiatan",
+            "date": "7 Mei 2026",
+            "content": "Koordinasikan persiapan kegiatan lintas unit.",
+            "signatory": "Deni Mulyana",
+            "page_size": "letter",
+        },
+    )
+
+    paragraphs = [paragraph.text for paragraph in Document(BytesIO(draft.content)).paragraphs if paragraph.text]
+
+    assert "1." not in paragraphs
+    assert any(paragraph.startswith("1.\tDimohon untuk menjadwalkan") for paragraph in paragraphs)
+
+
 def test_generate_memo_docx_strips_source_json_urls_and_markdown_artifacts():
     draft = generate_memo_docx(
         memo_type="memo_internal",

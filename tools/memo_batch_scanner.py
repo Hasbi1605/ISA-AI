@@ -74,7 +74,7 @@ PROMPT_LEAK_PATTERNS = {
 
 CLOSING_PATTERN = re.compile(
     r"^(?:demikian|atas\s+perhatian|atas\s+kerja\s+sama|dimohon|mohon\s+tindak\s+lanjut|"
-    r"mohon\s+untuk|partisipasi\s+aktif)",
+    r"mohon\s+untuk\s+segera\s+ditindaklanjuti|partisipasi\s+aktif)",
     re.I,
 )
 
@@ -364,6 +364,15 @@ def check_closing(paragraphs: list[dict[str, Any]]) -> list[dict[str, Any]]:
     return findings
 
 
+def check_orphan_numbering(paragraphs: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    findings: list[dict[str, Any]] = []
+    for paragraph in paragraphs:
+        text = paragraph["text"].strip()
+        if re.fullmatch(r"\d+[.)]", text):
+            findings.append({"type": "orphan_numbering_marker", "paragraph": text})
+    return findings
+
+
 def check_alignment(paragraphs: list[dict[str, Any]]) -> list[dict[str, Any]]:
     findings: list[dict[str, Any]] = []
     for paragraph in paragraphs:
@@ -504,6 +513,7 @@ def scan_version(batch_dir: Path, entry: VersionEntry, official: dict[str, Any])
     checks = {
         "duplicate_key_values": check_duplicate_key_values(paragraphs, table_rows),
         "numbering_restart": check_numbering_restart(paragraphs),
+        "orphan_numbering": check_orphan_numbering(paragraphs),
         "prompt_leakage": check_prompt_leakage(body_text),
         "unconfigured_facts": check_unconfigured_facts(body_text, entry.configuration),
         "closing": check_closing(paragraphs),
