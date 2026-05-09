@@ -3,7 +3,9 @@
 namespace App\Http\Controllers;
 
 use App\Models\Memo;
+use App\Models\MemoVersion;
 use App\Services\OnlyOffice\JwtSigner;
+use App\Services\OnlyOffice\MemoDocumentKey;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Http;
@@ -29,6 +31,8 @@ class OnlyOfficeCallbackController extends Controller
 
         $callback = $this->normalizeSignedCallbackPayload($request, $payload);
         $this->validateSignedCallbackPayload($memo, $callback);
+        $version = $this->resolveMemoVersion($request, $memo, $callback);
+        $this->validateFreshDocumentKey($memo, $version, $callback);
         $status = (int) $callback['status'];
 
         if (in_array($status, [2, 6], true)) {
@@ -39,14 +43,40 @@ class OnlyOfficeCallbackController extends Controller
             $response = Http::timeout(60)->get($url);
             abort_unless($response->successful(), Response::HTTP_BAD_GATEWAY, 'Gagal mengunduh file dari OnlyOffice.');
 
-            $path = $memo->file_path ?: 'memos/'.$memo->user_id.'/'.$memo->id.'.docx';
+            $path = $version?->file_path ?: ($memo->file_path ?: 'memos/'.$memo->user_id.'/'.$memo->id.'.docx');
             Storage::disk('local')->put($path, $response->body());
 
-            $memo->forceFill([
-                'file_path' => $path,
-                'status' => Memo::STATUS_EDITED,
-                'searchable_text' => $memo->searchable_text ?: $memo->title,
-            ])->save();
+            if ($version) {
+                $version->forceFill([
+                    'file_path' => $path,
+                    'status' => Memo::STATUS_EDITED,
+                    'searchable_text' => $version->searchable_text ?: $memo->searchable_text ?: $memo->title,
+                ])->save();
+
+                if ((int) $memo->current_version_id === (int) $version->id || $memo->current_version_id === null) {
+                    $memo->forceFill([
+                        'file_path' => $path,
+                        'status' => Memo::STATUS_EDITED,
+                        'searchable_text' => $version->searchable_text ?: $memo->searchable_text ?: $memo->title,
+                    ])->save();
+                }
+            } else {
+                $memo->forceFill([
+                    'file_path' => $path,
+                    'status' => Memo::STATUS_EDITED,
+                    'searchable_text' => $memo->searchable_text ?: $memo->title,
+                ])->save();
+
+                $currentVersion = $memo->currentVersion()->first();
+
+                if ($currentVersion) {
+                    $currentVersion->forceFill([
+                        'file_path' => $path,
+                        'status' => Memo::STATUS_EDITED,
+                        'searchable_text' => $memo->searchable_text ?: $memo->title,
+                    ])->save();
+                }
+            }
         }
 
         return response()->json(['error' => 0]);
@@ -90,12 +120,56 @@ class OnlyOfficeCallbackController extends Controller
         }
     }
 
+    /**
+     * @param  array<string, mixed>  $callback
+     */
+    protected function resolveMemoVersion(Request $request, Memo $memo, array $callback): ?MemoVersion
+    {
+        $versionId = $request->query('version_id');
+        $key = (string) ($callback['key'] ?? '');
+
+        if ($versionId === null || $versionId === '') {
+            $memoId = preg_quote((string) $memo->id, '/');
+
+            if (! preg_match('/^memo-'.$memoId.'-v([1-9][0-9]*)-/', $key, $matches)) {
+                return null;
+            }
+
+            $versionId = $matches[1];
+        }
+
+        abort_unless(is_numeric($versionId), Response::HTTP_FORBIDDEN);
+
+        $version = MemoVersion::where('memo_id', $memo->id)
+            ->whereKey((int) $versionId)
+            ->first();
+
+        abort_unless($version, Response::HTTP_FORBIDDEN);
+
+        abort_unless(str_starts_with($key, 'memo-'.$memo->id.'-v'.$version->id.'-'), Response::HTTP_FORBIDDEN);
+
+        return $version;
+    }
+
+    /**
+     * @param  array<string, mixed>  $callback
+     */
+    protected function validateFreshDocumentKey(Memo $memo, ?MemoVersion $version, array $callback): void
+    {
+        $memo->refresh();
+        $version?->refresh();
+
+        $key = (string) ($callback['key'] ?? '');
+        $expectedKey = app(MemoDocumentKey::class)->forEditor($memo, $version);
+
+        abort_unless(hash_equals($expectedKey, $key), Response::HTTP_CONFLICT, 'Sesi dokumen OnlyOffice sudah kedaluwarsa.');
+    }
+
     protected function isTrustedOnlyOfficeUrl(string $url): bool
     {
         $candidate = parse_url($url);
-        $trusted = parse_url((string) config('services.onlyoffice.internal_url'));
 
-        if (! is_array($candidate) || ! is_array($trusted)) {
+        if (! is_array($candidate)) {
             return false;
         }
 
@@ -103,13 +177,38 @@ class OnlyOfficeCallbackController extends Controller
             return false;
         }
 
-        if (($candidate['host'] ?? null) !== ($trusted['host'] ?? null)) {
-            return false;
+        foreach ($this->trustedOnlyOfficeUrls() as $trustedUrl) {
+            $trusted = parse_url($trustedUrl);
+
+            if (! is_array($trusted)) {
+                continue;
+            }
+
+            if (($candidate['host'] ?? null) !== ($trusted['host'] ?? null)) {
+                continue;
+            }
+
+            $trustedPort = $trusted['port'] ?? null;
+
+            if ($trustedPort !== null && ($candidate['port'] ?? null) !== $trustedPort) {
+                continue;
+            }
+
+            return true;
         }
 
-        $trustedPort = $trusted['port'] ?? null;
+        return false;
+    }
 
-        return $trustedPort === null || ($candidate['port'] ?? null) === $trustedPort;
+    /**
+     * @return array<int, string>
+     */
+    protected function trustedOnlyOfficeUrls(): array
+    {
+        return array_values(array_filter(array_unique([
+            (string) config('services.onlyoffice.internal_url'),
+            (string) config('services.onlyoffice.public_url'),
+        ])));
     }
 
     protected function extractToken(Request $request): ?string

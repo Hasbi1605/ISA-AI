@@ -383,7 +383,7 @@ class TestEmbeddingDimensionStrategy:
     def test_embedding_models_include_dimensions(self, rag):
         for model in rag.EMBEDDING_MODELS:
             assert 'dimensions' in model
-            assert model['dimensions'] in [3072, 1536]
+            assert model['dimensions'] in [3072, 1536, 1024]
 
     def test_all_models_use_fixed_chroma_dimension(self, rag):
         max_dim = rag.MAX_EMBEDDING_DIM
@@ -402,9 +402,11 @@ class TestEmbeddingDimensionStrategy:
     def test_fallback_tier_uses_correct_dimension(self, rag):
         large_model = rag.EMBEDDING_MODELS[0]
         small_model = rag.EMBEDDING_MODELS[2]
+        bedrock_model = rag.EMBEDDING_MODELS[-1]
 
         assert large_model["dimensions"] == 3072, "Primary tier should use 3072 dimensions"
         assert small_model["dimensions"] == 1536, "Fallback tier should use 1536 dimensions"
+        assert bedrock_model["dimensions"] == 1024, "Bedrock Titan fallback should use native 1024 dimensions"
 
     def test_all_fallback_models_use_max_embedding_dim(self, rag):
         import inspect

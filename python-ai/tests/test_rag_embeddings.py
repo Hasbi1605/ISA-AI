@@ -5,7 +5,12 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 from app.services.rag_config import MAX_EMBEDDING_DIM
 from app.services import rag_embeddings
-from app.services.rag_embeddings import GITHUB_MODELS_BASE_URL, GithubOpenAIEmbeddings
+from app.services.rag_embeddings import (
+    BEDROCK_RUNTIME_URL_TEMPLATE,
+    GITHUB_MODELS_BASE_URL,
+    BedrockTitanEmbeddings,
+    GithubOpenAIEmbeddings,
+)
 
 
 class _FakeResponseItem:
@@ -38,6 +43,19 @@ class _FakeOpenAI:
         self.api_key = api_key
         self.base_url = base_url
         self.embeddings = _FakeEmbeddingsAPI([[0.1, 0.2]])
+
+
+class _FakeBedrockResponse:
+    def __init__(self, embedding=None, status_error=None):
+        self._embedding = embedding or [0.6, 0.7]
+        self._status_error = status_error
+
+    def raise_for_status(self):
+        if self._status_error:
+            raise self._status_error
+
+    def json(self):
+        return {"embedding": self._embedding}
 
 
 def test_embed_documents_pads_vectors_and_sanitizes_input():
@@ -140,3 +158,96 @@ def test_get_embeddings_uses_model_native_dimension_before_padding(monkeypatch):
     assert index == 0
     assert captured["dimensions"] == 1536
     assert len(embeddings.embed_query("halo")) == MAX_EMBEDDING_DIM
+
+
+def test_bedrock_titan_embeddings_invokes_bedrock_runtime_and_pads(monkeypatch):
+    captured = {}
+
+    def fake_post(url, **kwargs):
+        captured["url"] = url
+        captured.update(kwargs)
+        return _FakeBedrockResponse([0.8, 0.9, 1.0])
+
+    monkeypatch.setattr(rag_embeddings.requests, "post", fake_post)
+
+    embeddings = BedrockTitanEmbeddings(
+        model="amazon.titan-embed-text-v2:0",
+        api_key="test-bedrock-token",
+        region="us-east-1",
+        dimensions=1024,
+        normalize=True,
+        timeout=12,
+    )
+
+    result = embeddings.embed_documents(["baris satu\nbaris dua"])
+
+    assert len(result) == 1
+    assert result[0][:3] == [0.8, 0.9, 1.0]
+    assert len(result[0]) == MAX_EMBEDDING_DIM
+    assert captured["url"] == BEDROCK_RUNTIME_URL_TEMPLATE.format(
+        region="us-east-1",
+        model_id="amazon.titan-embed-text-v2%3A0",
+    )
+    assert captured["headers"]["Authorization"] == "Bearer test-bedrock-token"
+    assert captured["json"] == {
+        "inputText": "baris satu baris dua",
+        "dimensions": 1024,
+        "normalize": True,
+    }
+    assert captured["timeout"] == 12
+
+
+def test_get_embeddings_falls_back_to_bedrock_titan_when_github_fails(monkeypatch):
+    class FailingGithubEmbedding:
+        def __init__(self, **_kwargs):
+            pass
+
+        def embed_query(self, _text):
+            raise RuntimeError("github limited")
+
+    class FakeBedrockEmbedding:
+        def __init__(self, **kwargs):
+            self.kwargs = kwargs
+
+        def embed_query(self, _text):
+            return [0.1] * MAX_EMBEDDING_DIM
+
+    monkeypatch.setattr(rag_embeddings, "GithubOpenAIEmbeddings", FailingGithubEmbedding)
+    monkeypatch.setattr(rag_embeddings, "BedrockTitanEmbeddings", FakeBedrockEmbedding)
+    monkeypatch.setattr(rag_embeddings, "get_env", lambda name, default=None: {
+        "GITHUB_TOKEN": "github-token",
+        "AWS_BEARER_TOKEN_BEDROCK": "bedrock-token",
+        "AWS_BEDROCK_REGION": default,
+    }.get(name, default))
+    monkeypatch.setattr(
+        rag_embeddings,
+        "EMBEDDING_MODELS",
+        [
+            {
+                "name": "github",
+                "provider": "github",
+                "model": "text-embedding-3-large",
+                "api_key_env": "GITHUB_TOKEN",
+                "tpm_limit": 500000,
+                "dimensions": 3072,
+            },
+            {
+                "name": "titan",
+                "provider": "bedrock_titan",
+                "model": "amazon.titan-embed-text-v2:0",
+                "api_key_env": "AWS_BEARER_TOKEN_BEDROCK",
+                "region": "us-east-1",
+                "dimensions": 1024,
+                "normalize": True,
+                "timeout": 30,
+            },
+        ],
+    )
+
+    embeddings, provider, index = rag_embeddings.get_embeddings_with_fallback()
+
+    assert provider == "titan"
+    assert index == 1
+    assert isinstance(embeddings, FakeBedrockEmbedding)
+    assert embeddings.kwargs["api_key"] == "bedrock-token"
+    assert embeddings.kwargs["dimensions"] == 1024

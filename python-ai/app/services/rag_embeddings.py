@@ -1,6 +1,8 @@
 import logging
 from typing import List, Tuple, Optional
+from urllib.parse import quote
 
+import requests
 import tiktoken
 from openai import OpenAI
 from langchain_core.embeddings import Embeddings
@@ -14,6 +16,7 @@ from app.services.rag_config import (
 logger = logging.getLogger(__name__)
 
 GITHUB_MODELS_BASE_URL = "https://models.github.ai/inference"
+BEDROCK_RUNTIME_URL_TEMPLATE = "https://bedrock-runtime.{region}.amazonaws.com/model/{model_id}/invoke"
 
 try:
     TIKTOKEN_ENCODER = tiktoken.get_encoding("cl100k_base")
@@ -68,6 +71,73 @@ class GithubOpenAIEmbeddings(Embeddings):
         return vectors[0] if vectors else []
 
 
+class BedrockTitanEmbeddings(Embeddings):
+    """Amazon Titan Text Embeddings V2 wrapper for Bedrock Runtime."""
+
+    def __init__(
+        self,
+        model: str,
+        api_key: str,
+        region: str,
+        dimensions: int,
+        normalize: bool = True,
+        timeout: int = 30,
+    ) -> None:
+        self.model = model
+        self.api_key = api_key
+        self.region = region
+        self.dimensions = dimensions
+        self.normalize = normalize
+        self.timeout = timeout
+        encoded_model_id = quote(model, safe="")
+        self.url = BEDROCK_RUNTIME_URL_TEMPLATE.format(
+            region=region,
+            model_id=encoded_model_id,
+        )
+
+    @staticmethod
+    def _sanitize_text(text: str) -> str:
+        return (text or "").replace("\n", " ")
+
+    @staticmethod
+    def _normalize_embedding(embedding: List[float]) -> List[float]:
+        vector = list(embedding)
+        if len(vector) < MAX_EMBEDDING_DIM:
+            vector.extend([0.0] * (MAX_EMBEDDING_DIM - len(vector)))
+        return vector[:MAX_EMBEDDING_DIM]
+
+    def _embed_one(self, text: str) -> List[float]:
+        response = requests.post(
+            self.url,
+            headers={
+                "Authorization": f"Bearer {self.api_key}",
+                "Content-Type": "application/json",
+                "Accept": "application/json",
+            },
+            json={
+                "inputText": self._sanitize_text(text),
+                "dimensions": self.dimensions,
+                "normalize": self.normalize,
+            },
+            timeout=self.timeout,
+        )
+        response.raise_for_status()
+        data = response.json()
+        embedding = data.get("embedding")
+        if not isinstance(embedding, list):
+            raise ValueError("Bedrock Titan embedding response does not include an embedding vector")
+        return self._normalize_embedding(embedding)
+
+    def embed_documents(self, texts: List[str]) -> List[List[float]]:
+        if not texts:
+            return []
+        return [self._embed_one(text) for text in texts]
+
+    def embed_query(self, text: str) -> List[float]:
+        vectors = self.embed_documents([text])
+        return vectors[0] if vectors else []
+
+
 def count_tokens(text: str) -> int:
     if TIKTOKEN_ENCODER is None:
         return len(text) // 4
@@ -100,9 +170,22 @@ def get_embeddings_with_fallback(model_index: int = 0) -> Tuple[Optional[Embeddi
                 logger.info(f"✅ Menggunakan {model_config['name']} (TPM: {model_config['tpm_limit']:,}, Dim: {MAX_EMBEDDING_DIM})")
                 return embeddings, model_config["name"], idx
 
+            if model_config["provider"] == "bedrock_titan":
+                embeddings = BedrockTitanEmbeddings(
+                    model=model_config["model"],
+                    api_key=api_key,
+                    region=model_config.get("region", get_env("AWS_BEDROCK_REGION", "us-east-1")),
+                    dimensions=model_config.get("dimensions", 1024),
+                    normalize=model_config.get("normalize", True),
+                    timeout=model_config.get("timeout", 30),
+                )
+                _ = embeddings.embed_query("test")
+                logger.info(f"✅ Menggunakan {model_config['name']} (Dim native: {model_config.get('dimensions', 1024)}, Dim index: {MAX_EMBEDDING_DIM})")
+                return embeddings, model_config["name"], idx
+
         except Exception as e:
             error_msg = str(e)
             logger.warning(f"⚠️ {model_config['name']} gagal: {error_msg}")
 
-    logger.error("❌ Semua embedding provider gagal! Total kapasitas: 2M TPM habis atau tidak tersedia")
+    logger.error("❌ Semua embedding provider gagal atau tidak tersedia")
     return None, "none", -1

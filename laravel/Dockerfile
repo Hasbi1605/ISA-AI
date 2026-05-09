@@ -68,8 +68,10 @@ COPY --from=vendor /app/vendor ./vendor
 COPY --from=assets /app/public/build ./public/build
 COPY docker/php.ini /usr/local/etc/php/conf.d/99-ista.ini
 COPY docker/entrypoint.sh /usr/local/bin/ista-entrypoint
+COPY docker/serve.sh /usr/local/bin/ista-serve
 
 RUN chmod +x /usr/local/bin/ista-entrypoint \
+    && chmod +x /usr/local/bin/ista-serve \
     && rm -f database/database.sqlite \
     && mkdir -p \
         bootstrap/cache \
@@ -87,4 +89,4 @@ RUN chmod +x /usr/local/bin/ista-entrypoint \
 EXPOSE 8000
 
 ENTRYPOINT ["ista-entrypoint"]
-CMD ["php", "artisan", "serve", "--host=0.0.0.0", "--port=8000"]
+CMD ["ista-serve"]

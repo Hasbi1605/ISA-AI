@@ -19,11 +19,59 @@ def test_embedding_models_are_loaded_from_yaml_and_match_rag_config():
     from app.services import rag_config
 
     models = config_loader.get_embedding_models()
+    bedrock_models = [model for model in models if model.get("provider") == "bedrock_titan"]
 
     assert models, "Embedding models harus ada di ai_config.yaml"
     assert models == rag_config.EMBEDDING_MODELS
     assert all("dimensions" in model for model in models)
     assert max(int(model["dimensions"]) for model in models) <= rag_config.MAX_EMBEDDING_DIM
+    assert [model["model"] for model in bedrock_models] == ["amazon.titan-embed-text-v2:0"]
+    assert all(model["api_key_env"] == "AWS_BEARER_TOKEN_BEDROCK" for model in bedrock_models)
+
+
+def test_chat_models_include_bedrock_fallback_without_inline_secret():
+    from app import config_loader
+
+    models = config_loader.get_chat_models()
+    bedrock_models = [model for model in models if model.get("provider") == "bedrock_converse"]
+    gemini_models = [model for model in models if model.get("provider") == "gemini_native"]
+
+    assert [model["model_name"] for model in bedrock_models] == [
+        "openai.gpt-oss-120b-1:0",
+        "zai.glm-4.7-flash",
+        "zai.glm-4.7",
+        "amazon.nova-micro-v1:0",
+    ]
+    assert all(model["api_key_env"] == "AWS_BEARER_TOKEN_BEDROCK" for model in bedrock_models)
+    assert all("api_key" not in model for model in bedrock_models)
+    assert gemini_models == []
+
+
+def test_chat_models_include_extra_github_fallbacks_with_two_tokens():
+    from app import config_loader
+
+    models = config_loader.get_chat_models()
+    github_models = [
+        (model["model_name"], model["api_key_env"])
+        for model in models
+        if model.get("provider") == "litellm"
+        and model.get("base_url") == "https://models.github.ai/inference"
+    ]
+
+    assert github_models[:8] == [
+        ("openai/gpt-4.1", "GITHUB_TOKEN"),
+        ("openai/gpt-4.1", "GITHUB_TOKEN_2"),
+        ("openai/gpt-4o", "GITHUB_TOKEN"),
+        ("openai/gpt-4o", "GITHUB_TOKEN_2"),
+        ("openai/gpt-4.1-mini", "GITHUB_TOKEN"),
+        ("openai/gpt-4.1-mini", "GITHUB_TOKEN_2"),
+        ("openai/gpt-4.1-nano", "GITHUB_TOKEN"),
+        ("openai/gpt-4.1-nano", "GITHUB_TOKEN_2"),
+    ]
+    assert ("mistral-ai/mistral-medium-2505", "GITHUB_TOKEN") in github_models
+    assert ("mistral-ai/mistral-medium-2505", "GITHUB_TOKEN_2") in github_models
+    assert ("mistral-ai/mistral-small-2503", "GITHUB_TOKEN") in github_models
+    assert ("mistral-ai/mistral-small-2503", "GITHUB_TOKEN_2") in github_models
 
 
 def test_system_prompt_uses_ista_work_assistant_persona():

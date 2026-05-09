@@ -57,23 +57,36 @@
                 @if ($editorConfig)
                     <div
                         wire:ignore
+                        wire:key="onlyoffice-editor-{{ md5($editorConfig['document']['key'] ?? '') }}"
                         class="h-full min-h-[640px]"
                         x-data="{
                             config: @js($editorConfig),
                             apiUrl: @js($onlyOfficeApiUrl),
+                            containerId: 'onlyoffice-editor-{{ md5($editorConfig['document']['key'] ?? '') }}',
                             editor: null,
                             load() {
-                                const boot = () => { this.editor = new DocsAPI.DocEditor('onlyoffice-editor', this.config); };
+                                this.destroy();
+                                const boot = () => {
+                                    const container = document.getElementById(this.containerId);
+                                    if (container) { container.innerHTML = ''; }
+                                    this.editor = new DocsAPI.DocEditor(this.containerId, this.config);
+                                };
                                 if (window.DocsAPI) { boot(); return; }
                                 const script = document.createElement('script');
                                 script.src = this.apiUrl;
                                 script.onload = boot;
                                 document.head.appendChild(script);
+                            },
+                            destroy() {
+                                if (this.editor && typeof this.editor.destroyEditor === 'function') {
+                                    this.editor.destroyEditor();
+                                }
+                                this.editor = null;
                             }
                         }"
                         x-init="load()"
                     >
-                        <div id="onlyoffice-editor" class="h-full min-h-[640px] w-full"></div>
+                        <div id="onlyoffice-editor-{{ md5($editorConfig['document']['key'] ?? '') }}" class="h-full min-h-[640px] w-full"></div>
                     </div>
                 @else
                     <div class="flex h-full min-h-[640px] items-center justify-center px-6 text-center">

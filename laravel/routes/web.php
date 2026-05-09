@@ -23,6 +23,12 @@ Route::get('/guest-chat', function (Request $request) {
     return redirect()->route('login');
 })->name('guest-chat');
 
+Route::get('/guest-memo', function () {
+    session()->put('url.intended', route('chat', ['tab' => 'memo']));
+
+    return redirect()->route('login');
+})->name('guest-memo');
+
 Route::view('profile', 'profile')
     ->middleware(['auth'])
     ->name('profile');

@@ -5,6 +5,7 @@ namespace App\Livewire\Memos;
 use App\Models\Memo;
 use App\Services\Memo\MemoGenerationService;
 use App\Services\OnlyOffice\JwtSigner;
+use App\Services\OnlyOffice\MemoDocumentKey;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\URL;
 use Livewire\Attributes\Layout;
@@ -72,7 +73,7 @@ class MemoCanvas extends Component
         $config = [
             'document' => [
                 'fileType' => 'docx',
-                'key' => 'memo-'.$this->memo->id.'-'.$this->memo->updated_at?->timestamp,
+                'key' => app(MemoDocumentKey::class)->forEditor($this->memo),
                 'title' => $this->memo->title.'.docx',
                 'url' => $laravelInternalUrl.$documentPath,
             ],

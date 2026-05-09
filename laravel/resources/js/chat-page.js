@@ -842,9 +842,84 @@ const registerChatPageData = (Alpine) => {
         },
     }));
 
+    Alpine.data('memoDocumentDownloads', () => ({
+        downloadLoading: null,
+
+        async downloadMemo(url, type, fallbackName, versionId = null) {
+            if (this.downloadLoading) {
+                return;
+            }
+
+            this.downloadLoading = type;
+
+            try {
+                const response = await fetch(this.versionedUrl(url, versionId), {
+                    cache: 'no-store',
+                    credentials: 'same-origin',
+                    headers: {
+                        'Cache-Control': 'no-cache',
+                        'X-Requested-With': 'XMLHttpRequest',
+                    },
+                });
+
+                if (!response.ok) {
+                    throw new Error('Download gagal');
+                }
+
+                const blob = await response.blob();
+                this.downloadBlob(blob, this.fileNameFromDisposition(
+                    response.headers.get('Content-Disposition') || '',
+                    fallbackName,
+                ));
+            } finally {
+                this.downloadLoading = null;
+            }
+        },
+
+        versionedUrl(url, fallbackVersionId = null) {
+            const requestUrl = new URL(url, window.location.origin);
+            const selectedVersionId = document.getElementById('memo-version-select')?.value || fallbackVersionId;
+
+            if (selectedVersionId) {
+                requestUrl.searchParams.set('version_id', selectedVersionId);
+            }
+
+            return requestUrl.toString();
+        },
+
+        fileNameFromDisposition(disposition, fallbackName) {
+            const utfMatch = disposition.match(/filename\*=UTF-8''([^;]+)/i);
+
+            if (utfMatch) {
+                try {
+                    return decodeURIComponent(utfMatch[1]);
+                } catch (error) {
+                    return fallbackName;
+                }
+            }
+
+            const asciiMatch = disposition.match(/filename="?([^";]+)"?/i);
+
+            return asciiMatch ? asciiMatch[1] : fallbackName;
+        },
+
+        downloadBlob(blob, fileName) {
+            const downloadUrl = window.URL.createObjectURL(blob);
+            const anchor = document.createElement('a');
+            anchor.href = downloadUrl;
+            anchor.download = fileName;
+            document.body.appendChild(anchor);
+            anchor.click();
+            anchor.remove();
+            window.URL.revokeObjectURL(downloadUrl);
+        },
+    }));
+
     Alpine.data('memoWorkspace', () => ({
         showMemoSidebar: !window.matchMedia('(max-width: 1023px)').matches,
         isMobile: window.matchMedia('(max-width: 1023px)').matches,
+        memoRevisionText: '',
+        memoRevisionLoading: false,
 
         init() {
             const mediaQuery = window.matchMedia('(max-width: 1023px)');
@@ -859,6 +934,34 @@ const registerChatPageData = (Alpine) => {
             this.$watch('$wire.memoChatMessages', () => {
                 this.$nextTick(() => this.scrollMemoChatToBottom());
             });
+        },
+
+        collapseMemoSidebarForDocument() {
+            this.showMemoSidebar = false;
+        },
+
+        submitMemoRevision($wire, textarea) {
+            const message = (textarea?.value || '').trim();
+
+            if (!message || this.memoRevisionLoading || $wire.isGenerating) {
+                return;
+            }
+
+            this.memoRevisionText = message;
+            this.memoRevisionLoading = true;
+
+            textarea.value = '';
+            textarea.style.height = 'auto';
+            textarea.dispatchEvent(new Event('input', { bubbles: true }));
+            this.scrollMemoChatToBottom();
+
+            $wire.sendMemoChat(message)
+                .catch(() => {})
+                .finally(() => {
+                    this.memoRevisionText = '';
+                    this.memoRevisionLoading = false;
+                    this.scrollMemoChatToBottom();
+                });
         },
 
         scrollMemoChatToBottom() {

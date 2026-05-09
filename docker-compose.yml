@@ -200,6 +200,7 @@ services:
       - ONLYOFFICE_INTERNAL_URL=${ONLYOFFICE_INTERNAL_URL:-http://onlyoffice}
       - ONLYOFFICE_LARAVEL_INTERNAL_URL=${ONLYOFFICE_LARAVEL_INTERNAL_URL:-http://laravel:8000}
       - ONLYOFFICE_JWT_SECRET=${ONLYOFFICE_JWT_SECRET}
+      - PHP_CLI_SERVER_WORKERS=${PHP_CLI_SERVER_WORKERS:-4}
     volumes:
       - ./laravel:/var/www/html
       - laravel_storage:/var/www/html/storage
