@@ -1929,6 +1929,38 @@ def test_generate_memo_endpoint_requires_token():
     assert response.status_code == 401
 
 
+def test_generate_memo_endpoint_accepts_full_laravel_configuration_context(monkeypatch):
+    captured = {}
+
+    def fake_generate_memo_docx(memo_type, title, context, configuration=None):
+        captured["context"] = context
+
+        return MemoDraft(
+            filename="memo-long-context.docx",
+            content=b"docx-bytes",
+            searchable_text="Memo panjang",
+            page_size="folio",
+        )
+
+    monkeypatch.setattr("app.routers.memos.generate_memo_docx", fake_generate_memo_docx)
+    client = TestClient(app)
+    context = "A" * 14050
+
+    response = client.post(
+        "/api/memos/generate-body",
+        headers={"Authorization": "Bearer test_internal_api_secret"},
+        json={
+            "memo_type": "memo_internal",
+            "title": "Judul Konteks Panjang",
+            "context": context,
+        },
+    )
+
+    assert response.status_code == 200
+    assert captured["context"] == context
+    assert response.headers["X-Memo-Page-Size"] == "folio"
+
+
 def test_generate_memo_endpoint_handles_unicode_searchable_text(monkeypatch):
     def fake_generate_memo_docx(memo_type, title, context, configuration=None):
         assert configuration == {"number": "M-01/I-Yog/IT.02/05/2026"}

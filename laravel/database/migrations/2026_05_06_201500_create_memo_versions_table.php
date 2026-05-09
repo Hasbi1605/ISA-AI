@@ -60,6 +60,7 @@ return new class extends Migration
     public function down(): void
     {
         Schema::table('memos', function (Blueprint $table) {
+            $table->dropIndex(['current_version_id']);
             $table->dropColumn('current_version_id');
         });
 

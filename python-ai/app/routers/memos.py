@@ -9,11 +9,13 @@ from app.services.memo_generation import generate_memo_docx
 
 router = APIRouter(prefix="/api/memos", tags=["Memos"])
 
+MEMO_CONTEXT_MAX_LENGTH = 20000
+
 
 class GenerateMemoRequest(BaseModel):
     memo_type: str = Field(..., min_length=1, max_length=60)
     title: str = Field(..., min_length=1, max_length=160)
-    context: str = Field(..., min_length=1, max_length=12000)
+    context: str = Field(..., min_length=1, max_length=MEMO_CONTEXT_MAX_LENGTH)
     configuration: dict[str, str] | None = None
 
 
