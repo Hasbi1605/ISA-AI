@@ -3,6 +3,7 @@ import sys
 from io import BytesIO
 
 from docx import Document
+from docx.enum.text import WD_ALIGN_PARAGRAPH
 from docx.oxml.ns import qn
 from docx.shared import Inches
 from fastapi.testclient import TestClient
@@ -1209,7 +1210,12 @@ def test_generate_memo_docx_preserves_decimal_time_in_activity_key_value_block()
         title="Konfirmasi Jadwal Kegiatan Koordinasi",
         context="Konfirmasi jadwal kegiatan koordinasi.",
         text_generator=lambda prompt: (
-            "Sehubungan dengan jadwal kegiatan koordinasi lintas unit, dapat kami sampaikan sebagai berikut."
+            "Menindaklanjuti jadwal kegiatan koordinasi lintas unit, dengan ini kami sampaikan "
+            "informasi sebagai berikut:\n"
+            "1. Hari/Tanggal: Rabu, 13 Mei 2026\n"
+            "2. Waktu: Pukul 09.00 WIB\n"
+            "3. Tempat: Ruang Rapat Utama\n"
+            "4. Agenda: Pembagian peran dan pengecekan kesiapan setiap bagian"
         ),
         configuration={
             "number": "EVAL-12/IST/YK/05/2026",
@@ -1227,13 +1233,42 @@ def test_generate_memo_docx_preserves_decimal_time_in_activity_key_value_block()
     )
 
     document = Document(BytesIO(draft.content))
+    body_paragraphs = [paragraph.text for paragraph in document.paragraphs]
     detail_table = _find_table_containing(document, "pukul")
 
     assert detail_table.cell(0, 2).text == "13 Mei 2026"
     assert detail_table.cell(1, 2).text == "09.00 WIB"
     assert detail_table.cell(2, 2).text == "ruang rapat utama"
+    assert "1.\tHari/Tanggal: Rabu, 13 Mei 2026" not in body_paragraphs
+    assert "2.\tWaktu: Pukul 09.00 WIB" not in body_paragraphs
+    assert "3.\tTempat: Ruang Rapat Utama" not in body_paragraphs
+    assert "4.\tAgenda: Pembagian peran dan pengecekan kesiapan setiap bagian" not in body_paragraphs
     assert "pukul : 00 WIB" not in _all_document_text(document)
     assert "pukul: 00 WIB" not in draft.searchable_text
+
+
+def test_generate_memo_docx_justifies_short_body_paragraphs():
+    body = "Sehubungan dengan kebutuhan koordinasi, kami sampaikan informasi kegiatan."
+    draft = generate_memo_docx(
+        memo_type="memo_internal",
+        title="Koordinasi Singkat",
+        context="Koordinasi singkat.",
+        text_generator=lambda prompt: body,
+        configuration={
+            "number": "EVAL-ALIGN/IST/YK/05/2026",
+            "recipient": "Kepala Bagian Protokol",
+            "sender": "Kepala Istana Kepresidenan Yogyakarta",
+            "subject": "Koordinasi Singkat",
+            "date": "10 Mei 2026",
+            "signatory": "Deni Mulyana",
+            "page_size": "letter",
+        },
+    )
+
+    document = Document(BytesIO(draft.content))
+    paragraph = _find_paragraph(document, body)
+
+    assert paragraph.alignment == WD_ALIGN_PARAGRAPH.JUSTIFY
 
 
 def test_generate_memo_docx_preserves_time_range_in_activity_key_value_block():

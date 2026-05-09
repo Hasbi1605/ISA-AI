@@ -40,6 +40,7 @@ PERSON_DATA_LABEL_PATTERN = (
     r"|unit\s+kerja"
     r"|jadwal(?:\s+(?:pendampingan|kegiatan|pelaksanaan))?"
     r"|hari/tanggal"
+    r"|waktu"
     r"|pukul"
     r"|tempat"
     r"|agenda"
@@ -119,6 +120,7 @@ ORDINAL_ITEM_PATTERN = re.compile(
 
 ACTIVITY_KEY_VALUE_LABEL_KEYS = {
     "hari/tanggal",
+    "waktu",
     "pukul",
     "tempat",
     "agenda",
@@ -581,6 +583,7 @@ def _looks_like_redundant_activity_detail_block(
         (
             "hari/tanggal",
             "tanggal",
+            "waktu",
             "pukul",
             "jam",
             "tempat",
@@ -609,6 +612,7 @@ def _looks_like_redundant_activity_detail_block(
     detail_starters = (
         "hari/tanggal",
         "tanggal",
+        "waktu",
         "pukul",
         "jam",
         "tempat",
@@ -2138,7 +2142,7 @@ def _estimate_rendered_lines(config: dict[str, str], body: str) -> int:
 
 
 def _body_alignment(block: str):
-    return WD_ALIGN_PARAGRAPH.JUSTIFY if len(block) >= 180 else WD_ALIGN_PARAGRAPH.LEFT
+    return WD_ALIGN_PARAGRAPH.JUSTIFY
 
 
 def _collect_person_data_blocks(blocks: list[str], start_index: int) -> list[tuple[str, str]]:
@@ -2183,6 +2187,8 @@ def _normalize_person_data_label(raw_label: str) -> str:
         return "jadwal pendampingan" if "pendampingan" in normalized else "jadwal"
     if normalized.startswith("hari/tanggal"):
         return "hari/tanggal"
+    if normalized == "waktu":
+        return "pukul"
     if normalized.startswith("pukul"):
         return "pukul"
     if normalized.startswith("tempat"):
