@@ -55,6 +55,19 @@ class ChatDocumentStateService
     }
 
     /**
+     * @param  array<int, int|string>  $documentIds
+     * @param  array<int, int|string>|int  $addedDocumentIds
+     * @return array<int, int>
+     */
+    public function addDocumentIds(array $documentIds, array|int $addedDocumentIds): array
+    {
+        return array_values(array_unique(array_merge(
+            $this->normalizeDocumentIds($documentIds),
+            $this->normalizeDocumentIds((array) $addedDocumentIds),
+        )));
+    }
+
+    /**
      * @return array<int, int>
      */
     public function selectAllReadyDocuments(int $userId): array

@@ -135,7 +135,6 @@ class GoogleDrivePicker extends Component
             $this->isOpen = false;
 
             $this->dispatch('google-drive-document-imported', documentId: $document->id);
-            $this->dispatch('open-sidebar-right');
         } catch (\Throwable $e) {
             $this->errorMessage = $e->getMessage();
             $this->statusMessage = null;

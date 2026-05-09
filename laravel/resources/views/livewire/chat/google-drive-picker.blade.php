@@ -230,11 +230,11 @@
                                         <button type="button"
                                                 wire:click="processFile(@js($item['id']))"
                                                 wire:loading.attr="disabled"
-                                                wire:target="processFile"
+                                                wire:target="processFile(@js($item['id']))"
                                                 @disabled(! $isProcessable)
                                                 class="inline-flex min-w-[116px] items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-sm font-semibold transition disabled:cursor-not-allowed disabled:opacity-60 {{ $isProcessable ? 'bg-ista-primary text-white hover:bg-stone-800' : 'bg-stone-100 text-stone-400 dark:bg-gray-800 dark:text-gray-500' }}">
-                                            <span wire:loading.remove wire:target="processFile">{{ $isProcessable ? 'Pakai' : 'Belum bisa' }}</span>
-                                            <span wire:loading.inline-flex wire:target="processFile" class="items-center gap-2">
+                                            <span wire:loading.remove wire:target="processFile(@js($item['id']))">{{ $isProcessable ? 'Pakai' : 'Belum bisa' }}</span>
+                                            <span wire:loading.inline-flex wire:target="processFile(@js($item['id']))" class="items-center gap-2">
                                                 <span class="h-3.5 w-3.5 rounded-full border-2 border-current border-t-transparent animate-spin"></span>
                                                 Memproses
                                             </span>

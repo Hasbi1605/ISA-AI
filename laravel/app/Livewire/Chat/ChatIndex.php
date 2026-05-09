@@ -119,7 +119,7 @@ class ChatIndex extends Component
         $this->hasDocumentsInProgress = $state['has_documents_in_progress'];
     }
 
-    public function loadConversation($id)
+    public function loadConversation($id, bool $clearNewMessageId = true)
     {
         $conversation = Conversation::where('id', $id)
             ->where('user_id', Auth::id())
@@ -130,7 +130,9 @@ class ChatIndex extends Component
 
         $this->currentConversationId = $conversation->id;
         $this->messages = $conversation->messages->toArray();
-        $this->newMessageId = null;
+        if ($clearNewMessageId) {
+            $this->newMessageId = null;
+        }
         $this->dispatch('conversation-activated', id: $conversation->id);
     }
 
@@ -331,6 +333,31 @@ class ChatIndex extends Component
     public function refreshDocumentsAfterGoogleDriveImport(?int $documentId = null): void
     {
         $this->loadAvailableDocuments();
+
+        if ($documentId !== null) {
+            $document = Document::query()
+                ->whereKey((int) $documentId)
+                ->where('user_id', Auth::id())
+                ->first();
+
+            if ($document) {
+                $this->conversationDocuments = $this->chatDocumentStateService()->addDocumentIds(
+                    $this->conversationDocuments,
+                    (int) $documentId,
+                );
+
+                $this->dispatch('conversation-documents-preview',
+                    ids: $this->conversationDocuments,
+                    documents: [[
+                        'id' => (int) $document->id,
+                        'name' => (string) $document->original_name,
+                        'extension' => (string) $document->extension,
+                        'status' => (string) $document->status,
+                    ]],
+                );
+            }
+        }
+
         $this->attachmentUploadStatus = 'success';
         $this->attachmentUploadMessage = 'File Google Drive berhasil ditambahkan dan sedang diproses.';
 
@@ -534,7 +561,7 @@ class ChatIndex extends Component
         $assistantMsg = $orchestrator->saveAssistantMessage($this->currentConversationId, $cleanContent);
         $this->newMessageId = $assistantMsg->id;
 
-        $this->loadConversation($this->currentConversationId);
+        $this->loadConversation($this->currentConversationId, clearNewMessageId: false);
         $this->loadConversations();
         $this->dispatch('assistant-message-persisted');
     }

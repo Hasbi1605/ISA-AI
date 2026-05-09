@@ -43,6 +43,7 @@ class ChatDocumentStateServiceTest extends TestCase
         $this->assertSame([], $service->toggleSelectAllDocuments([10], [10]));
         $this->assertSame([10, 12], $service->toggleSelectAllDocuments([], [10, 12]));
         $this->assertSame([10], $service->addSelectedDocumentsToChat([10, 12], [10]));
+        $this->assertSame([10, 12], $service->addDocumentIds([10], [10, 12]));
         $this->assertSame([10], $service->removeDocumentIds([10, 12], 12));
     }
 

@@ -1,5 +1,8 @@
 <!DOCTYPE html>
-<html lang="{{ str_replace('_', '-', app()->getLocale()) }}">
+<html lang="{{ str_replace('_', '-', app()->getLocale()) }}"
+      x-data="{ darkMode: localStorage.getItem('theme') === 'dark' }"
+      x-init="$watch('darkMode', value => { localStorage.setItem('theme', value ? 'dark' : 'light'); document.documentElement.classList.toggle('dark', value); })"
+      :class="{ 'dark': darkMode }">
     <head>
         <meta charset="utf-8">
         <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -12,13 +15,20 @@
         <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
         <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,300;9..144,400;9..144,600;9..144,700&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 
+        <script>
+            if (localStorage.theme === 'dark') {
+                document.documentElement.classList.add('dark');
+            } else {
+                document.documentElement.classList.remove('dark');
+            }
+        </script>
         @vite(['resources/css/app.css', 'resources/js/app.js'])
     </head>
-    <body class="ista-shell ista-display-sans text-stone-800">
+    <body class="ista-shell ista-display-sans text-stone-800 dark:text-gray-100 transition-colors duration-300">
         <x-page-loader />
-        <div class="relative min-h-screen overflow-hidden" style="background-image: radial-gradient(circle at 0 0, rgba(245, 158, 11, 0.08) 0%, rgba(245, 158, 11, 0) 30%), radial-gradient(circle at 100% 100%, rgba(76, 5, 25, 0.08) 0%, rgba(76, 5, 25, 0) 35%), url('{{ asset('images/ista/dashboard-grid.png') }}'); background-size: auto, auto, 8px 8px;">
-            <div class="pointer-events-none absolute -left-20 -top-20 h-[28rem] w-[28rem] rounded-full bg-amber-100/50 blur-3xl"></div>
-            <div class="pointer-events-none absolute -right-24 top-32 h-[24rem] w-[24rem] rounded-full bg-rose-100/60 blur-3xl"></div>
+        <div class="relative min-h-screen overflow-hidden bg-stone-50/50 transition-colors duration-300 dark:bg-gray-900" style="background-image: radial-gradient(circle at 0 0, rgba(245, 158, 11, 0.08) 0%, rgba(245, 158, 11, 0) 30%), radial-gradient(circle at 100% 100%, rgba(76, 5, 25, 0.08) 0%, rgba(76, 5, 25, 0) 35%), url('{{ asset('images/ista/dashboard-grid.png') }}'); background-size: auto, auto, 8px 8px;">
+            <div class="pointer-events-none absolute -left-20 -top-20 h-[28rem] w-[28rem] rounded-full bg-amber-100/50 blur-3xl dark:bg-amber-500/5"></div>
+            <div class="pointer-events-none absolute -right-24 top-32 h-[24rem] w-[24rem] rounded-full bg-rose-100/60 blur-3xl dark:bg-ista-primary/10"></div>
 
             <header class="ista-navbar">
                 <div class="mx-auto flex w-full max-w-7xl items-center justify-between px-5 py-4 sm:px-10">
@@ -26,7 +36,15 @@
                         <img src="{{ asset('images/ista/logo.png') }}" alt="ISTA AI" class="h-8 w-8 object-contain transition-transform duration-300 group-hover:rotate-6 group-hover:scale-110">
                         <div class="ista-brand-title text-xl text-ista-primary not-italic">ISTA <span class="font-light italic text-ista-gold">AI</span></div>
                     </a>
-                    <div class="flex items-center gap-4 sm:gap-8">
+                    <div class="flex items-center gap-2 sm:gap-4">
+                        <button type="button" @click="darkMode = !darkMode" class="inline-flex h-10 w-10 items-center justify-center rounded-[10px] text-[#64748B] transition-colors hover:bg-[#F1F5F9] dark:text-gray-300 dark:hover:bg-gray-800" aria-label="Toggle dark mode">
+                            <svg x-show="darkMode === false" xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M12 3v2.5M12 18.5V21M4.9 4.9l1.8 1.8M17.3 17.3l1.8 1.8M3 12h2.5M18.5 12H21M4.9 19.1l1.8-1.8M17.3 6.7l1.8-1.8M12 16a4 4 0 100-8 4 4 0 000 8z" />
+                            </svg>
+                            <svg x-show="darkMode === true" xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M21 12.8A9 9 0 1111.2 3a7 7 0 009.8 9.8z" />
+                            </svg>
+                        </button>
                         <livewire:dashboard-nav-profile />
                     </div>
                 </div>
@@ -50,7 +68,7 @@
             <main class="relative z-10 mx-auto flex min-h-[calc(100vh-136px)] w-full max-w-7xl items-center px-5 pb-20 pt-16 sm:px-10">
                 <section class="w-full text-center">
                     <div class="mx-auto w-fit ista-pill">Asisten Istana Pintar</div>
-                    <h1 class="ista-hero-title mt-8 text-stone-900">Tanya <strong><span class="text-ista-primary">ISTA</span> <span class="font-light italic text-ista-gold">AI</span></strong></h1>
+                    <h1 class="ista-hero-title mt-8 text-stone-900 dark:text-gray-100">Tanya <strong><span class="text-ista-primary">ISTA</span> <span class="font-light italic text-ista-gold">AI</span></strong></h1>
 
                     @auth
                     <form action="{{ route('chat') }}" method="GET" class="ista-search-shell">
@@ -66,20 +84,20 @@
 
                     <div class="mx-auto mt-10 grid max-w-xl grid-cols-1 gap-3 sm:grid-cols-2">
                         @auth
-                        <a href="{{ route('chat') }}" class="rounded-2xl border border-stone-200 bg-white/80 px-4 py-3 text-sm font-semibold text-stone-700 transition hover:border-ista-primary/30 hover:text-ista-primary">Buka Chat</a>
-                        <a href="{{ route('chat', ['tab' => 'memo']) }}" class="rounded-2xl border border-stone-200 bg-white/80 px-4 py-3 text-sm font-semibold text-stone-700 transition hover:border-ista-primary/30 hover:text-ista-primary">Buka Memo</a>
+                        <a href="{{ route('chat') }}" class="rounded-2xl border border-stone-200 bg-white/80 px-4 py-3 text-sm font-semibold text-stone-700 transition hover:border-ista-primary/30 hover:text-ista-primary dark:border-gray-800 dark:bg-gray-800/80 dark:text-gray-100 dark:hover:border-ista-primary/50">Buka Chat</a>
+                        <a href="{{ route('chat', ['tab' => 'memo']) }}" class="rounded-2xl border border-stone-200 bg-white/80 px-4 py-3 text-sm font-semibold text-stone-700 transition hover:border-ista-primary/30 hover:text-ista-primary dark:border-gray-800 dark:bg-gray-800/80 dark:text-gray-100 dark:hover:border-ista-primary/50">Buka Memo</a>
                         @else
-                        <a href="{{ route('guest-chat') }}" class="rounded-2xl border border-stone-200 bg-white/80 px-4 py-3 text-sm font-semibold text-stone-700 transition hover:border-ista-primary/30 hover:text-ista-primary">Buka Chat</a>
-                        <a href="{{ route('guest-memo') }}" class="rounded-2xl border border-stone-200 bg-white/80 px-4 py-3 text-sm font-semibold text-stone-700 transition hover:border-ista-primary/30 hover:text-ista-primary">Buka Memo</a>
+                        <a href="{{ route('guest-chat') }}" class="rounded-2xl border border-stone-200 bg-white/80 px-4 py-3 text-sm font-semibold text-stone-700 transition hover:border-ista-primary/30 hover:text-ista-primary dark:border-gray-800 dark:bg-gray-800/80 dark:text-gray-100 dark:hover:border-ista-primary/50">Buka Chat</a>
+                        <a href="{{ route('guest-memo') }}" class="rounded-2xl border border-stone-200 bg-white/80 px-4 py-3 text-sm font-semibold text-stone-700 transition hover:border-ista-primary/30 hover:text-ista-primary dark:border-gray-800 dark:bg-gray-800/80 dark:text-gray-100 dark:hover:border-ista-primary/50">Buka Memo</a>
                         @endauth
                     </div>
 
                 </section>
             </main>
 
-            <footer class="relative z-20 flex h-[72px] flex-col items-center justify-center border-t border-stone-200/80 bg-white/80 backdrop-blur">
-                <p class="text-[11px] font-bold uppercase tracking-widest text-[#78716c]">Copyright &copy; 2026 Istana Kepresidenan Yogyakarta</p>
-                <p class="mt-1 text-[9px] font-medium uppercase tracking-[0.3em] text-[#a8a29e]">All Rights Reserved.</p>
+            <footer class="relative z-20 flex h-[72px] flex-col items-center justify-center border-t border-stone-200/80 bg-white/80 backdrop-blur dark:border-[#1E293B]/70 dark:bg-gray-900/80">
+                <p class="text-[11px] font-bold uppercase tracking-widest text-[#78716c] dark:text-[#94A3B8]">Copyright &copy; 2026 Istana Kepresidenan Yogyakarta</p>
+                <p class="mt-1 text-[9px] font-medium uppercase tracking-[0.3em] text-[#a8a29e] dark:text-[#64748B]">All Rights Reserved.</p>
             </footer>
         </div>
     </body>

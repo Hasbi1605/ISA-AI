@@ -918,6 +918,7 @@ const registerChatPageData = (Alpine) => {
     Alpine.data('memoWorkspace', () => ({
         showMemoSidebar: !window.matchMedia('(max-width: 1023px)').matches,
         isMobile: window.matchMedia('(max-width: 1023px)').matches,
+        memoMobilePanel: 'chat',
         memoRevisionText: '',
         memoRevisionLoading: false,
 
@@ -926,6 +927,10 @@ const registerChatPageData = (Alpine) => {
             const syncState = (event) => {
                 this.isMobile = event.matches;
                 this.showMemoSidebar = !event.matches;
+
+                if (!event.matches) {
+                    this.memoMobilePanel = 'chat';
+                }
             };
 
             mediaQuery.addEventListener('change', syncState);
@@ -937,6 +942,20 @@ const registerChatPageData = (Alpine) => {
         },
 
         collapseMemoSidebarForDocument() {
+            this.showMemoSidebar = false;
+
+            if (this.isMobile) {
+                this.memoMobilePanel = 'document';
+            }
+        },
+
+        showMemoChatPanel() {
+            this.memoMobilePanel = 'chat';
+            this.showMemoSidebar = false;
+        },
+
+        showMemoDocumentPanel() {
+            this.memoMobilePanel = 'document';
             this.showMemoSidebar = false;
         },
 

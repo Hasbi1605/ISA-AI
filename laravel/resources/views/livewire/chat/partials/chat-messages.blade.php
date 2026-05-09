@@ -280,7 +280,7 @@
                             </div>
                         </div>
                     @else
-                        <div class="text-[14.5px] leading-relaxed text-stone-700 dark:text-gray-100 w-full max-w-[656px] min-w-0">
+                        <div class="w-full max-w-[656px] min-w-0 rounded-lg rounded-br-sm bg-ista-primary px-4 py-3 text-[14.5px] leading-relaxed text-white shadow-sm">
                             <p class="whitespace-pre-wrap break-words [overflow-wrap:anywhere]">{{ $message['content'] }}</p>
                         </div>
                     @endif
@@ -302,7 +302,7 @@
                     <div class="flex items-center gap-2 mb-1 justify-end">
                         <span class="text-[13px] font-bold text-stone-800 dark:text-[#F8FAFC]">Anda</span>
                     </div>
-                    <div class="text-[14.5px] leading-relaxed text-stone-700 dark:text-gray-100 w-full max-w-[656px] min-w-0">
+                    <div class="w-full max-w-[656px] min-w-0 rounded-lg rounded-br-sm bg-ista-primary px-4 py-3 text-[14.5px] leading-relaxed text-white shadow-sm">
                         <p class="whitespace-pre-wrap break-words [overflow-wrap:anywhere]" x-text="optimisticUserMessage"></p>
                     </div>
                 </div>

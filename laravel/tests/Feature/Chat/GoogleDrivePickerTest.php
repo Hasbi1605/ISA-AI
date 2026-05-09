@@ -124,5 +124,7 @@ class GoogleDrivePickerTest extends TestCase
 
         $this->assertStringContainsString('wire:click="goToFolder(\'folder-1\', \'Subfolder\')"', $html);
         $this->assertStringContainsString('wire:click="processFile(\'file-1\')"', $html);
+        $this->assertStringContainsString('wire:target="processFile(\'file-1\')"', $html);
+        $this->assertStringNotContainsString('wire:target="processFile"', $html);
     }
 }

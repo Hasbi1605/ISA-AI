@@ -8,6 +8,7 @@ use App\Models\Document;
 use App\Models\Message;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Carbon;
 use Livewire\Livewire;
 use Tests\TestCase;
 
@@ -196,5 +197,87 @@ class ChatUiTest extends TestCase
             ->set('newMessageId', $message->id)
             ->call('loadConversation', $conversation->id)
             ->assertSet('newMessageId', null);
+    }
+
+    public function test_loading_conversation_can_preserve_latest_message_marker_for_typewriter(): void
+    {
+        $user = User::factory()->create();
+        $conversation = Conversation::create([
+            'user_id' => $user->id,
+            'title' => 'Preserve latest marker test',
+        ]);
+
+        $message = Message::create([
+            'conversation_id' => $conversation->id,
+            'role' => 'assistant',
+            'content' => 'Pesan baru dari AI.',
+        ]);
+
+        Livewire::actingAs($user)
+            ->test(ChatIndex::class)
+            ->set('newMessageId', $message->id)
+            ->call('loadConversation', $conversation->id, false)
+            ->assertSet('newMessageId', $message->id)
+            ->assertSee('wire:key="msg-typing-'.$message->id.'"', false);
+    }
+
+    public function test_chat_history_groups_today_by_jakarta_date(): void
+    {
+        Carbon::setTestNow(Carbon::parse('2026-05-09 10:00:00', 'Asia/Jakarta'));
+
+        try {
+            $user = User::factory()->create();
+            $todayConversation = Conversation::create([
+                'user_id' => $user->id,
+                'title' => 'Percakapan hari ini',
+            ]);
+            $todayConversation->forceFill([
+                'created_at' => Carbon::now('Asia/Jakarta'),
+                'updated_at' => Carbon::now('Asia/Jakarta'),
+            ])->save();
+
+            $olderConversation = Conversation::create([
+                'user_id' => $user->id,
+                'title' => 'Percakapan kemarin',
+            ]);
+            $olderConversation->forceFill([
+                'created_at' => Carbon::now('Asia/Jakarta')->subDay(),
+                'updated_at' => Carbon::now('Asia/Jakarta')->subDay(),
+            ])->save();
+
+            $response = $this->actingAs($user)->get('/chat');
+
+            $response
+                ->assertOk()
+                ->assertSee('Today', false)
+                ->assertSee('Percakapan hari ini', false)
+                ->assertSee('Previous 7 Days', false)
+                ->assertSee('Percakapan kemarin', false);
+        } finally {
+            Carbon::setTestNow();
+        }
+    }
+
+    public function test_google_drive_import_is_added_to_chat_composer_documents(): void
+    {
+        $user = User::factory()->create();
+        $document = Document::create([
+            'user_id' => $user->id,
+            'filename' => 'drive-import.pdf',
+            'original_name' => 'drive-import.pdf',
+            'file_path' => 'documents/'.$user->id.'/drive-import.pdf',
+            'source_provider' => 'google_drive',
+            'source_external_id' => 'drive-import-id',
+            'source_synced_at' => now(),
+            'mime_type' => 'application/pdf',
+            'file_size_bytes' => 1234,
+            'status' => 'processing',
+        ]);
+
+        Livewire::actingAs($user)
+            ->test(ChatIndex::class)
+            ->call('refreshDocumentsAfterGoogleDriveImport', $document->id)
+            ->assertSet('conversationDocuments', [$document->id])
+            ->assertDispatched('conversation-documents-preview');
     }
 }
