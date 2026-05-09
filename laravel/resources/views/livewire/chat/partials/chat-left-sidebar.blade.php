@@ -33,15 +33,15 @@
     </div>
 
     <div class="flex-1 overflow-y-auto overflow-x-hidden px-4">
+        @php
+            $todayChats = $conversations->filter(fn ($conversation) => $conversation->updated_at?->timezone('Asia/Jakarta')->isToday());
+            $olderChats = $conversations->reject(fn ($conversation) => $conversation->updated_at?->timezone('Asia/Jakarta')->isToday());
+        @endphp
+
         <div class="mb-6">
             <h3 class="text-[11.6px] font-bold text-[#64748B] dark:text-[#94A3B8] uppercase tracking-wider mb-2">Today</h3>
             <ul class="space-y-1">
-                @php
-                    $visibleChats = $conversations->take(10);
-                    $olderChats = $conversations->skip(10);
-                @endphp
-
-                @foreach($visibleChats as $conversation)
+                @forelse($todayChats as $conversation)
                     <li class="group relative" wire:key="chat-history-visible-{{ $conversation->id }}">
                         <button type="button" @click="loadConversation({{ $conversation->id }}); if(isMobile) showLeftSidebar = false;"
                            data-chat-history-id="{{ $conversation->id }}"
@@ -62,7 +62,11 @@
                             </svg>
                         </button>
                     </li>
-                @endforeach
+                @empty
+                    <li class="rounded-lg border border-dashed border-stone-200/70 px-3 py-3 text-[12px] leading-relaxed text-stone-400 dark:border-gray-800 dark:text-gray-500">
+                        Belum ada percakapan hari ini.
+                    </li>
+                @endforelse
             </ul>
         </div>
 
