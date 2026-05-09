@@ -4,6 +4,14 @@
 ]) style="{{ $showVerificationModal ? 'z-index: 0; filter: brightness(0.28) saturate(0.45);' : 'z-index: 10;' }}">
     <div class="group/card ista-glass-card cursor-pointer">
         <div class="absolute inset-0 z-0 -translate-x-[200%] bg-gradient-to-tr from-white/0 via-white/40 to-white/0 group-hover/card:animate-[shimmer_1s_ease-out]"></div>
+        <button type="button" @click="darkMode = !darkMode" :aria-pressed="darkMode ? 'true' : 'false'" class="absolute right-5 top-5 z-30 inline-flex h-10 w-10 items-center justify-center rounded-full border border-white/60 bg-white/70 text-stone-600 shadow-sm backdrop-blur-md transition hover:text-ista-primary dark:border-gray-700 dark:bg-gray-900/70 dark:text-gray-300 dark:hover:text-amber-300" aria-label="Toggle dark mode">
+            <svg x-show="!darkMode" xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M12 3v2.5M12 18.5V21M4.9 4.9l1.8 1.8M17.3 17.3l1.8 1.8M3 12h2.5M18.5 12H21M4.9 19.1l1.8-1.8M17.3 6.7l1.8-1.8M12 16a4 4 0 100-8 4 4 0 000 8z" />
+            </svg>
+            <svg x-show="darkMode" style="display: none;" xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M21 12.8A9 9 0 1111.2 3a7 7 0 009.8 9.8z" />
+            </svg>
+        </button>
 
         <div class="animate-enter-1 relative z-20 px-10 pb-6 pt-8 text-center">
             <div class="group/logo mb-4 inline-flex h-16 w-16 cursor-pointer items-center justify-center rounded-2xl border border-white/40 bg-white/80 shadow-sm transition-transform duration-500 hover:scale-110 hover:rotate-6">

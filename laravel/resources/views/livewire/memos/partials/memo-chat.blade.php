@@ -11,7 +11,7 @@
 >
 
     {{-- Header with sidebar toggle, brand, tab toggle, and theme toggle --}}
-    <div class="h-[61px] flex-shrink-0 flex items-center justify-between gap-2 px-3 sm:px-6 z-20 border-b border-stone-200/60/70 dark:border-[#1E293B]/70 backdrop-blur-sm">
+    <div class="h-[61px] flex-shrink-0 flex items-center justify-between gap-2 px-3 sm:px-6 z-20 border-b border-stone-200/70 dark:border-[#1E293B]/70 backdrop-blur-sm">
         <div class="flex min-w-0 items-center gap-2">
             <button type="button" @click="showMemoSidebar = !showMemoSidebar" class="p-2 rounded-[10px] hover:bg-[#F1F5F9] dark:hover:bg-gray-800 transition-colors flex-shrink-0" aria-label="Toggle memo sidebar">
                 <img src="{{ asset('images/icons/collapse-left-light.svg') }}" alt="" class="h-5 w-5 dark:hidden transition-transform duration-300 ease-in-out" :class="showMemoSidebar ? 'rotate-0' : 'rotate-180'" />
@@ -36,7 +36,7 @@
                 <span>Dokumen</span>
             </button>
 
-            <button type="button" @click="darkMode = !darkMode" class="p-2 rounded-[10px] hover:bg-[#F1F5F9] dark:hover:bg-gray-800 transition-colors" aria-label="Toggle dark mode">
+            <button type="button" @click="darkMode = !darkMode" :aria-pressed="darkMode ? 'true' : 'false'" class="p-2 rounded-[10px] hover:bg-[#F1F5F9] dark:hover:bg-gray-800 transition-colors" aria-label="Toggle dark mode">
                 <svg x-show="darkMode === false" xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 text-[#64748B]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M12 3v2.5M12 18.5V21M4.9 4.9l1.8 1.8M17.3 17.3l1.8 1.8M3 12h2.5M18.5 12H21M4.9 19.1l1.8-1.8M17.3 6.7l1.8-1.8M12 16a4 4 0 100-8 4 4 0 000 8z" />
                 </svg>
@@ -47,6 +47,10 @@
 
             @include('livewire.chat.partials.chat-memo-tab-toggle')
         </div>
+    </div>
+
+    <div class="lg:hidden border-b border-amber-200/70 bg-amber-50/[0.92] px-4 py-3 text-[12.5px] leading-relaxed text-amber-900 shadow-sm backdrop-blur-sm dark:border-amber-400/20 dark:bg-amber-500/10 dark:text-amber-100" role="note">
+        Mode memo paling nyaman dibuka lewat desktop. Di mobile, gunakan tampilan ini hanya untuk cek cepat atau kembali ke tab Chat jika perlu ruang kerja penuh.
     </div>
 
     {{-- Dynamic Configuration / Chat Area --}}
