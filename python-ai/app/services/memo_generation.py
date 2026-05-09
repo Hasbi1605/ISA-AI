@@ -99,7 +99,9 @@ INSTRUCTION_ARTIFACT_PATTERNS = (
     r"\bpenutup\s+manual\s+apa\s+adanya\b",
     r"\bpenutup\s+manual\b.*\bapa\s+adanya\b",
     r"\b(?:pertahankan|mempertahankan)\s+penutup\s+manual\b",
+    r"\bpenutup\s+manual\b.*\bdipertahankan\b.*\binstruksi\b",
     r"^catatan\s*:.*\b(?:penutup|manual|dipertahankan|format|instruksi|revisi)\b",
+    r"^penutup\s+manual\b.*\b(?:dipertahankan|instruksi|format)\b",
 )
 
 FOREIGN_ITALIC_PATTERNS = (
@@ -1953,6 +1955,8 @@ def _remove_configured_closing(text: str, closing: str) -> str:
             continue
         if _normalize_comparison_text(clean) == closing_key:
             continue
+        if _looks_like_closing_block(clean):
+            continue
         output.append(clean)
     return "\n".join(output).strip()
 
@@ -1992,6 +1996,15 @@ def _strip_unconfigured_honorific_data(text: str, config: dict[str, str]) -> str
     for block in _split_blocks(text):
         normalized = _normalize_comparison_text(block)
         has_unconfigured_honorific = re.search(r"\b(?:bapak|ibu|sdr\.?)\s+[a-z]", normalized) is not None
+        if has_unconfigured_honorific:
+            cleaned_honorific = re.sub(
+                r"\bBapak/Ibu\s+(?=(?:Kepala|Para|Koordinator|Arsiparis|Unit)\b)",
+                "",
+                block,
+            )
+            if cleaned_honorific != block:
+                output.append(cleaned_honorific)
+                continue
         if "pic" in normalized and "sebagai berikut" in normalized and not _config_contains_person_name(config_text):
             numbered = re.match(r"^(\d+[.)]\s+)", block)
             prefix = numbered.group(1) if numbered else ""

@@ -1764,6 +1764,8 @@ def test_generate_memo_docx_strips_manual_closing_instruction_notes():
         text_generator=lambda prompt: (
             "Sehubungan dengan kebutuhan tindak lanjut yang harus dilakukan secara cepat, dapat kami sampaikan arahan sebagai berikut.\n"
             "1. Unit terkait diminta untuk segera menyiapkan data pendukung.\n"
+            "Demikian kami sampaikan agar menjadi perhatian dan tindak lanjut segera.\n"
+            "penutup manual tidak lazim: Penutup manual tidak lazim tetap dipertahankan sesuai instruksi.\n"
             "Catatan: Penutup manual tetap dipertahankan sesuai dengan format yang berlaku.\n"
             f"{closing}"
         ),
@@ -1785,7 +1787,36 @@ def test_generate_memo_docx_strips_manual_closing_instruction_notes():
     all_text = _all_document_text(document)
 
     assert "Catatan:" not in all_text
+    assert "penutup manual tidak lazim:" not in all_text.lower()
+    assert "Demikian kami sampaikan agar menjadi perhatian dan tindak lanjut segera." not in all_text
     assert all_text.count(closing) == 1
+
+
+def test_generate_memo_docx_removes_generic_bapak_ibu_before_configured_role():
+    draft = generate_memo_docx(
+        memo_type="memo_internal",
+        title="Konfirmasi Kehadiran Rapat Singkat",
+        context="Konfirmasi kehadiran rapat singkat.",
+        text_generator=lambda prompt: (
+            "Sehubungan dengan rencana pelaksanaan rapat singkat koordinasi internal, "
+            "mohon Bapak/Ibu Kepala Subbagian Persuratan dapat melakukan konfirmasi kehadiran peserta."
+        ),
+        configuration={
+            "number": "EVAL-21/IST/YK/05/2026",
+            "recipient": "Kepala Subbagian Persuratan",
+            "sender": "Kepala Istana Kepresidenan Yogyakarta",
+            "subject": "Konfirmasi Kehadiran Rapat Singkat",
+            "date": "7 Mei 2026",
+            "content": "Minta konfirmasi kehadiran peserta.",
+            "signatory": "Deni Mulyana",
+            "page_size": "letter",
+        },
+    )
+
+    all_text = _all_document_text(Document(BytesIO(draft.content)))
+
+    assert "Bapak/Ibu Kepala" not in all_text
+    assert "mohon Kepala Subbagian Persuratan" in all_text
 
 
 def test_generate_memo_docx_moves_dimohon_sentence_to_closing_block():
