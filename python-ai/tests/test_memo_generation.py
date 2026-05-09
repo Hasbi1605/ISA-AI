@@ -835,6 +835,54 @@ def test_generate_memo_docx_prefers_complete_configured_pic_rows_over_model_narr
     assert "Pegawai tersebut ditugaskan" not in data_table.cell(3, 2).text
 
 
+def test_generate_memo_docx_removes_label_value_person_data_repetition_after_configured_table():
+    draft = generate_memo_docx(
+        memo_type="memo_internal",
+        title="Penyampaian Kontak PIC Layanan",
+        context="Data PIC layanan.",
+        text_generator=lambda prompt: (
+            "Sehubungan dengan upaya mempercepat koordinasi layanan internal, bersama ini disampaikan data "
+            "Person In Charge (PIC) layanan sebagai berikut:\n"
+            "Nama\n"
+            "Eko Prasetyo\n"
+            "NIP\n"
+            "199411172025211057\n"
+            "Pangkat/Golongan\n"
+            "V\n"
+            "Jabatan\n"
+            "Pengadministrasi Perkantoran pada Subbagian Tata Usaha\n"
+            "Nomor Kontak\n"
+            "0812-0000-2026"
+        ),
+        configuration={
+            "number": "EVAL-19/IST/YK/05/2026",
+            "recipient": "Kepala Unit Layanan",
+            "sender": "Kepala Istana Kepresidenan Yogyakarta",
+            "subject": "Penyampaian Kontak PIC Layanan",
+            "date": "7 Mei 2026",
+            "content": (
+                "Nama: Eko Prasetyo\n"
+                "NIP: 199411172025211057\n"
+                "Pangkat/gol.: V\n"
+                "Jabatan: Pengadministrasi Perkantoran pada Subbagian Tata Usaha\n"
+                "Nomor kontak: 0812-0000-2026"
+            ),
+            "signatory": "Deni Mulyana",
+            "page_size": "letter",
+        },
+    )
+
+    document = Document(BytesIO(draft.content))
+    paragraphs = [paragraph.text for paragraph in document.paragraphs]
+    data_table = _find_table_containing(document, "nama")
+
+    assert data_table.cell(0, 2).text == "Eko Prasetyo"
+    assert "Nama" not in paragraphs
+    assert "Eko Prasetyo" not in paragraphs
+    assert "Nomor Kontak" not in paragraphs
+    assert "0812-0000-2026" not in paragraphs
+
+
 def test_generate_memo_docx_keeps_blank_signatory_blank():
     draft = generate_memo_docx(
         memo_type="memo_internal",
@@ -1473,6 +1521,40 @@ def test_generate_memo_docx_removes_invented_pic_names_when_not_configured():
     assert "-\tSubbagian" not in all_text
 
 
+def test_generate_memo_docx_removes_unconfigured_schedule_time():
+    draft = generate_memo_docx(
+        memo_type="memo_internal",
+        title="Penyampaian Hasil Rapat Koordinasi Layanan",
+        context="Penyampaian hasil rapat koordinasi layanan.",
+        text_generator=lambda prompt: (
+            "Berdasarkan hasil rapat koordinasi layanan tanggal 6 Mei 2026, dapat kami sampaikan sebagai berikut:\n"
+            "1. Penunjukan Person In Charge (PIC) untuk setiap layanan telah ditetapkan.\n"
+            "2. Jadwal pelaporan kegiatan disepakati dilakukan secara mingguan setiap hari Jumat pukul 15.00 WIB "
+            "melalui sistem internal Istana Kepresidenan Yogyakarta.\n"
+            "3. Penyampaian kendala disalurkan melalui kanal prioritas."
+        ),
+        configuration={
+            "number": "EVAL-02/IST/YK/05/2026",
+            "recipient": "Para Kepala Subbagian",
+            "sender": "Kepala Istana Kepresidenan Yogyakarta",
+            "subject": "Penyampaian Hasil Rapat Koordinasi Layanan",
+            "date": "7 Mei 2026",
+            "content": (
+                "Sampaikan hasil rapat berupa pembagian PIC, jadwal pelaporan mingguan, "
+                "dan penyampaian kendala melalui kanal prioritas."
+            ),
+            "signatory": "Deni Mulyana",
+            "page_size": "letter",
+        },
+    )
+
+    all_text = _all_document_text(Document(BytesIO(draft.content)))
+
+    assert "15.00 WIB" not in all_text
+    assert "setiap hari Jumat" not in all_text
+    assert "Jadwal pelaporan kegiatan disepakati dilakukan secara mingguan melalui sistem internal" in all_text
+
+
 def test_generate_memo_docx_replaces_unconfigured_incident_time_and_impacted_users():
     draft = generate_memo_docx(
         memo_type="memo_internal",
@@ -1506,6 +1588,33 @@ def test_generate_memo_docx_replaces_unconfigured_incident_time_and_impacted_use
     assert "seluruh staf persuratan" not in all_text
     assert "Waktu kejadian ditetapkan berdasarkan laporan unit terkait." in all_text
     assert "Pengguna terdampak diidentifikasi oleh unit terkait." in all_text
+
+
+def test_generate_memo_docx_adds_formal_closing_after_dengan_demikian_body():
+    body = (
+        "Sehubungan dengan koordinasi antarunit, perlu dilakukan penyelarasan komunikasi.\n\n"
+        "Dengan demikian, diharapkan setiap unit dapat berkoordinasi secara intensif dan terarah."
+    )
+    draft = generate_memo_docx(
+        memo_type="memo_internal",
+        title="Koordinasi Singkatan Unit Internal",
+        context="Koordinasi singkatan unit internal.",
+        text_generator=lambda prompt: body,
+        configuration={
+            "number": "NO-MEMO-ANEH-XYZ/2026",
+            "sender": "Kepala Istana Kepresidenan Yogyakarta",
+            "subject": "Koordinasi Singkatan Unit Internal",
+            "date": "7 Mei 2026",
+            "content": "Jelaskan kebutuhan koordinasi antarunit dengan singkatan tersebut.",
+            "signatory": "Deni Mulyana",
+            "page_size": "letter",
+        },
+    )
+
+    paragraphs = [paragraph.text for paragraph in Document(BytesIO(draft.content)).paragraphs]
+
+    assert "Dengan demikian, diharapkan setiap unit dapat berkoordinasi secara intensif dan terarah." in paragraphs
+    assert "Demikian disampaikan untuk menjadi perhatian dan tindak lanjut sebagaimana mestinya." in paragraphs
 
 
 def test_generate_memo_docx_preserves_configured_numbering_over_ordinal_rewrite():

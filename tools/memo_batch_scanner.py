@@ -74,7 +74,7 @@ PROMPT_LEAK_PATTERNS = {
 
 CLOSING_PATTERN = re.compile(
     r"^(?:demikian|atas\s+perhatian|atas\s+kerja\s+sama|dimohon|mohon\s+tindak\s+lanjut|"
-    r"partisipasi\s+aktif)",
+    r"mohon\s+untuk|partisipasi\s+aktif)",
     re.I,
 )
 
@@ -388,11 +388,20 @@ def check_docx_layout(document: Document, table_rows: list[dict[str, Any]]) -> l
             findings.append({"type": "key_value_table_has_borders", "table_index": table_index})
         next_element = table._tbl.getnext()
         if next_element is not None and next_element.tag.endswith("}p"):
+            paragraph_text = "".join(text_node.text or "" for text_node in next_element.iter(qn("w:t"))).strip()
             spacing = next_element.find(qn("w:pPr"))
             spacing = spacing.find(qn("w:spacing")) if spacing is not None else None
             after = int(spacing.get(qn("w:after"), "0")) if spacing is not None else 0
-            if after < 160:
-                findings.append({"type": "key_value_spacing_after_too_tight", "table_index": table_index, "after": after})
+            before = int(spacing.get(qn("w:before"), "0")) if spacing is not None else 0
+            if paragraph_text and max(before, after) < 160:
+                findings.append(
+                    {
+                        "type": "key_value_spacing_after_too_tight",
+                        "table_index": table_index,
+                        "before": before,
+                        "after": after,
+                    }
+                )
     metadata_rows = [row for row in table_rows if row["table_index"] == 0]
     if metadata_rows:
         metadata_labels = {row["label"].lower().rstrip(".") for row in metadata_rows}

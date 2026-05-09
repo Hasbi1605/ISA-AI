@@ -542,14 +542,36 @@ def _remove_redundant_blocks_after_configured_key_values(
 
     configured_labels = {_key_value_label_key(label) for label, _value in configured_items}
     configured_values = _normalized_configured_values(configured_items)
+    configured_values_by_label = _normalized_configured_values_by_label(configured_items)
     has_activity_details = bool(configured_labels & ACTIVITY_KEY_VALUE_LABEL_KEYS)
     output = blocks[:start_index]
+    remaining_blocks = blocks[start_index:]
     removed = False
+    index = 0
 
-    for block in blocks[start_index:]:
+    while index < len(remaining_blocks):
+        block = remaining_blocks[index]
         parsed = _parse_person_data_block(block)
         if parsed and _key_value_label_key(parsed[0]) in configured_labels:
             removed = True
+            index += 1
+            continue
+
+        label_only = _person_data_label_only_key(block)
+        if (
+            label_only
+            and label_only in configured_values_by_label
+            and index + 1 < len(remaining_blocks)
+            and any(
+                _configured_value_matches_block(
+                    _normalize_comparison_text(remaining_blocks[index + 1]),
+                    configured_value,
+                )
+                for configured_value in configured_values_by_label[label_only]
+            )
+        ):
+            removed = True
+            index += 2
             continue
 
         if has_activity_details and _looks_like_redundant_activity_detail_block(
@@ -558,11 +580,20 @@ def _remove_redundant_blocks_after_configured_key_values(
             configured_values,
         ):
             removed = True
+            index += 1
             continue
 
         output.append(block)
+        index += 1
 
     return _renumber_numbered_block_sequences(output, from_index=start_index) if removed else blocks
+
+
+def _person_data_label_only_key(block: str) -> str | None:
+    clean = block.strip().rstrip(":")
+    if not re.fullmatch(PERSON_DATA_LABEL_PATTERN, clean, flags=re.IGNORECASE):
+        return None
+    return _key_value_label_key(_normalize_person_data_label(clean))
 
 
 def _looks_like_redundant_activity_detail_block(
@@ -646,6 +677,16 @@ def _normalized_configured_values(configured_items: list[tuple[str, str]]) -> se
         for _label, value in configured_items
         if len(_normalize_comparison_text(value)) >= 5
     }
+
+
+def _normalized_configured_values_by_label(configured_items: list[tuple[str, str]]) -> dict[str, set[str]]:
+    values_by_label: dict[str, set[str]] = {}
+    for label, value in configured_items:
+        normalized_value = _normalize_comparison_text(value)
+        if not normalized_value:
+            continue
+        values_by_label.setdefault(_key_value_label_key(label), set()).add(normalized_value)
+    return values_by_label
 
 
 def _configured_value_match_count(normalized_block: str, configured_values: set[str]) -> int:
@@ -1339,6 +1380,7 @@ def _sanitize_memo_body(body: str, config: dict[str, str]) -> str:
     clean = _remove_configured_closing(clean, config.get("closing", ""))
     clean = _strip_instruction_artifacts(clean, config)
     clean = _strip_unconfigured_honorific_data(clean, config)
+    clean = _strip_unconfigured_time_facts(clean, config)
     clean = _strip_unconfigured_operational_data(clean, config)
     clean = _replace_empty_person_data_placeholders(clean)
     clean = _strip_trailing_fragments(clean)
@@ -1696,7 +1738,7 @@ def _strip_body_closing_sentences(text: str) -> str:
             continue
 
         clean = re.sub(r"(?is)\s+dengan\s+demikian\b.*$", "", block).strip()
-        clean = re.sub(r"(?is)\s+demikian\b.*$", "", clean).strip()
+        clean = re.sub(r"(?is)(?<!dengan)\s+demikian\b.*$", "", clean).strip()
         clean = re.sub(r"(?is)\s+atas\s+perhatian\b.*?terima\s+kasih\.?$", "", clean).strip()
 
         if clean and not _looks_like_closing_block(clean):
@@ -1708,7 +1750,7 @@ def _strip_body_closing_sentences(text: str) -> str:
 def _split_trailing_closing_sentence(block: str) -> tuple[str, str] | None:
     match = re.search(
         r"(?is)(?P<body>.+?[.;])\s+"
-        r"(?P<closing>(?:dengan\s+demikian|demikian|atas\s+perhatian|atas\s+kerja\s+sama|"
+        r"(?P<closing>(?:demikian|atas\s+perhatian|atas\s+kerja\s+sama|"
         r"dimohon|mohon\s+arahan\s+lebih\s+lanjut|mohon\s+tindak\s+lanjut|mohon\s+untuk\s+dapat|"
         r"kami\s+harapkan)\b.+)$",
         block.strip(),
@@ -1779,7 +1821,6 @@ def _looks_like_closing_block(block: str) -> bool:
         return False
 
     closing_starters = (
-        "dengan demikian",
         "demikian",
         "atas perhatian",
         "atas kerja sama",
@@ -1880,6 +1921,44 @@ def _strip_unconfigured_honorific_data(text: str, config: dict[str, str]) -> str
             output.append("Penunjukan Person In Charge (PIC) pada tiap layanan agar ditetapkan oleh masing-masing unit.")
             continue
         output.append(block)
+
+    return "\n".join(output).strip()
+
+
+def _strip_unconfigured_time_facts(text: str, config: dict[str, str]) -> str:
+    config_text = "\n".join(
+        str(config.get(key, ""))
+        for key in ("basis", "content", "closing", "additional_instruction", "revision_instruction")
+    )
+    normalized_config = _normalize_comparison_text(config_text)
+    if _config_contains_explicit_time(config_text) or "waktu kejadian" in normalized_config:
+        return text
+
+    output: list[str] = []
+    for block in _split_blocks(text):
+        if (
+            _parse_person_data_block(block)
+            or not re.search(r"\b(?:pukul|jam)\s+\d{1,2}[.:]\d{2}", block, flags=re.IGNORECASE)
+        ):
+            output.append(block)
+            continue
+
+        clean = re.sub(
+            r"\s+setiap\s+hari\s+[A-Za-zÀ-ÿ]+\s+(?:pukul|jam)\s+\d{1,2}[.:]\d{2}(?:\s*WIB)?",
+            "",
+            block,
+            flags=re.IGNORECASE,
+        )
+        clean = re.sub(
+            r"\b(?:pukul|jam)\s+\d{1,2}[.:]\d{2}(?:\s*WIB)?\b",
+            "",
+            clean,
+            flags=re.IGNORECASE,
+        )
+        clean = _normalize_spacing_after_sentence_removal(clean)
+        clean = re.sub(r"\s+([,.;])", r"\1", clean).strip(" ,;")
+        if clean:
+            output.append(clean)
 
     return "\n".join(output).strip()
 
