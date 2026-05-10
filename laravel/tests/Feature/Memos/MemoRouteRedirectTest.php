@@ -61,6 +61,38 @@ class MemoRouteRedirectTest extends TestCase
             ->assertRedirect(route('chat', ['tab' => 'memo']));
     }
 
+    public function test_legacy_memo_export_pdf_path_redirects_to_chat_memo_tab(): void
+    {
+        $user = User::factory()->create(['email_verified_at' => now()]);
+        $memo = Memo::create([
+            'user_id' => $user->id,
+            'title' => 'Memo Test',
+            'memo_type' => 'memo_internal',
+            'file_path' => 'memos/'.$user->id.'/memo.docx',
+            'status' => Memo::STATUS_GENERATED,
+        ]);
+
+        $this->actingAs($user)
+            ->get('/memos/'.$memo->id.'/export-pdf')
+            ->assertRedirect(route('chat', ['tab' => 'memo']));
+    }
+
+    public function test_legacy_memo_signed_file_path_redirects_to_chat_memo_tab(): void
+    {
+        $user = User::factory()->create(['email_verified_at' => now()]);
+        $memo = Memo::create([
+            'user_id' => $user->id,
+            'title' => 'Memo Test',
+            'memo_type' => 'memo_internal',
+            'file_path' => 'memos/'.$user->id.'/memo.docx',
+            'status' => Memo::STATUS_GENERATED,
+        ]);
+
+        $this->actingAs($user)
+            ->get('/memos/'.$memo->id.'/signed-file')
+            ->assertRedirect(route('chat', ['tab' => 'memo']));
+    }
+
     public function test_guest_standalone_memos_still_requires_login(): void
     {
         $this->get(route('memos.index'))

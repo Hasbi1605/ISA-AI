@@ -51,10 +51,11 @@ Route::middleware(['auth', 'verified'])
 
 Route::middleware(['auth', 'verified'])
     ->prefix('memos')
+    ->name('memos.')
     ->group(function () {
-        Route::redirect('/', '/chat?tab=memo')->name('memos.index');
-        Route::redirect('/create', '/chat?tab=memo')->name('memos.create');
-        Route::redirect('/{memo}', '/chat?tab=memo')->name('memos.edit');
+        Route::redirect('/', '/chat?tab=memo')->name('index');
+        Route::redirect('/create', '/chat?tab=memo')->name('create');
+        Route::redirect('/{memo}', '/chat?tab=memo')->name('edit');
         Route::redirect('/{legacyMemoPath}', '/chat?tab=memo')
             ->where('legacyMemoPath', '.*');
     });
