@@ -14,6 +14,7 @@ use App\Services\CloudStorage\GoogleDriveService;
 use App\Services\DocumentExportService;
 use App\Services\DocumentLifecycleService;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\RateLimiter;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
@@ -293,6 +294,7 @@ class ChatIndex extends Component
     public function uploadChatAttachment(DocumentLifecycleService $documentLifecycleService)
     {
         try {
+            $this->enforceRateLimit('uploadChatAttachment', 5, 60, 'Terlalu banyak upload dokumen. Coba lagi sebentar.');
             $this->validate([
                 'chatAttachment' => [
                     'required',
@@ -386,6 +388,13 @@ class ChatIndex extends Component
             return [
                 'ok' => false,
                 'message' => 'Format upload Google Drive tidak didukung.',
+            ];
+        }
+
+        if ($this->isRateLimited('saveAnswerToGoogleDrive', 10, 60)) {
+            return [
+                'ok' => false,
+                'message' => 'Terlalu banyak permintaan ekspor Google Drive. Coba lagi sebentar.',
             ];
         }
 
@@ -489,12 +498,14 @@ class ChatIndex extends Component
             $this->prompt = $prompt;
         }
 
-        set_time_limit(120);
         $this->newMessageId = null;
 
         $this->validate([
-            'prompt' => 'required|string|min:1',
+            'prompt' => 'required|string|min:1|max:8000',
         ]);
+
+        $this->enforceRateLimit('sendMessage', 10, 60, 'Terlalu banyak mengirim pesan. Coba lagi sebentar.');
+        set_time_limit(120);
 
         $this->currentConversationId = $orchestrator->createConversationIfNeeded(
             $this->currentConversationId,
@@ -580,5 +591,40 @@ class ChatIndex extends Component
         return in_array($normalized, ['pdf', 'docx', 'xlsx', 'csv'], true)
             ? $normalized
             : null;
+    }
+
+    private function enforceRateLimit(string $action, int $maxAttempts, int $decaySeconds = 60, ?string $message = null): void
+    {
+        $key = $this->rateLimitKey($action);
+
+        if (RateLimiter::tooManyAttempts($key, $maxAttempts)) {
+            throw ValidationException::withMessages([
+                'rate_limit' => $message ?? 'Terlalu banyak permintaan. Silakan coba lagi sebentar.',
+            ]);
+        }
+
+        RateLimiter::hit($key, $decaySeconds);
+    }
+
+    private function isRateLimited(string $action, int $maxAttempts, int $decaySeconds = 60): bool
+    {
+        $key = $this->rateLimitKey($action);
+
+        if (RateLimiter::tooManyAttempts($key, $maxAttempts)) {
+            return true;
+        }
+
+        RateLimiter::hit($key, $decaySeconds);
+
+        return false;
+    }
+
+    private function rateLimitKey(string $action): string
+    {
+        $userId = Auth::id();
+        $ip = request()?->ip() ?? 'unknown';
+        $userPart = $userId ? 'user-'.$userId : 'guest';
+
+        return implode(':', [static::class, $action, $userPart, $ip]);
     }
 }

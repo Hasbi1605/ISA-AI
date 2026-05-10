@@ -14,7 +14,7 @@ class DocumentExportController extends Controller
     public function export(Request $request, DocumentExportService $exportService): Response
     {
         $data = $request->validate([
-            'content_html' => ['required', 'string'],
+            'content_html' => ['required', 'string', 'max:512000'],
             'target_format' => ['required', 'in:pdf,docx,xlsx,csv'],
             'file_name' => ['nullable', 'string', 'max:120'],
         ]);

@@ -4,7 +4,7 @@ import uuid
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile
 from fastapi.responses import Response
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from app.api_shared import verify_token
 from app.config_loader import (
@@ -18,6 +18,27 @@ from app.services.document_export import export_content
 from app.services.table_extraction import extract_tables_from_file
 
 router = APIRouter(prefix="/api/documents", tags=["Documents"])
+
+
+def _require_safe_filename(filename: str | None) -> str:
+    if filename is None:
+        raise HTTPException(status_code=400, detail="Nama file tidak valid.")
+
+    cleaned = filename.strip()
+    if not cleaned:
+        raise HTTPException(status_code=400, detail="Nama file tidak valid.")
+
+    if "/" in cleaned or "\\" in cleaned:
+        raise HTTPException(status_code=400, detail="Nama file tidak valid.")
+
+    if "\x00" in cleaned:
+        raise HTTPException(status_code=400, detail="Nama file tidak valid.")
+
+    base = os.path.basename(cleaned)
+    if base in {"", ".", ".."} or base != cleaned:
+        raise HTTPException(status_code=400, detail="Nama file tidak valid.")
+
+    return base
 
 
 def delete_document_vectors(*args, **kwargs):
@@ -49,30 +70,27 @@ async def upload_document(
     os.makedirs(temp_dir, exist_ok=True)
 
     file_id = str(uuid.uuid4())
-    temp_file_path = os.path.join(temp_dir, f"{file_id}_{file.filename}")
+    safe_filename = _require_safe_filename(file.filename)
+    temp_file_path = os.path.join(temp_dir, f"{file_id}_{safe_filename}")
 
     try:
         with open(temp_file_path, "wb") as buffer:
             shutil.copyfileobj(file.file, buffer)
 
-        success, message = run_document_process(temp_file_path, file.filename, user_id)
-
-        if os.path.exists(temp_file_path):
-            os.remove(temp_file_path)
+        success, message = run_document_process(temp_file_path, safe_filename, user_id)
 
         if success:
-            return {"status": "success", "message": message, "filename": file.filename}
+            return {"status": "success", "message": message, "filename": safe_filename}
 
         raise HTTPException(status_code=500, detail=message)
 
     except HTTPException:
-        if os.path.exists(temp_file_path):
-            os.remove(temp_file_path)
         raise
     except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
         if os.path.exists(temp_file_path):
             os.remove(temp_file_path)
-        raise HTTPException(status_code=500, detail=str(e))
 
 
 @router.delete("/{filename}", dependencies=[Depends(verify_token)])
@@ -92,7 +110,7 @@ class SummarizeRequest(BaseModel):
 
 
 class ExportRequest(BaseModel):
-    content_html: str
+    content_html: str = Field(..., max_length=512000)
     target_format: str
     file_name: str | None = None
 
@@ -117,7 +135,8 @@ async def extract_tables_endpoint(file: UploadFile = File(...)):
     os.makedirs(temp_dir, exist_ok=True)
 
     file_id = str(uuid.uuid4())
-    temp_file_path = os.path.join(temp_dir, f"{file_id}_{file.filename}")
+    safe_filename = _require_safe_filename(file.filename)
+    temp_file_path = os.path.join(temp_dir, f"{file_id}_{safe_filename}")
 
     try:
         with open(temp_file_path, "wb") as buffer:
@@ -127,7 +146,7 @@ async def extract_tables_endpoint(file: UploadFile = File(...)):
 
         return {
             "status": "success",
-            "filename": file.filename,
+            "filename": safe_filename,
             "tables": tables,
         }
     except ValueError as exc:
@@ -143,17 +162,18 @@ async def extract_content_endpoint(file: UploadFile = File(...)):
     os.makedirs(temp_dir, exist_ok=True)
 
     file_id = str(uuid.uuid4())
-    temp_file_path = os.path.join(temp_dir, f"{file_id}_{file.filename}")
+    safe_filename = _require_safe_filename(file.filename)
+    temp_file_path = os.path.join(temp_dir, f"{file_id}_{safe_filename}")
 
     try:
         with open(temp_file_path, "wb") as buffer:
             shutil.copyfileobj(file.file, buffer)
 
-        content_html = extract_document_content_html(temp_file_path, filename=file.filename)
+        content_html = extract_document_content_html(temp_file_path, filename=safe_filename)
 
         return {
             "status": "success",
-            "filename": file.filename,
+            "filename": safe_filename,
             "content_html": content_html,
         }
     except ValueError as exc:

@@ -17,6 +17,7 @@ PDF_MIME = "application/pdf"
 DOCX_MIME = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
 XLSX_MIME = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
 CSV_MIME = "text/csv; charset=utf-8"
+MAX_EXPORT_HTML_LENGTH = 512_000
 
 
 @dataclass(slots=True)
@@ -113,6 +114,94 @@ def _wrap_html(content_html: str, title: str) -> str:
     {content_html}
   </body>
 </html>"""
+
+
+def _block_all_url_fetcher(url: str) -> dict[str, Any]:
+    if url.startswith("#"):
+        return {"string": b"", "mime_type": "text/plain"}
+
+    raise ValueError("External resource fetching is blocked")
+
+
+def _ensure_no_external_resources(content_html: str) -> None:
+    soup = BeautifulSoup(content_html or "", "html.parser")
+    resource_attrs = {"src", "href", "xlink:href", "data", "poster", "cite", "background", "srcset"}
+
+    for tag in soup.find_all(True):
+        for attr_name in resource_attrs:
+            if attr_name not in tag.attrs:
+                continue
+
+            for value in _iter_resource_values(attr_name, tag.attrs.get(attr_name)):
+                if _is_disallowed_reference(value):
+                    raise ValueError("Konten HTML mengandung resource eksternal yang diblokir.")
+
+        style_value = tag.attrs.get("style")
+        if isinstance(style_value, str) and _css_has_external_reference(style_value):
+            raise ValueError("Konten HTML mengandung resource eksternal yang diblokir.")
+
+    for style_tag in soup.find_all("style"):
+        if isinstance(style_tag.string, str) and _css_has_external_reference(style_tag.string):
+            raise ValueError("Konten HTML mengandung resource eksternal yang diblokir.")
+
+
+def _iter_resource_values(attr_name: str, raw_value: Any) -> list[str]:
+    values: list[str] = []
+
+    if raw_value is None:
+        return values
+
+    if isinstance(raw_value, list):
+        items = raw_value
+    else:
+        items = [raw_value]
+
+    for item in items:
+        if not isinstance(item, str):
+            continue
+
+        if attr_name == "srcset":
+            for candidate in item.split(","):
+                url_part = candidate.strip().split(" ")[0].strip()
+                if url_part:
+                    values.append(url_part)
+            continue
+
+        values.append(item)
+
+    return values
+
+
+def _is_disallowed_reference(value: str) -> bool:
+    trimmed = (value or "").strip()
+    if not trimmed:
+        return False
+
+    if trimmed.startswith("#"):
+        return False
+
+    return True
+
+
+def _css_has_external_reference(css_text: str) -> bool:
+    if not css_text:
+        return False
+
+    for match in re.findall(r"url\(([^)]+)\)", css_text, flags=re.IGNORECASE):
+        value = match.strip().strip("\"'")
+        if value and not value.startswith("#"):
+            return True
+
+    for match in re.findall(r"@import\s+(?:url\()?['\"]?([^'\"\)\s]+)", css_text, flags=re.IGNORECASE):
+        value = match.strip().strip("\"'")
+        if value and not value.startswith("#"):
+            return True
+
+    return False
+
+
+def _build_weasy_html(wrapped_html: str) -> WeasyHTML:
+    return WeasyHTML(string=wrapped_html, url_fetcher=_block_all_url_fetcher)
 
 
 def _extract_text_lines(content_html: str) -> list[str]:
@@ -358,16 +447,20 @@ def _sanitize_sheet_name(name: str) -> str:
 
 
 def export_content(content_html: str, target_format: str, file_name: str | None = None) -> ExportArtifact:
+    if len(content_html or "") > MAX_EXPORT_HTML_LENGTH:
+        raise ValueError("Konten HTML terlalu besar untuk diekspor.")
+
     target = _normalize_target_format(target_format)
     base_name = _sanitize_filename(file_name)
     title = base_name.replace("-", " ").strip() or "ISTA AI Export"
 
     if target == "pdf":
+        _ensure_no_external_resources(content_html)
         wrapped_html = _wrap_html(content_html, title)
         return ExportArtifact(
             filename=f"{base_name}.pdf",
             mime_type=PDF_MIME,
-            content=WeasyHTML(string=wrapped_html).write_pdf(),
+            content=_build_weasy_html(wrapped_html).write_pdf(),
         )
 
     if target == "docx":

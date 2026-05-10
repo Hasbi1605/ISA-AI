@@ -8,6 +8,7 @@ use App\Services\Memo\MemoGenerationService;
 use App\Services\OnlyOffice\JwtSigner;
 use App\Services\OnlyOffice\MemoDocumentKey;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\RateLimiter;
 use Illuminate\Support\Facades\URL;
 use Illuminate\Validation\ValidationException;
 use Livewire\Component;
@@ -55,6 +56,8 @@ class MemoWorkspace extends Component
     public bool $isGenerating = false;
 
     public bool $showMemoConfiguration = true;
+
+    private bool $skipRateLimitForNestedGeneration = false;
 
     public function mount(): void
     {
@@ -121,6 +124,8 @@ class MemoWorkspace extends Component
 
     public function generateConfiguredMemo(): void
     {
+        $this->enforceRateLimit('generateConfiguredMemo', 5, 60, 'Terlalu banyak generate memo. Coba lagi sebentar.');
+
         if (! $this->validateMemoConfiguration()) {
             return;
         }
@@ -171,6 +176,10 @@ class MemoWorkspace extends Component
 
     public function generateRevisionFromChat(string $instruction): void
     {
+        if (! $this->skipRateLimitForNestedGeneration) {
+            $this->enforceRateLimit('generateRevisionFromChat', 5, 60, 'Terlalu banyak revisi memo. Coba lagi sebentar.');
+        }
+
         if (! $this->validateMemoConfiguration()) {
             return;
         }
@@ -225,6 +234,10 @@ class MemoWorkspace extends Component
 
     public function generateConfiguredRevision(): void
     {
+        if (! $this->skipRateLimitForNestedGeneration) {
+            $this->enforceRateLimit('generateConfiguredRevision', 5, 60, 'Terlalu banyak generate ulang memo. Coba lagi sebentar.');
+        }
+
         if (! $this->validateMemoConfiguration()) {
             return;
         }
@@ -269,6 +282,10 @@ class MemoWorkspace extends Component
 
     public function generateFromChat(string $context, bool $fromConfiguration = false): void
     {
+        if (! $this->skipRateLimitForNestedGeneration) {
+            $this->enforceRateLimit('generateFromChat', 5, 60, 'Terlalu banyak generate memo. Coba lagi sebentar.');
+        }
+
         if (! $this->validateMemoConfiguration()) {
             return;
         }
@@ -308,13 +325,25 @@ class MemoWorkspace extends Component
 
     public function regenerate(): void
     {
+        $this->enforceRateLimit('regenerate', 5, 60, 'Terlalu banyak regenerate memo. Coba lagi sebentar.');
+
         if (! $this->activeMemoId) {
-            $this->generateConfiguredMemo();
+            $this->skipRateLimitForNestedGeneration = true;
+            try {
+                $this->generateConfiguredMemo();
+            } finally {
+                $this->skipRateLimitForNestedGeneration = false;
+            }
 
             return;
         }
 
-        $this->generateRevisionFromChat('Generate ulang memo aktif dari konfigurasi terakhir. Pertahankan metadata, struktur, dan bagian yang tidak perlu diubah.');
+        $this->skipRateLimitForNestedGeneration = true;
+        try {
+            $this->generateRevisionFromChat('Generate ulang memo aktif dari konfigurasi terakhir. Pertahankan metadata, struktur, dan bagian yang tidak perlu diubah.');
+        } finally {
+            $this->skipRateLimitForNestedGeneration = false;
+        }
     }
 
     public function switchMemoVersion(int|string $versionId): void
@@ -1269,5 +1298,27 @@ class MemoWorkspace extends Component
         }
 
         return $messages;
+    }
+
+    protected function enforceRateLimit(string $action, int $maxAttempts, int $decaySeconds = 60, ?string $message = null): void
+    {
+        $key = $this->rateLimitKey($action);
+
+        if (RateLimiter::tooManyAttempts($key, $maxAttempts)) {
+            throw ValidationException::withMessages([
+                'rate_limit' => $message ?? 'Terlalu banyak permintaan. Silakan coba lagi sebentar.',
+            ]);
+        }
+
+        RateLimiter::hit($key, $decaySeconds);
+    }
+
+    protected function rateLimitKey(string $action): string
+    {
+        $userId = Auth::id();
+        $ip = request()?->ip() ?? 'unknown';
+        $userPart = $userId ? 'user-'.$userId : 'guest';
+
+        return implode(':', [static::class, $action, $userPart, $ip]);
     }
 }
