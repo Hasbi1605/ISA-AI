@@ -5,6 +5,7 @@ namespace Tests\Feature\Auth;
 use App\Models\User;
 use App\Notifications\CustomResetPassword;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Lang;
 use Illuminate\Support\Facades\Notification;
 use Livewire\Volt\Volt;
 use Tests\TestCase;
@@ -134,5 +135,33 @@ class PasswordResetTest extends TestCase
                 'email' => 'Kolom email wajib diisi.',
                 'password' => 'Kolom kata sandi wajib diisi.',
             ]);
+    }
+
+    public function test_forgot_password_error_is_indonesian_when_locale_is_en(): void
+    {
+        Notification::fake();
+
+        Lang::setLocale('en');
+
+        Volt::test('pages.auth.forgot-password')
+            ->set('email', 'missing@example.com')
+            ->call('sendPasswordResetLink')
+            ->assertHasErrors(['email' => 'Kami tidak dapat menemukan pengguna dengan alamat email tersebut.']);
+
+        Notification::assertNothingSent();
+    }
+
+    public function test_reset_password_invalid_token_error_is_indonesian_when_locale_is_en(): void
+    {
+        $user = User::factory()->create();
+
+        Lang::setLocale('en');
+
+        Volt::test('pages.auth.reset-password', ['token' => 'invalid-token'])
+            ->set('email', $user->email)
+            ->set('password', 'password')
+            ->set('password_confirmation', 'password')
+            ->call('resetPassword')
+            ->assertHasErrors(['email' => 'Token reset kata sandi tidak valid.']);
     }
 }

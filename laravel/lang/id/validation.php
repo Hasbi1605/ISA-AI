@@ -33,7 +33,7 @@ return [
     ],
     'boolean' => 'Kolom :attribute harus bernilai benar atau salah.',
     'can' => 'Kolom :attribute berisi nilai yang tidak diizinkan.',
-    'confirmed' => 'Konfirmasi :attribute tidak cocok.',
+    'confirmed' => ':attribute tidak cocok.',
     'contains' => 'Kolom :attribute tidak memiliki nilai yang diperlukan.',
     'current_password' => 'Kata sandi yang dimasukkan salah.',
     'date' => 'Kolom :attribute harus tanggal yang valid.',

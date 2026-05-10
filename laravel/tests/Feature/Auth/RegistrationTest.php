@@ -6,6 +6,7 @@ use App\Mail\VerificationCodeMail;
 use App\Livewire\Chat\ChatIndex;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Lang;
 use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Facades\Notification;
 use Livewire\Livewire;
@@ -298,5 +299,32 @@ class RegistrationTest extends TestCase
             ->assertHasErrors([
                 'register_email' => 'Kolom email sudah digunakan.',
             ]);
+    }
+
+    public function test_register_confirmation_error_is_shown_and_indonesian(): void
+    {
+        Volt::test('pages.auth.login')
+            ->set('view', 'register')
+            ->set('name', 'Test User')
+            ->set('register_email', 'confirm-test@example.com')
+            ->set('register_password', 'password')
+            ->set('register_password_confirmation', 'different-password')
+            ->call('register')
+            ->assertHasErrors(['register_password' => 'kata sandi tidak cocok.']);
+    }
+
+    public function test_register_confirmation_error_is_indonesian_when_locale_is_en(): void
+    {
+        // Force app locale to 'en' before Livewire component mount to simulate production
+        app()->setLocale('en');
+
+        Volt::test('pages.auth.login')
+            ->set('view', 'register')
+            ->set('name', 'Test User')
+            ->set('register_email', 'confirm-test-2@example.com')
+            ->set('register_password', 'password')
+            ->set('register_password_confirmation', 'different-password')
+            ->call('register')
+            ->assertHasErrors(['register_password' => 'kata sandi tidak cocok.']);
     }
 }

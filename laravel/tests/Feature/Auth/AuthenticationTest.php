@@ -6,6 +6,7 @@ use App\Livewire\Chat\ChatIndex;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\RateLimiter;
+use Illuminate\Support\Facades\Lang;
 use Illuminate\Support\Str;
 use Livewire\Livewire;
 use Livewire\Volt\Volt;
@@ -186,5 +187,41 @@ class AuthenticationTest extends TestCase
             ->assertRedirect('/');
 
         $this->assertGuest();
+    }
+
+    public function test_auth_error_messages_are_indonesian_when_locale_is_en(): void
+    {
+        $user = User::factory()->create();
+
+        Lang::setLocale('en');
+
+        $component = Volt::test('pages.auth.login')
+            ->set('form.email', 'wrong@email.com')
+            ->set('form.password', 'wrong-password');
+
+        $component->call('login');
+
+        $component
+            ->assertHasErrors(['form.email' => 'Email atau kata sandi tidak sesuai dengan data kami.'])
+            ->assertNoRedirect();
+
+        $this->assertGuest();
+    }
+
+    public function test_auth_validation_errors_are_indonesian_when_locale_is_en(): void
+    {
+        Lang::setLocale('en');
+
+        $component = Volt::test('pages.auth.login')
+            ->set('form.email', '')
+            ->set('form.password', '')
+            ->call('login');
+
+        $component
+            ->assertHasErrors([
+                'form.email' => 'Kolom email wajib diisi.',
+                'form.password' => 'Kolom kata sandi wajib diisi.',
+            ])
+            ->assertNoRedirect();
     }
 }
