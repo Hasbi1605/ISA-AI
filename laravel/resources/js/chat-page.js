@@ -130,6 +130,15 @@ const registerChatPageData = (Alpine) => {
     Alpine.data('chatMessages', () => ({
         optimisticUserMessage: '',
         isSwitchingConversation: false,
+        streaming: false,
+        streamingText: '',
+        modelName: '',
+        sources: [],
+        loadingContext: 'general',
+        loadingPhase: 'AI sedang berpikir',
+        loadingPhaseTimer: null,
+        loadingPhaseStep: 0,
+        hasFirstAssistantChunk: false,
 
         init() {
             this.$el.dataset.chatMessagesReady = 'true';
@@ -143,10 +152,85 @@ const registerChatPageData = (Alpine) => {
             }
 
             this.$wire.on('assistant-output', () => this.scrollToBottom());
+            this.$wire.on('assistant-output', (data) => {
+                this.streamingText += data[0] || '';
+                this.streaming = true;
+                this.hasFirstAssistantChunk = true;
+                this.loadingPhase = 'Menampilkan jawaban';
+                this.scrollToBottom();
+            });
+            this.$wire.on('model-name', (data) => {
+                this.modelName = data[0] || '';
+            });
+            this.$wire.on('assistant-sources', (data) => {
+                this.sources = data[0] || [];
+            });
+            this.$wire.on('assistant-message-persisted', () => this.resetStreamingState());
+            window.addEventListener('message-complete', () => this.resetStreamingState());
             this.$wire.on('user-message-acked', () => {
                 this.optimisticUserMessage = '';
                 this.scrollToBottom();
             });
+        },
+
+        startStreamingPlaceholder(context = 'general') {
+            this.resetStreamingState(false);
+            this.streaming = true;
+            this.loadingContext = context;
+            this.loadingPhaseStep = 0;
+            this.loadingPhase = this.loadingPhaseLabels()[0];
+            this.startLoadingPhaseTimer();
+        },
+
+        resetStreamingState(stopStreaming = true) {
+            if (this.loadingPhaseTimer) {
+                window.clearInterval(this.loadingPhaseTimer);
+                this.loadingPhaseTimer = null;
+            }
+
+            this.loadingPhaseStep = 0;
+            this.hasFirstAssistantChunk = false;
+            this.loadingContext = 'general';
+            this.loadingPhase = 'AI sedang berpikir';
+            this.streamingText = '';
+            this.modelName = '';
+            this.sources = [];
+
+            if (stopStreaming) {
+                this.streaming = false;
+            }
+        },
+
+        loadingPhaseLabels() {
+            if (this.loadingContext === 'web-search') {
+                return ['Mencari jawaban', 'AI sedang berpikir', 'Menampilkan jawaban'];
+            }
+
+            if (this.loadingContext === 'documents') {
+                return ['Sedang membaca dokumen', 'AI sedang berpikir', 'Menampilkan jawaban'];
+            }
+
+            if (this.loadingContext === 'hybrid') {
+                return ['Sedang membaca dokumen', 'AI sedang berpikir', 'Menampilkan jawaban'];
+            }
+
+            return ['AI sedang berpikir', 'Menampilkan jawaban'];
+        },
+
+        startLoadingPhaseTimer() {
+            this.loadingPhaseTimer = window.setInterval(() => {
+                if (this.hasFirstAssistantChunk) {
+                    this.loadingPhase = 'Menampilkan jawaban';
+                    return;
+                }
+
+                const labels = this.loadingPhaseLabels();
+                const maxIndexBeforeAnswer = Math.max(labels.length - 2, 0);
+                this.loadingPhaseStep = this.loadingPhaseStep >= maxIndexBeforeAnswer
+                    ? maxIndexBeforeAnswer
+                    : this.loadingPhaseStep + 1;
+                this.loadingPhase = labels[this.loadingPhaseStep] || labels[0];
+            }, 1400);
         },
 
         scrollToBottom(smooth = false) {
@@ -697,14 +781,21 @@ const registerChatPageData = (Alpine) => {
             this.messageAcked = false;
             this.isSendingMessage = true;
 
-            this.$dispatch('message-send', { text });
+            const normalizedDocs = this.normalizedDocumentIds();
+            const hasDocs = normalizedDocs.length > 0;
+            const hasWeb = Boolean(this.webSearchMode);
+            const loadingContext = hasWeb && hasDocs
+                ? 'hybrid'
+                : (hasWeb ? 'web-search' : (hasDocs ? 'documents' : 'general'));
+
+            this.$dispatch('message-send', { text, loadingContext });
             this.scrollChatToBottom(true);
             this.stabilizeChatScroll();
 
             this.promptDraft = '';
             this.autoResizeTextarea(this.$refs.chatInput);
             this.$wire.webSearchMode = Boolean(this.webSearchMode);
-            this.$wire.conversationDocuments = this.normalizedDocumentIds();
+            this.$wire.conversationDocuments = normalizedDocs;
 
             this.$wire.sendMessage(text)
                 .catch(() => {
@@ -921,6 +1012,9 @@ const registerChatPageData = (Alpine) => {
         memoMobilePanel: 'chat',
         memoRevisionText: '',
         memoRevisionLoading: false,
+        memoLoadingPhase: 'Membuat ulang memo',
+        memoLoadingPhaseTimer: null,
+        memoLoadingPhaseStep: 0,
 
         init() {
             const mediaQuery = window.matchMedia('(max-width: 1023px)');
@@ -968,6 +1062,7 @@ const registerChatPageData = (Alpine) => {
 
             this.memoRevisionText = message;
             this.memoRevisionLoading = true;
+            this.startMemoLoadingPhase();
 
             textarea.value = '';
             textarea.style.height = 'auto';
@@ -979,8 +1074,34 @@ const registerChatPageData = (Alpine) => {
                 .finally(() => {
                     this.memoRevisionText = '';
                     this.memoRevisionLoading = false;
+                    this.resetMemoLoadingPhase();
                     this.scrollMemoChatToBottom();
                 });
+        },
+
+        memoLoadingLabels() {
+            return ['Membuat ulang memo', 'AI sedang berpikir', 'Menampilkan jawaban'];
+        },
+
+        startMemoLoadingPhase() {
+            this.resetMemoLoadingPhase();
+            this.memoLoadingPhaseStep = 0;
+            this.memoLoadingPhase = this.memoLoadingLabels()[0];
+            this.memoLoadingPhaseTimer = window.setInterval(() => {
+                const labels = this.memoLoadingLabels();
+                this.memoLoadingPhaseStep = Math.min(this.memoLoadingPhaseStep + 1, labels.length - 1);
+                this.memoLoadingPhase = labels[this.memoLoadingPhaseStep];
+            }, 1400);
+        },
+
+        resetMemoLoadingPhase() {
+            if (this.memoLoadingPhaseTimer) {
+                window.clearInterval(this.memoLoadingPhaseTimer);
+                this.memoLoadingPhaseTimer = null;
+            }
+
+            this.memoLoadingPhaseStep = 0;
+            this.memoLoadingPhase = 'Membuat ulang memo';
         },
 
         scrollMemoChatToBottom() {

@@ -3,9 +3,9 @@
      x-ref="chatBox"
      data-chat-box
      x-on:message-streamed.window="scrollToBottom()"
-     x-on:message-send.window="optimisticUserMessage = $event.detail.text; isSwitchingConversation = false; scrollToBottom(true)"
+     x-on:message-send.window="optimisticUserMessage = $event.detail.text; isSwitchingConversation = false; startStreamingPlaceholder($event.detail.loadingContext || 'general'); scrollToBottom(true)"
      x-on:conversation-loading.window="isSwitchingConversation = true; optimisticUserMessage = ''"
-     x-on:conversation-loaded.window="isSwitchingConversation = false; scrollToBottom()">
+     x-on:conversation-loaded.window="isSwitchingConversation = false; resetStreamingState(); scrollToBottom()">
     @if(empty($messages))
         <div x-show="!optimisticUserMessage && !isSwitchingConversation" x-transition.opacity class="h-full flex flex-col items-center justify-center text-center">
             <div class="h-16 w-16 mb-6">
@@ -310,16 +310,8 @@
         </div>
     </template>
 
-    <div x-data="{ streaming: false, text: '', modelName: '', sources: [] }"
-         x-on:message-send.window="streaming = true; text = ''; modelName = ''; sources = ''"
-          x-on:message-complete.window="streaming = false; text = ''; modelName = ''; sources = ''"
-         x-init="
-            $wire.on('assistant-output', (data) => { text += data[0]; streaming = true; });
-            $wire.on('model-name', (data) => { modelName = data[0]; });
-            $wire.on('assistant-sources', (data) => { sources = data[0]; });
-                  $wire.on('assistant-message-persisted', () => { streaming = false; text = ''; modelName = ''; sources = ''; });
-          "
-         class="flex justify-start"
+    <div
+          class="flex justify-start"
          x-show="streaming">
         <div class="w-full sm:max-w-3xl flex flex-row items-start gap-4 px-2 sm:px-8">
              <div class="shrink-0 h-8 w-8 rounded-full bg-white border border-stone-200 shadow-sm p-1 flex items-center justify-center">
@@ -329,18 +321,28 @@
                  <div class="flex items-center gap-2 mb-1">
                      <span class="text-[13px] font-bold text-stone-800 dark:text-[#F8FAFC]">ISTA AI</span>
                      <span x-show="modelName" class="text-[10px] bg-white/80 shadow-sm border border-stone-200 px-1.5 py-0.5 rounded text-gray-600 dark:text-gray-300" x-text="modelName"></span>
-                 </div>
-                  <div class="rounded-2xl rounded-bl-sm bg-white/80 backdrop-blur-sm dark:bg-gray-800 border border-stone-200/60 dark:border-gray-800 text-[14.5px] leading-relaxed text-stone-700 dark:text-gray-100"
-                      :class="text === '' ? 'inline-flex items-center px-4 py-3 w-auto' : 'px-4 py-3 w-full max-w-[656px]'">
-                     <div x-show="text === ''" class="flex space-x-1.5 py-1">
-                        <div class="h-2 w-2 bg-gray-400 dark:bg-[#64748B] rounded-full animate-bounce"></div>
-                        <div class="h-2 w-2 bg-gray-400 dark:bg-[#64748B] rounded-full animate-bounce [animation-delay:-0.15s]"></div>
-                        <div class="h-2 w-2 bg-gray-400 dark:bg-[#64748B] rounded-full animate-bounce [animation-delay:-0.3s]"></div>
-                     </div>
-                    <p x-show="text !== ''" class="whitespace-pre-wrap break-words [overflow-wrap:anywhere]" x-text="text"></p>
-                 </div>
+                  </div>
+                   <div class="rounded-2xl rounded-bl-sm bg-white/80 backdrop-blur-sm dark:bg-gray-800 border border-stone-200/60 dark:border-gray-800 text-[14.5px] leading-relaxed text-stone-700 dark:text-gray-100"
+                       :class="streamingText === '' ? 'inline-flex items-center px-4 py-3 w-auto' : 'px-4 py-3 w-full max-w-[656px]'"
+                       role="status"
+                       aria-live="polite">
+                      <div x-show="streamingText === ''" class="inline-flex items-center gap-2.5 py-1">
+                         <span class="relative inline-flex h-4 w-4 items-center justify-center">
+                             <span class="absolute inset-0 animate-spin" style="animation-duration: 2.8s; animation-timing-function: linear;">
+                                 <span class="absolute left-1/2 top-0 h-1.5 w-1.5 -translate-x-1/2 rounded-full bg-gray-400/90 dark:bg-[#64748B]"></span>
+                                 <span class="absolute left-[12%] top-[62%] h-1.5 w-1.5 rounded-full bg-gray-400/75 dark:bg-[#64748B]/90"></span>
+                                 <span class="absolute right-[12%] top-[62%] h-1.5 w-1.5 rounded-full bg-gray-400/60 dark:bg-[#64748B]/80"></span>
+                             </span>
+                             <span class="absolute left-1/2 top-0 h-1.5 w-1.5 -translate-x-1/2 rounded-full bg-gray-500/90 dark:bg-[#94A3B8] animate-pulse" style="animation-duration: 1.3s;"></span>
+                             <span class="absolute left-[12%] top-[62%] h-1.5 w-1.5 rounded-full bg-gray-500/80 dark:bg-[#94A3B8]/90 animate-pulse" style="animation-duration: 1.5s; animation-delay: 0.12s;"></span>
+                             <span class="absolute right-[12%] top-[62%] h-1.5 w-1.5 rounded-full bg-gray-500/70 dark:bg-[#94A3B8]/80 animate-pulse" style="animation-duration: 1.7s; animation-delay: 0.24s;"></span>
+                         </span>
+                         <span class="text-[12px] font-medium text-[#64748B] dark:text-[#94A3B8]" x-text="loadingPhase"></span>
+                       </div>
+                    <p x-show="streamingText !== ''" class="whitespace-pre-wrap break-words [overflow-wrap:anywhere]" x-text="streamingText"></p>
+                  </div>
 
-                 <template x-if="sources && Array.isArray(sources) && sources.length > 0">
+                  <template x-if="sources && Array.isArray(sources) && sources.length > 0">
                      <div class="mt-2.5 w-full text-left"
                           x-transition:enter="transition ease-out duration-300 transform"
                           x-transition:enter-start="opacity-0 translate-y-2"
