@@ -6,6 +6,8 @@ use App\Models\Document;
 use App\Models\User;
 use App\Services\DocumentExportService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Arr;
+use Illuminate\Support\Str;
 use Illuminate\Support\Facades\Storage;
 use Mockery;
 use Tests\TestCase;
@@ -40,6 +42,60 @@ class DocumentExportTest extends TestCase
         $response->assertHeader('Content-Type', 'application/pdf');
         $this->assertStringContainsString('attachment; filename="jawaban-ai.pdf"', (string) $response->headers->get('Content-Disposition'));
         $this->assertSame('%PDF-1.4 fake', $response->getContent());
+    }
+
+    public function test_export_route_rejects_oversized_content_and_does_not_call_service(): void
+    {
+        $user = User::factory()->create(['email_verified_at' => now()]);
+        $oversized = str_repeat('A', 512001);
+
+        $service = Mockery::mock(DocumentExportService::class);
+        $service->shouldNotReceive('exportContent');
+        $this->app->instance(DocumentExportService::class, $service);
+
+        $response = $this->actingAs($user)->post(route('documents.export'), [
+            'content_html' => $oversized,
+            'target_format' => 'pdf',
+            'file_name' => 'jawaban-ai',
+        ]);
+
+        $response->assertSessionHasErrors(['content_html']);
+    }
+
+    public function test_documents_export_route_has_throttle_middleware(): void
+    {
+        $route = Arr::first(app('router')->getRoutes(), fn ($route) => $route->getName() === 'documents.export');
+
+        $this->assertNotNull($route);
+        $middlewares = $route->gatherMiddleware();
+
+        $hasThrottle = (bool) collect($middlewares)->first(fn ($middleware) => Str::startsWith($middleware, 'throttle:'));
+
+        $this->assertTrue($hasThrottle);
+    }
+
+    public function test_documents_content_html_route_has_throttle_middleware(): void
+    {
+        $route = Arr::first(app('router')->getRoutes(), fn ($route) => $route->getName() === 'documents.content-html');
+
+        $this->assertNotNull($route);
+        $middlewares = $route->gatherMiddleware();
+
+        $hasThrottle = (bool) collect($middlewares)->first(fn ($middleware) => Str::startsWith($middleware, 'throttle:'));
+
+        $this->assertTrue($hasThrottle);
+    }
+
+    public function test_documents_extract_tables_route_has_throttle_middleware(): void
+    {
+        $route = Arr::first(app('router')->getRoutes(), fn ($route) => $route->getName() === 'documents.extract-tables');
+
+        $this->assertNotNull($route);
+        $middlewares = $route->gatherMiddleware();
+
+        $hasThrottle = (bool) collect($middlewares)->first(fn ($middleware) => Str::startsWith($middleware, 'throttle:'));
+
+        $this->assertTrue($hasThrottle);
     }
 
     public function test_extract_tables_route_returns_document_tables_for_owner(): void
@@ -147,6 +203,14 @@ class DocumentExportTest extends TestCase
 
         $this->get(route('documents.content-html', $document))->assertRedirect();
         $this->get(route('documents.extract-tables', $document))->assertRedirect();
+    }
+
+    public function test_chat_route_uses_throttle_middleware(): void
+    {
+        $route = Arr::first(app('router')->getRoutes(), fn ($route) => $route->getName() === 'chat');
+
+        $this->assertNotNull($route);
+        $this->assertContains('throttle:30,1', $route->gatherMiddleware());
     }
 
     private function createDocument(User $user, string $mime, string $name): Document

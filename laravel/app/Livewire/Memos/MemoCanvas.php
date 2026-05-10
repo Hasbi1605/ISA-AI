@@ -7,7 +7,9 @@ use App\Services\Memo\MemoGenerationService;
 use App\Services\OnlyOffice\JwtSigner;
 use App\Services\OnlyOffice\MemoDocumentKey;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\RateLimiter;
 use Illuminate\Support\Facades\URL;
+use Illuminate\Validation\ValidationException;
 use Livewire\Attributes\Layout;
 use Livewire\Component;
 
@@ -36,6 +38,8 @@ class MemoCanvas extends Component
 
     public function generate(MemoGenerationService $generationService): void
     {
+        $this->enforceRateLimit('generate', 5, 60, 'Terlalu banyak generate memo. Coba lagi sebentar.');
+
         $data = $this->validate([
             'memoType' => ['required', 'in:'.implode(',', array_keys(Memo::TYPES))],
             'title' => ['required', 'string', 'max:160'],
@@ -101,5 +105,27 @@ class MemoCanvas extends Component
             'editorConfig' => $this->editorConfig(),
             'onlyOfficeApiUrl' => rtrim((string) config('services.onlyoffice.public_url'), '/').'/web-apps/apps/api/documents/api.js',
         ]);
+    }
+
+    protected function enforceRateLimit(string $action, int $maxAttempts, int $decaySeconds = 60, ?string $message = null): void
+    {
+        $key = $this->rateLimitKey($action);
+
+        if (RateLimiter::tooManyAttempts($key, $maxAttempts)) {
+            throw ValidationException::withMessages([
+                'rate_limit' => $message ?? 'Terlalu banyak permintaan. Silakan coba lagi sebentar.',
+            ]);
+        }
+
+        RateLimiter::hit($key, $decaySeconds);
+    }
+
+    protected function rateLimitKey(string $action): string
+    {
+        $userId = Auth::id();
+        $ip = request()?->ip() ?? 'unknown';
+        $userPart = $userId ? 'user-'.$userId : 'guest';
+
+        return implode(':', [static::class, $action, $userPart, $ip]);
     }
 }

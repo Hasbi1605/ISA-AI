@@ -34,7 +34,7 @@ Route::view('profile', 'profile')
     ->name('profile');
 
 Route::get('chat', ChatIndex::class)
-    ->middleware(['auth', 'verified'])
+    ->middleware(['auth', 'verified', 'throttle:30,1'])
     ->name('chat');
 
 Route::post('onlyoffice/callback/{memo}', OnlyOfficeCallbackController::class)
@@ -58,9 +58,13 @@ Route::middleware(['auth', 'verified'])
     ->prefix('documents')
     ->name('documents.')
     ->group(function () {
-        Route::get('/{document}/content-html', [DocumentExportController::class, 'extractContent'])->name('content-html');
-        Route::get('/{document}/extract-tables', [DocumentExportController::class, 'extractTables'])->name('extract-tables');
-        Route::post('/export', [DocumentExportController::class, 'export'])->name('export');
+        Route::get('/{document}/content-html', [DocumentExportController::class, 'extractContent'])
+            ->middleware('throttle:10,1')
+            ->name('content-html');
+        Route::get('/{document}/extract-tables', [DocumentExportController::class, 'extractTables'])
+            ->middleware('throttle:10,1')
+            ->name('extract-tables');
+        Route::post('/export', [DocumentExportController::class, 'export'])->middleware('throttle:10,1')->name('export');
     });
 
 Route::middleware(['auth', 'verified'])

@@ -84,33 +84,45 @@
 </div>
 
 <script>
-    const showLoader = () => {
-        const loaderEl = document.getElementById('global-page-loader');
-        if(loaderEl) loaderEl.classList.remove('loader-hidden');
-    };
-    
-    const hideLoader = () => {
-        const loaderEl = document.getElementById('global-page-loader');
-        if(loaderEl) {
-            setTimeout(() => {
-                loaderEl.classList.add('loader-hidden');
-            }, 150);
+    (() => {
+        if (!window.__globalPageLoaderHandlers) {
+            const showLoader = () => {
+                const loaderEl = document.getElementById('global-page-loader');
+                if (loaderEl) loaderEl.classList.remove('loader-hidden');
+            };
+
+            const hideLoader = () => {
+                const loaderEl = document.getElementById('global-page-loader');
+                if (loaderEl) {
+                    setTimeout(() => {
+                        loaderEl.classList.add('loader-hidden');
+                    }, 150);
+                }
+            };
+
+            const onPageShow = (e) => {
+                if (e.persisted) hideLoader();
+            };
+
+            window.__globalPageLoaderHandlers = {
+                showLoader,
+                hideLoader,
+                onPageShow,
+            };
+
+            // Standard page transitions
+            window.addEventListener('beforeunload', showLoader);
+            window.addEventListener('load', hideLoader);
+
+            // Fallback for BFCache (Back/Forward navigation)
+            window.addEventListener('pageshow', onPageShow);
+
+            // Livewire SPA mode support (wire:navigate)
+            document.addEventListener('livewire:navigating', showLoader);
+            document.addEventListener('livewire:navigated', hideLoader);
         }
-    };
 
-    // Standard page transitions
-    window.addEventListener('beforeunload', showLoader);
-    window.addEventListener('load', hideLoader);
-    
-    // Fallback for BFCache (Back/Forward navigation)
-    window.addEventListener('pageshow', (e) => {
-        if (e.persisted) hideLoader();
-    });
-
-    // Livewire SPA mode support (wire:navigate)
-    document.addEventListener('livewire:navigating', showLoader);
-    document.addEventListener('livewire:navigated', hideLoader);
-    
-    // Safety fallback (force hide after 8 seconds)
-    setTimeout(hideLoader, 8000);
+        // Safety fallback (force hide after 8 seconds)
+        setTimeout(window.__globalPageLoaderHandlers.hideLoader, 8000);
+    })();
 </script>
