@@ -250,7 +250,28 @@ def test_documents_extract_content_route_rejects_unsafe_filename(monkeypatch, fi
             return False
 
     monkeypatch.setattr("builtins.open", lambda *_args, **_kwargs: DummyFile())
-    monkeypatch.setattr("app.routers.documents.extract_document_content_html", lambda *_args, **_kwargs: "<article></article>")
+    calls = {"count": 0}
+
+    def _fake_extract_document_content_html(*_args, **_kwargs):
+        calls["count"] += 1
+        return "<article></article>"
+
+    monkeypatch.setattr("app.routers.documents.extract_document_content_html", _fake_extract_document_content_html)
+
+    response = client.post(
+        "/api/documents/extract-content",
+        headers=AUTH_HEADERS,
+        files={
+            "file": (
+                filename,
+                b"PK\x03\x04 fake docx",
+                "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            ),
+        },
+    )
+
+    assert response.status_code == 400
+    assert calls["count"] == 0
 
 
 def test_export_content_uses_safe_url_fetcher(monkeypatch):
