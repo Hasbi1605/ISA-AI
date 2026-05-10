@@ -6,6 +6,7 @@ use App\Mail\VerificationCodeMail;
 use App\Livewire\Chat\ChatIndex;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Lang;
 use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Facades\Notification;
 use Livewire\Livewire;
@@ -266,5 +267,64 @@ class RegistrationTest extends TestCase
 
         Mail::assertQueued(VerificationCodeMail::class, 2);
         $this->assertGuest();
+    }
+
+    public function test_registration_requires_valid_fields_and_duplicate_email_is_rejected_in_indonesian(): void
+    {
+        User::factory()->create([
+            'email' => 'existing@example.com',
+            'email_verified_at' => now(),
+        ]);
+
+        Volt::test('pages.auth.login')
+            ->set('view', 'register')
+            ->set('name', '')
+            ->set('register_email', 'not-an-email')
+            ->set('register_password', '')
+            ->set('register_password_confirmation', '')
+            ->call('register')
+            ->assertHasErrors([
+                'name' => 'Kolom nama wajib diisi.',
+                'register_email' => 'Kolom email harus berupa alamat email yang valid.',
+                'register_password' => 'Kolom kata sandi wajib diisi.',
+            ]);
+
+        Volt::test('pages.auth.login')
+            ->set('view', 'register')
+            ->set('name', 'Test User')
+            ->set('register_email', 'existing@example.com')
+            ->set('register_password', 'password')
+            ->set('register_password_confirmation', 'password')
+            ->call('register')
+            ->assertHasErrors([
+                'register_email' => 'Kolom email sudah digunakan.',
+            ]);
+    }
+
+    public function test_register_confirmation_error_is_shown_and_indonesian(): void
+    {
+        Volt::test('pages.auth.login')
+            ->set('view', 'register')
+            ->set('name', 'Test User')
+            ->set('register_email', 'confirm-test@example.com')
+            ->set('register_password', 'password')
+            ->set('register_password_confirmation', 'different-password')
+            ->call('register')
+            ->assertHasErrors(['register_password' => 'kata sandi tidak cocok.']);
+    }
+
+    public function test_register_confirmation_error_is_indonesian_when_locale_is_en(): void
+    {
+        // Force app locale to 'en' before Livewire component mount to simulate production
+        app()->setLocale('en');
+
+        Volt::test('pages.auth.login')
+            ->set('view', 'register')
+            ->set('name', 'Test User')
+            ->set('register_email', 'confirm-test-2@example.com')
+            ->set('register_password', 'password')
+            ->set('register_password_confirmation', 'different-password')
+            ->call('register')
+            ->assertHasErrors(['register_password' => 'kata sandi tidak cocok.']);
     }
 }

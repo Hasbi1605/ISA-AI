@@ -93,9 +93,34 @@ class ProfileTest extends TestCase
             ->call('deleteUser');
 
         $component
-            ->assertHasErrors('password')
+            ->assertHasErrors(['password' => 'Kata sandi yang dimasukkan salah.'])
             ->assertNoRedirect();
 
         $this->assertNotNull($user->fresh());
+    }
+
+    public function test_profile_email_must_be_valid_and_unique_in_indonesian(): void
+    {
+        $user = User::factory()->create([
+            'email' => 'primary@example.com',
+        ]);
+
+        User::factory()->create([
+            'email' => 'taken@example.com',
+        ]);
+
+        $this->actingAs($user);
+
+        Volt::test('profile.update-profile-information-form')
+            ->set('name', 'User Test')
+            ->set('email', 'invalid-email')
+            ->call('updateProfileInformation')
+            ->assertHasErrors(['email' => 'Kolom email harus berupa alamat email yang valid.']);
+
+        Volt::test('profile.update-profile-information-form')
+            ->set('name', 'User Test')
+            ->set('email', 'taken@example.com')
+            ->call('updateProfileInformation')
+            ->assertHasErrors(['email' => 'Kolom email sudah digunakan.']);
     }
 }

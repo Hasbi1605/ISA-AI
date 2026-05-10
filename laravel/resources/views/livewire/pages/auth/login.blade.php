@@ -114,16 +114,6 @@ new #[Layout('layouts.auth-canvas')] class extends Component
                     ->where(fn ($query) => $query->whereNotNull('email_verified_at')),
             ],
             'register_password' => ['required', 'string', 'confirmed', Rules\Password::defaults()],
-        ], [
-            'name.required' => 'Nama lengkap wajib diisi.',
-            'register_email.required' => 'Alamat email wajib diisi.',
-            'register_email.unique' => 'Email ini sudah terdaftar.',
-            'register_email.email' => 'Format email tidak valid.',
-            'register_password.required' => 'Kata sandi wajib diisi.',
-            'register_password.confirmed' => 'Konfirmasi kata sandi tidak cocok.',
-        ], [
-            'register_email' => 'email',
-            'register_password' => 'password',
         ]);
 
         $this->pendingRegistrationToken = $this->pendingRegistrationWorkflowService()->startRegistration(

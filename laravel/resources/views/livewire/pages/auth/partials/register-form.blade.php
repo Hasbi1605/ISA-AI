@@ -54,6 +54,9 @@
             </div>
             <input wire:model="register_password_confirmation" id="register_password_confirmation" class="ista-input" type="password" name="register_password_confirmation" placeholder="••••••••" required autocomplete="new-password" />
         </div>
+        @if ($errors->has('register_password_confirmation'))
+            <p class="ml-1 mt-1 animate-pulse text-[12px] font-bold text-rose-600">{{ $errors->first('register_password_confirmation') }}</p>
+        @endif
     </div>
 
     <div class="animate-enter-4 pt-2">
