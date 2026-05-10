@@ -8,6 +8,7 @@ use App\Models\MemoVersion;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\RateLimiter;
 use Illuminate\Support\Facades\Storage;
 use Livewire\Livewire;
 use Tests\TestCase;
@@ -15,6 +16,41 @@ use Tests\TestCase;
 class MemoWorkspaceTest extends TestCase
 {
     use RefreshDatabase;
+
+    protected function tearDown(): void
+    {
+        RateLimiter::clearResolvedInstances();
+        parent::tearDown();
+    }
+
+    public function test_generate_configured_memo_rate_limited_blocks_before_http_and_memo_creation(): void
+    {
+        Http::fake([
+            '*' => fn () => throw new \RuntimeException('HTTP should not be called when rate-limited.'),
+        ]);
+
+        $user = User::factory()->create(['email_verified_at' => now()]);
+
+        $key = MemoWorkspace::class.':generateConfiguredMemo:user-'.$user->id.':127.0.0.1';
+        for ($i = 0; $i < 5; $i++) {
+            RateLimiter::hit($key, 60);
+        }
+
+        Livewire::actingAs($user)
+            ->test(MemoWorkspace::class)
+            ->set('memoNumber', 'M-01/I-Yog/UM.01/05/2026')
+            ->set('memoRecipient', 'Kepala Subbagian Tata Usaha')
+            ->set('memoSender', 'Kepala Istana Kepresidenan Yogyakarta')
+            ->set('title', 'Rapat Lingkungan')
+            ->set('memoDate', '5 Mei 2026')
+            ->set('memoContent', 'Isi memo lingkungan.')
+            ->set('memoSignatory', 'Deni Mulyana')
+            ->call('generateConfiguredMemo')
+            ->assertHasErrors(['rate_limit']);
+
+        $this->assertDatabaseCount('memos', 0);
+        Http::assertNothingSent();
+    }
 
     public function test_workspace_renders_parent_driven_toggle_and_home_link(): void
     {

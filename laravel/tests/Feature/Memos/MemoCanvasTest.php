@@ -9,6 +9,7 @@ use App\Services\OnlyOffice\JwtSigner;
 use Carbon\Carbon;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\RateLimiter;
 use Illuminate\Support\Facades\Storage;
 use Livewire\Livewire;
 use Tests\TestCase;
@@ -16,6 +17,36 @@ use Tests\TestCase;
 class MemoCanvasTest extends TestCase
 {
     use RefreshDatabase;
+
+    protected function tearDown(): void
+    {
+        RateLimiter::clearResolvedInstances();
+        parent::tearDown();
+    }
+
+    public function test_generate_rate_limited_blocks_before_http_and_memo_creation(): void
+    {
+        Http::fake([
+            '*' => fn () => throw new \RuntimeException('HTTP should not be called when rate-limited.'),
+        ]);
+
+        $user = User::factory()->create(['email_verified_at' => now()]);
+        $key = MemoCanvas::class.':generate:user-'.$user->id.':127.0.0.1';
+        for ($i = 0; $i < 5; $i++) {
+            RateLimiter::hit($key, 60);
+        }
+
+        Livewire::actingAs($user)
+            ->test(MemoCanvas::class)
+            ->set('memoType', 'memo_internal')
+            ->set('title', 'Memo Rate Limited')
+            ->set('context', 'Buat memo rapat koordinasi.')
+            ->call('generate')
+            ->assertHasErrors(['rate_limit']);
+
+        $this->assertDatabaseCount('memos', 0);
+        Http::assertNothingSent();
+    }
 
     public function test_generate_creates_memo_and_redirects_to_canvas(): void
     {

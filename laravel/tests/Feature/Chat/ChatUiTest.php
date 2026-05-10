@@ -7,14 +7,101 @@ use App\Models\Conversation;
 use App\Models\Document;
 use App\Models\Message;
 use App\Models\User;
+use App\Services\AIService;
+use App\Services\DocumentExportService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\RateLimiter;
 use Livewire\Livewire;
 use Tests\TestCase;
 
 class ChatUiTest extends TestCase
 {
     use RefreshDatabase;
+
+    protected function tearDown(): void
+    {
+        RateLimiter::clearResolvedInstances();
+        parent::tearDown();
+    }
+
+    public function test_send_message_rate_limited_blocks_before_ai_service_call(): void
+    {
+        $user = User::factory()->create();
+
+        $this->app->bind(AIService::class, fn () => new class extends AIService
+        {
+            public function sendChat(array $messages, ?array $document_filenames = null, ?string $user_id = null, bool $force_web_search = false, ?string $source_policy = null, bool $allow_auto_realtime_web = true): \Generator
+            {
+                throw new \RuntimeException('AIService should not be called when rate-limited.');
+            }
+        });
+
+        $key = ChatIndex::class.':sendMessage:user-'.$user->id.':127.0.0.1';
+        for ($i = 0; $i < 10; $i++) {
+            RateLimiter::hit($key, 60);
+        }
+
+        Livewire::actingAs($user)
+            ->test(ChatIndex::class)
+            ->set('prompt', 'Halo')
+            ->call('sendMessage')
+            ->assertHasErrors(['rate_limit']);
+    }
+
+    public function test_send_message_rejects_prompt_over_8000_chars_before_rate_limit_or_ai_call(): void
+    {
+        $user = User::factory()->create();
+
+        $this->app->bind(AIService::class, fn () => new class extends AIService
+        {
+            public function sendChat(array $messages, ?array $document_filenames = null, ?string $user_id = null, bool $force_web_search = false, ?string $source_policy = null, bool $allow_auto_realtime_web = true): \Generator
+            {
+                throw new \RuntimeException('AIService should not be called for invalid prompt.');
+            }
+        });
+
+        Livewire::actingAs($user)
+            ->test(ChatIndex::class)
+            ->set('prompt', str_repeat('a', 8001))
+            ->call('sendMessage')
+            ->assertHasErrors(['prompt' => 'max']);
+    }
+
+    public function test_save_answer_to_google_drive_rate_limited_returns_error_before_export_service_call(): void
+    {
+        $user = User::factory()->create();
+        $conversation = Conversation::create([
+            'user_id' => $user->id,
+            'title' => 'Drive export limiter',
+        ]);
+        $message = Message::create([
+            'conversation_id' => $conversation->id,
+            'role' => 'assistant',
+            'content' => 'Jawaban untuk diuji.',
+        ]);
+
+        $this->app->bind(DocumentExportService::class, fn () => new class extends DocumentExportService
+        {
+            public function exportContent(string $html, string $format, string $basename = 'document'): array
+            {
+                throw new \RuntimeException('DocumentExportService should not be called when rate-limited.');
+            }
+        });
+
+        $key = ChatIndex::class.':saveAnswerToGoogleDrive:user-'.$user->id.':127.0.0.1';
+        for ($i = 0; $i < 10; $i++) {
+            RateLimiter::hit($key, 60);
+        }
+
+        Livewire::actingAs($user)
+            ->test(ChatIndex::class)
+            ->call('saveAnswerToGoogleDrive', $message->id, 'pdf')
+            ->assertReturned([
+                'ok' => false,
+                'message' => 'Terlalu banyak permintaan ekspor Google Drive. Coba lagi sebentar.',
+            ]);
+    }
 
     public function test_chat_page_renders_multiline_and_document_feedback_hooks(): void
     {
