@@ -139,6 +139,7 @@ const registerChatPageData = (Alpine) => {
         loadingPhaseTimer: null,
         loadingPhaseStep: 0,
         hasFirstAssistantChunk: false,
+        _messageCompleteHandler: null,
 
         init() {
             this.$el.dataset.chatMessagesReady = 'true';
@@ -151,7 +152,8 @@ const registerChatPageData = (Alpine) => {
                 observer.observe(chatBox, { childList: true, subtree: true, characterData: true });
             }
 
-            this.$wire.on('assistant-output', () => this.scrollToBottom());
+            this._messageCompleteHandler = () => this.resetStreamingState();
+            window.addEventListener('message-complete', this._messageCompleteHandler);
             this.$wire.on('assistant-output', (data) => {
                 this.streamingText += data[0] || '';
                 this.streaming = true;
@@ -166,11 +168,21 @@ const registerChatPageData = (Alpine) => {
                 this.sources = data[0] || [];
             });
             this.$wire.on('assistant-message-persisted', () => this.resetStreamingState());
-            window.addEventListener('message-complete', () => this.resetStreamingState());
             this.$wire.on('user-message-acked', () => {
                 this.optimisticUserMessage = '';
                 this.scrollToBottom();
             });
+        },
+
+        destroy() {
+            if (this.loadingPhaseTimer) {
+                window.clearInterval(this.loadingPhaseTimer);
+                this.loadingPhaseTimer = null;
+            }
+            if (this._messageCompleteHandler) {
+                window.removeEventListener('message-complete', this._messageCompleteHandler);
+                this._messageCompleteHandler = null;
+            }
         },
 
         startStreamingPlaceholder(context = 'general') {
@@ -211,7 +223,7 @@ const registerChatPageData = (Alpine) => {
             }
 
             if (this.loadingContext === 'hybrid') {
-                return ['Sedang membaca dokumen', 'AI sedang berpikir', 'Menampilkan jawaban'];
+                return ['Sedang membaca dokumen + Mencari di web', 'AI sedang berpikir', 'Menampilkan jawaban'];
             }
 
             return ['AI sedang berpikir', 'Menampilkan jawaban'];
@@ -221,6 +233,8 @@ const registerChatPageData = (Alpine) => {
             this.loadingPhaseTimer = window.setInterval(() => {
                 if (this.hasFirstAssistantChunk) {
                     this.loadingPhase = 'Menampilkan jawaban';
+                    window.clearInterval(this.loadingPhaseTimer);
+                    this.loadingPhaseTimer = null;
                     return;
                 }
 
