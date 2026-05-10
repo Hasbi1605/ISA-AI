@@ -6,8 +6,6 @@ use App\Http\Controllers\Documents\DocumentPreviewController;
 use App\Http\Controllers\Memos\MemoFileController;
 use App\Http\Controllers\OnlyOfficeCallbackController;
 use App\Livewire\Chat\ChatIndex;
-use App\Livewire\Memos\MemoCanvas;
-use App\Livewire\Memos\MemoIndex;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
 
@@ -40,18 +38,26 @@ Route::get('chat', ChatIndex::class)
 Route::post('onlyoffice/callback/{memo}', OnlyOfficeCallbackController::class)
     ->name('onlyoffice.callback');
 
-Route::get('memos/{memo}/signed-file', [MemoFileController::class, 'signed'])
+Route::get('chat/memos/{memo}/signed-file', [MemoFileController::class, 'signed'])
     ->name('memos.file.signed');
+
+Route::middleware(['auth', 'verified'])
+    ->prefix('chat/memos')
+    ->name('memos.')
+    ->group(function () {
+        Route::get('/{memo}/download', [MemoFileController::class, 'download'])->name('download');
+        Route::get('/{memo}/export-pdf', [MemoFileController::class, 'exportPdf'])->name('export.pdf');
+    });
 
 Route::middleware(['auth', 'verified'])
     ->prefix('memos')
     ->name('memos.')
     ->group(function () {
-        Route::get('/', MemoIndex::class)->name('index');
-        Route::get('/create', MemoCanvas::class)->name('create');
-        Route::get('/{memo}/download', [MemoFileController::class, 'download'])->name('download');
-        Route::get('/{memo}/export-pdf', [MemoFileController::class, 'exportPdf'])->name('export.pdf');
-        Route::get('/{memo}', MemoCanvas::class)->name('edit');
+        Route::redirect('/', '/chat?tab=memo')->name('index');
+        Route::redirect('/create', '/chat?tab=memo')->name('create');
+        Route::redirect('/{memo}', '/chat?tab=memo')->name('edit');
+        Route::redirect('/{legacyMemoPath}', '/chat?tab=memo')
+            ->where('legacyMemoPath', '.*');
     });
 
 Route::middleware(['auth', 'verified'])

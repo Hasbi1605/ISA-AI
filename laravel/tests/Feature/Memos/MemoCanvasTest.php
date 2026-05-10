@@ -76,7 +76,7 @@ class MemoCanvasTest extends TestCase
         Storage::disk('local')->assertExists($memo->file_path);
     }
 
-    public function test_canvas_forbids_non_owner(): void
+    public function test_legacy_canvas_route_redirects_to_chat_memo_tab(): void
     {
         $owner = User::factory()->create(['email_verified_at' => now()]);
         $other = User::factory()->create(['email_verified_at' => now()]);
@@ -91,7 +91,7 @@ class MemoCanvasTest extends TestCase
 
         $this->actingAs($other)
             ->get(route('memos.edit', $memo))
-            ->assertForbidden();
+            ->assertRedirect(route('chat', ['tab' => 'memo']));
     }
 
     public function test_editor_token_signs_exact_onlyoffice_config_shape(): void

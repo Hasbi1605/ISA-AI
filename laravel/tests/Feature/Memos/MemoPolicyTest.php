@@ -160,7 +160,7 @@ class MemoPolicyTest extends TestCase
         $this->assertSame('pdf', $conversionPayload['outputtype']);
         $this->assertStringStartsWith('memo-'.$memo->id.'-current-', $conversionPayload['key']);
         $this->assertStringEndsWith('-pdf', $conversionPayload['key']);
-        $this->assertStringStartsWith('http://laravel:8000/memos/'.$memo->id.'/signed-file?', $conversionPayload['url']);
+        $this->assertStringStartsWith('http://laravel:8000/chat/memos/'.$memo->id.'/signed-file?', $conversionPayload['url']);
         $this->assertSame('Memo-Test.docx', $conversionPayload['title']);
     }
 
