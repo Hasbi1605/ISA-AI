@@ -2,18 +2,18 @@
 <div x-show="!isMobile || memoMobilePanel === 'document'" x-cloak class="flex-1 flex flex-col min-w-0 bg-stone-50 dark:bg-gray-950 overflow-hidden">
 
     {{-- Document Header --}}
-    <div class="relative z-30 min-h-[61px] flex-shrink-0 flex items-center justify-between gap-3 px-5 border-b border-stone-200/60 bg-white/85 backdrop-blur-sm dark:border-[#1E293B]/70 dark:bg-gray-800/85">
-        <div class="flex min-w-0 flex-wrap items-center gap-3">
-            <button type="button" @click="showMemoChatPanel()" class="inline-flex items-center justify-center rounded-lg border border-stone-200 bg-white p-2 text-stone-600 shadow-sm transition hover:bg-stone-100 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700 lg:hidden" aria-label="Kembali ke chat memo">
+    <div class="relative z-30 min-h-[61px] flex-shrink-0 flex items-center justify-between gap-2 px-3 sm:px-5 border-b border-stone-200/60 bg-white/85 backdrop-blur-sm dark:border-[#1E293B]/70 dark:bg-gray-800/85">
+        <div class="flex min-w-0 items-center gap-2">
+            <button type="button" @click="showMemoChatPanel()" class="inline-flex items-center justify-center rounded-lg border border-stone-200 bg-white p-2 text-stone-600 shadow-sm transition hover:bg-stone-100 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700 lg:hidden" aria-label="Kembali ke chat memo" title="Kembali">
                 <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M15 19l-7-7 7-7" />
                 </svg>
             </button>
-            <div class="inline-flex items-center gap-1.5 rounded-lg border border-stone-200 bg-white px-3 py-1.5 text-[12.5px] font-semibold text-stone-800 shadow-sm dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200">
+            <div class="inline-flex items-center gap-1.5 rounded-lg border border-stone-200 bg-white px-2.5 py-1 text-[12.5px] font-semibold text-stone-800 shadow-sm dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200">
                 <svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
                 </svg>
-                Dokumen
+                <span class="hidden sm:inline">Dokumen</span>
             </div>
         </div>
 
@@ -26,16 +26,17 @@
                 ], fn ($value) => filled($value));
             @endphp
             <div
-                class="flex flex-shrink-0 items-center gap-2"
+                class="flex flex-shrink-0 items-center gap-1.5 sm:gap-2"
                 x-data="memoDocumentDownloads"
             >
                 <button type="button" wire:click="regenerate" wire:loading.attr="disabled" wire:target="regenerate,generateRevisionFromChat,generateFromChat"
-                        class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-stone-200 dark:border-gray-700 text-[12px] font-semibold text-stone-600 dark:text-gray-300 hover:bg-stone-100 dark:hover:bg-gray-800 transition-all disabled:opacity-50">
-                    <svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        class="inline-flex items-center gap-1 px-2 py-1.5 sm:px-3 rounded-lg border border-stone-200 dark:border-gray-700 text-[12px] font-semibold text-stone-600 dark:text-gray-300 hover:bg-stone-100 dark:hover:bg-gray-800 transition-all disabled:opacity-50"
+                        aria-label="Regenerate dokumen" title="Regenerate">
+                    <span wire:loading wire:target="regenerate,generateRevisionFromChat" class="h-3.5 w-3.5 rounded-full border-2 border-current border-t-transparent animate-spin" aria-hidden="true"></span>
+                    <svg wire:loading.remove wire:target="regenerate,generateRevisionFromChat" xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
                     </svg>
-                    <span wire:loading.remove wire:target="regenerate">Regenerate</span>
-                    <span wire:loading wire:target="regenerate,generateRevisionFromChat">...</span>
+                    <span class="hidden sm:inline">Regenerate</span>
                 </button>
                 <button type="button"
                         data-download-url="{{ route('memos.download', $memoDownloadRouteParameters) }}"
@@ -45,12 +46,13 @@
                         wire:loading.attr="disabled"
                         wire:target="switchMemoVersion,generateRevisionFromChat,generateFromChat,generateConfiguredMemo"
                         :disabled="downloadLoading !== null"
-                        class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-stone-200 dark:border-gray-700 text-[12px] font-semibold text-stone-600 dark:text-gray-300 hover:bg-stone-100 dark:hover:bg-gray-800 transition-all disabled:cursor-not-allowed disabled:opacity-60">
+                        class="inline-flex items-center gap-1 px-2 py-1.5 sm:px-3 rounded-lg border border-stone-200 dark:border-gray-700 text-[12px] font-semibold text-stone-600 dark:text-gray-300 hover:bg-stone-100 dark:hover:bg-gray-800 transition-all disabled:cursor-not-allowed disabled:opacity-60"
+                        aria-label="Unduh DOCX" title="Unduh DOCX">
                     <span x-show="downloadLoading === 'docx'" style="display:none;" class="h-3.5 w-3.5 rounded-full border-2 border-current border-t-transparent animate-spin" aria-hidden="true"></span>
                     <svg x-show="downloadLoading !== 'docx'" xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
                     </svg>
-                    DOCX
+                    <span class="hidden sm:inline">DOCX</span>
                 </button>
                 <button type="button"
                         data-download-url="{{ route('memos.export.pdf', $memoDownloadRouteParameters) }}"
@@ -60,12 +62,13 @@
                         wire:loading.attr="disabled"
                         wire:target="switchMemoVersion,generateRevisionFromChat,generateFromChat,generateConfiguredMemo"
                         :disabled="downloadLoading !== null"
-                        class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-ista-primary text-[12px] font-semibold text-white hover:bg-ista-dark transition-all disabled:cursor-not-allowed disabled:opacity-70">
+                        class="inline-flex items-center gap-1 px-2 py-1.5 sm:px-3 rounded-lg bg-ista-primary text-[12px] font-semibold text-white hover:bg-ista-dark transition-all disabled:cursor-not-allowed disabled:opacity-70"
+                        aria-label="Unduh PDF" title="Unduh PDF">
                     <span x-show="downloadLoading === 'pdf'" style="display:none;" class="h-3.5 w-3.5 rounded-full border-2 border-white/70 border-t-transparent animate-spin" aria-hidden="true"></span>
                     <svg x-show="downloadLoading !== 'pdf'" xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
                     </svg>
-                    PDF
+                    <span class="hidden sm:inline">PDF</span>
                 </button>
             </div>
         @endif
