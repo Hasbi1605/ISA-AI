@@ -91,8 +91,48 @@ class PasswordResetTest extends TestCase
         Volt::test('pages.auth.forgot-password')
             ->set('email', $user->email)
             ->call('sendPasswordResetLink')
-            ->assertHasErrors(['email']);
+            ->assertHasErrors(['email' => 'Email belum terverifikasi. Silakan daftar ulang lalu verifikasi kode OTP.']);
 
         Notification::assertNothingSent();
+    }
+
+    public function test_password_reset_link_requires_registered_email_in_indonesian(): void
+    {
+        Notification::fake();
+
+        Volt::test('pages.auth.forgot-password')
+            ->set('email', 'missing@example.com')
+            ->call('sendPasswordResetLink')
+            ->assertHasErrors(['email' => 'Kami tidak dapat menemukan pengguna dengan alamat email tersebut.']);
+
+        Notification::assertNothingSent();
+    }
+
+    public function test_reset_password_fails_with_invalid_token_in_indonesian(): void
+    {
+        $user = User::factory()->create();
+
+        Volt::test('pages.auth.reset-password', ['token' => 'invalid-token'])
+            ->set('email', $user->email)
+            ->set('password', 'password')
+            ->set('password_confirmation', 'password')
+            ->call('resetPassword')
+            ->assertHasErrors(['email' => 'Token reset kata sandi tidak valid.']);
+    }
+
+    public function test_reset_password_requires_fields_in_indonesian(): void
+    {
+        Notification::fake();
+
+        Volt::test('pages.auth.reset-password', ['token' => ''])
+            ->set('email', '')
+            ->set('password', '')
+            ->set('password_confirmation', '')
+            ->call('resetPassword')
+            ->assertHasErrors([
+                'token' => 'Kolom token wajib diisi.',
+                'email' => 'Kolom email wajib diisi.',
+                'password' => 'Kolom kata sandi wajib diisi.',
+            ]);
     }
 }

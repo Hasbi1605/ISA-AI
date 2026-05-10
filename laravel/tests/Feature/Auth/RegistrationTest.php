@@ -267,4 +267,36 @@ class RegistrationTest extends TestCase
         Mail::assertQueued(VerificationCodeMail::class, 2);
         $this->assertGuest();
     }
+
+    public function test_registration_requires_valid_fields_and_duplicate_email_is_rejected_in_indonesian(): void
+    {
+        User::factory()->create([
+            'email' => 'existing@example.com',
+            'email_verified_at' => now(),
+        ]);
+
+        Volt::test('pages.auth.login')
+            ->set('view', 'register')
+            ->set('name', '')
+            ->set('register_email', 'not-an-email')
+            ->set('register_password', '')
+            ->set('register_password_confirmation', '')
+            ->call('register')
+            ->assertHasErrors([
+                'name' => 'Kolom nama wajib diisi.',
+                'register_email' => 'Kolom email harus berupa alamat email yang valid.',
+                'register_password' => 'Kolom kata sandi wajib diisi.',
+            ]);
+
+        Volt::test('pages.auth.login')
+            ->set('view', 'register')
+            ->set('name', 'Test User')
+            ->set('register_email', 'existing@example.com')
+            ->set('register_password', 'password')
+            ->set('register_password_confirmation', 'password')
+            ->call('register')
+            ->assertHasErrors([
+                'register_email' => 'Kolom email sudah digunakan.',
+            ]);
+    }
 }

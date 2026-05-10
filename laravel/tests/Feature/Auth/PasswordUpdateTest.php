@@ -44,7 +44,7 @@ class PasswordUpdateTest extends TestCase
             ->call('updatePassword');
 
         $component
-            ->assertHasErrors(['current_password'])
+            ->assertHasErrors(['current_password' => 'Kata sandi yang dimasukkan salah.'])
             ->assertNoRedirect();
     }
 }

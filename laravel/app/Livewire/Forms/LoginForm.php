@@ -43,7 +43,7 @@ class LoginForm extends Form
             RateLimiter::hit($this->throttleKey());
 
             throw ValidationException::withMessages([
-                'form.email' => 'Login gagal. Akun belum terverifikasi, silakan daftar ulang dan selesaikan verifikasi OTP.',
+                'form.email' => trans('auth.unverified'),
             ]);
         }
 

@@ -5,6 +5,8 @@ namespace Tests\Feature\Auth;
 use App\Livewire\Chat\ChatIndex;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\RateLimiter;
+use Illuminate\Support\Str;
 use Livewire\Livewire;
 use Livewire\Volt\Volt;
 use Tests\TestCase;
@@ -95,10 +97,25 @@ class AuthenticationTest extends TestCase
         $component->call('login');
 
         $component
-            ->assertHasErrors()
+            ->assertHasErrors(['form.email' => 'Email atau kata sandi tidak sesuai dengan data kami.'])
             ->assertNoRedirect();
 
         $this->assertGuest();
+    }
+
+    public function test_login_requires_email_and_password_in_indonesian(): void
+    {
+        $component = Volt::test('pages.auth.login')
+            ->set('form.email', '')
+            ->set('form.password', '')
+            ->call('login');
+
+        $component
+            ->assertHasErrors([
+                'form.email' => 'Kolom email wajib diisi.',
+                'form.password' => 'Kolom kata sandi wajib diisi.',
+            ])
+            ->assertNoRedirect();
     }
 
     public function test_unverified_users_cannot_authenticate_using_login_screen(): void
@@ -112,10 +129,33 @@ class AuthenticationTest extends TestCase
         $component->call('login');
 
         $component
-            ->assertHasErrors(['form.email'])
+            ->assertHasErrors(['form.email' => 'Login gagal. Akun belum terverifikasi, silakan daftar ulang dan selesaikan verifikasi OTP.'])
             ->assertNoRedirect();
 
         $this->assertGuest();
+    }
+
+    public function test_login_throttle_message_is_indonesian(): void
+    {
+        $user = User::factory()->create();
+
+        $throttleKey = Str::transliterate(Str::lower($user->email).'|127.0.0.1');
+
+        for ($attempt = 0; $attempt < 5; $attempt++) {
+            RateLimiter::hit($throttleKey, 120);
+        }
+
+        $seconds = RateLimiter::availableIn($throttleKey);
+
+        Volt::test('pages.auth.login')
+            ->set('form.email', $user->email)
+            ->set('form.password', 'password')
+            ->call('login')
+            ->assertHasErrors([
+                'form.email' => "Terlalu banyak percobaan login. Silakan coba lagi dalam {$seconds} detik.",
+            ]);
+
+        RateLimiter::clear($throttleKey);
     }
 
     public function test_chat_page_can_be_rendered_for_authenticated_user(): void
