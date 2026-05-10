@@ -140,6 +140,8 @@ const registerChatPageData = (Alpine) => {
         loadingPhaseStep: 0,
         hasFirstAssistantChunk: false,
         _messageCompleteHandler: null,
+        chatMutationObserver: null,
+        wireListeners: [],
 
         init() {
             this.$el.dataset.chatMessagesReady = 'true';
@@ -148,30 +150,37 @@ const registerChatPageData = (Alpine) => {
             const chatBox = this.$refs.chatBox;
 
             if (chatBox) {
-                const observer = new MutationObserver(() => this.scrollToBottom());
-                observer.observe(chatBox, { childList: true, subtree: true, characterData: true });
+                this.chatMutationObserver = new MutationObserver(() => this.scrollToBottom());
+                this.chatMutationObserver.observe(chatBox, { childList: true, subtree: true, characterData: true });
             }
 
             this._messageCompleteHandler = () => this.resetStreamingState();
             window.addEventListener('message-complete', this._messageCompleteHandler);
-            this.$wire.on('assistant-output', (data) => {
+            this.registerWireListener('assistant-output', (data) => {
                 this.streamingText += data[0] || '';
                 this.streaming = true;
                 this.hasFirstAssistantChunk = true;
                 this.loadingPhase = 'Menampilkan jawaban';
                 this.scrollToBottom();
             });
-            this.$wire.on('model-name', (data) => {
+            this.registerWireListener('model-name', (data) => {
                 this.modelName = data[0] || '';
             });
-            this.$wire.on('assistant-sources', (data) => {
+            this.registerWireListener('assistant-sources', (data) => {
                 this.sources = data[0] || [];
             });
-            this.$wire.on('assistant-message-persisted', () => this.resetStreamingState());
-            this.$wire.on('user-message-acked', () => {
+            this.registerWireListener('assistant-message-persisted', () => this.resetStreamingState());
+            this.registerWireListener('user-message-acked', () => {
                 this.optimisticUserMessage = '';
                 this.scrollToBottom();
             });
+        },
+
+        registerWireListener(event, callback) {
+            const cleanup = this.$wire.on(event, callback);
+            if (typeof cleanup === 'function') {
+                this.wireListeners.push(cleanup);
+            }
         },
 
         destroy() {
@@ -182,6 +191,22 @@ const registerChatPageData = (Alpine) => {
             if (this._messageCompleteHandler) {
                 window.removeEventListener('message-complete', this._messageCompleteHandler);
                 this._messageCompleteHandler = null;
+            }
+            if (this.chatMutationObserver) {
+                this.chatMutationObserver.disconnect();
+                this.chatMutationObserver = null;
+            }
+            if (this.wireListeners && this.wireListeners.length > 0) {
+                this.wireListeners.forEach((cleanup) => {
+                    if (typeof cleanup === 'function') {
+                        try {
+                            cleanup();
+                        } catch (e) {
+                            // Defensive: ignore cleanup errors
+                        }
+                    }
+                });
+                this.wireListeners = [];
             }
         },
 
