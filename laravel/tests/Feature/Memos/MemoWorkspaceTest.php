@@ -41,7 +41,7 @@ class MemoWorkspaceTest extends TestCase
             ->assertSee('aria-label="Buat memo baru"', false)
             ->assertSee('title="Buat memo baru"', false)
             ->assertSee('bg-transparent overflow-hidden', false)
-            ->assertSee('h-[61px] flex-shrink-0 flex items-center justify-between gap-2 px-3 sm:px-6 z-20', false)
+            ->assertSee('h-[61px] flex-shrink-0 grid grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center gap-2 px-3 sm:px-6 z-20', false)
             ->assertSee('ISTA AI dapat keliru', false)
             ->assertDontSee('min-h-[61px] flex-shrink-0 flex items-center justify-between gap-2 px-3 sm:px-5 border-b border-stone-200/60 dark:border-[#1E293B]/70 bg-white/85 dark:bg-gray-800/85', false)
             ->assertDontSee('dark:bg-gray-950/85', false)
