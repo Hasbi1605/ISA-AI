@@ -1,3 +1,4 @@
+import asyncio
 import logging
 import os
 from typing import Dict, List, Optional, Tuple
@@ -156,25 +157,35 @@ async def chat_stream(request: ChatRequest):
 
     if documents_active and query:
         search_relevant_chunks, build_rag_prompt = _get_rag_document_helpers()
-        chunks, success = search_relevant_chunks(
-            query,
-            request.document_filenames,
-            top_k=_get_rag_top_k(),
-            user_id=request.user_id,
-        )
+        if should_web_search:
+            retrieval_task = asyncio.to_thread(
+                search_relevant_chunks,
+                query,
+                request.document_filenames,
+                _get_rag_top_k(),
+                request.user_id,
+            )
+            web_task = asyncio.to_thread(
+                get_context_for_query,
+                query,
+                request.force_web_search,
+                allow_auto_realtime_web,
+                True,
+                explicit_web_request,
+            )
+            (chunks, success), context_data = await asyncio.gather(retrieval_task, web_task)
+            web_context = context_data.get("search_context", "") if isinstance(context_data, dict) else ""
+        else:
+            chunks, success = await asyncio.to_thread(
+                search_relevant_chunks,
+                query,
+                request.document_filenames,
+                _get_rag_top_k(),
+                request.user_id,
+            )
+            web_context = ""
 
         if success and chunks:
-            web_context = ""
-            if should_web_search:
-                context_data = get_context_for_query(
-                    query,
-                    force_web_search=request.force_web_search,
-                    allow_auto_realtime_web=allow_auto_realtime_web,
-                    documents_active=True,
-                    explicit_web_request=explicit_web_request,
-                )
-                web_context = context_data.get("search_context", "")
-
             rag_prompt, sources = build_rag_prompt(query, chunks, web_context=web_context)
 
             messages_with_rag = [{"role": "system", "content": rag_prompt}] + request.messages

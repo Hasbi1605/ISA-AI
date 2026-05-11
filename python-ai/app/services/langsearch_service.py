@@ -3,6 +3,8 @@ import requests
 import time
 from typing import List, Dict, Optional, Tuple
 from datetime import datetime
+from threading import Lock
+from collections import OrderedDict
 
 from app.config_loader import get_web_search_context_prompt
 from app.env_utils import get_env, get_env_int
@@ -11,6 +13,7 @@ logger = logging.getLogger(__name__)
 
 LANGSEARCH_TIMEOUT = get_env_int("LANGSEARCH_TIMEOUT", 10)
 LANGSEARCH_CACHE_TTL = get_env_int("LANGSEARCH_CACHE_TTL", 300)  # 5 minutes default
+LANGSEARCH_CACHE_MAX_SIZE = get_env_int("LANGSEARCH_CACHE_MAX_SIZE", 200)
 
 
 class LangSearchService:
@@ -18,7 +21,8 @@ class LangSearchService:
     
     def __init__(self):
         self.base_url = "https://api.langsearch.com/v1/web-search"
-        self._search_cache: Dict[Tuple[str, int], Tuple[List[Dict], float]] = {}
+        self._search_cache: "OrderedDict[Tuple[str, int], Tuple[List[Dict], float]]" = OrderedDict()
+        self._cache_lock = Lock()
         self._api_key: Optional[str] = None
     
     @property
@@ -28,22 +32,34 @@ class LangSearchService:
             self._api_key = get_env("LANGSEARCH_API_KEY")
         return self._api_key
     
+    def _normalize_cache_query(self, query: str) -> str:
+        return " ".join((query or "").strip().lower().split())
+
+    def _cache_key(self, query: str, time_bucket: int) -> Tuple[str, int]:
+        return (self._normalize_cache_query(query), time_bucket)
+
     def _get_cached_result(self, query: str, time_bucket: int) -> Optional[List[Dict]]:
         """Get cached search result if not expired."""
-        key = (query, time_bucket)
-        if key in self._search_cache:
-            results, timestamp = self._search_cache[key]
-            if time.time() - timestamp < LANGSEARCH_CACHE_TTL:
-                logger.info(f"📦 LangSearch: cache hit for '{query}'")
-                return results
-            else:
+        key = self._cache_key(query, time_bucket)
+        now = time.time()
+        with self._cache_lock:
+            if key in self._search_cache:
+                results, timestamp = self._search_cache[key]
+                if now - timestamp < LANGSEARCH_CACHE_TTL:
+                    self._search_cache.move_to_end(key)
+                    logger.info(f"📦 LangSearch: cache hit for '{query}'")
+                    return results
                 del self._search_cache[key]
         return None
     
     def _cache_result(self, query: str, time_bucket: int, results: List[Dict]):
         """Cache search result with timestamp."""
-        key = (query, time_bucket)
-        self._search_cache[key] = (results, time.time())
+        key = self._cache_key(query, time_bucket)
+        with self._cache_lock:
+            self._search_cache[key] = (results, time.time())
+            self._search_cache.move_to_end(key)
+            while len(self._search_cache) > max(1, LANGSEARCH_CACHE_MAX_SIZE):
+                self._search_cache.popitem(last=False)
     
     def _get_time_bucket(self) -> int:
         """Get current time bucket for caching (5 minute intervals)."""
