@@ -11,6 +11,7 @@ use App\Services\AIService;
 use App\Services\ChatOrchestrationService;
 use App\Services\DocumentExportService;
 use Illuminate\Auth\Access\AuthorizationException;
+use Illuminate\Database\QueryException;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\RateLimiter;
@@ -297,6 +298,87 @@ class ChatUiTest extends TestCase
             'role' => 'assistant',
             'content' => 'Jawaban AI tetap masuk ke conversation asal.',
         ]);
+    }
+
+    public function test_send_message_gracefully_skips_assistant_persistence_when_origin_conversation_deleted_mid_request(): void
+    {
+        $user = User::factory()->create();
+
+        $conversation = Conversation::create([
+            'user_id' => $user->id,
+            'title' => 'Conversation asal',
+        ]);
+
+        $this->app->bind(AIService::class, fn () => new class extends AIService
+        {
+            public function sendChat(array $messages, ?array $document_filenames = null, ?string $user_id = null, bool $force_web_search = false, ?string $source_policy = null, bool $allow_auto_realtime_web = true): \Generator
+            {
+                yield 'Jawaban AI setelah conversation terhapus.';
+            }
+        });
+
+        $component = Livewire::actingAs($user)
+            ->test(ChatIndex::class)
+            ->set('currentConversationId', $conversation->id)
+            ->set('prompt', 'Pesan user sebelum hapus conversation');
+
+        /** @var ChatIndex $componentInstance */
+        $componentInstance = $component->instance();
+
+        $component->call('sendMessage', aiService: app(AIService::class), orchestrator: new class($componentInstance, $conversation->id) extends ChatOrchestrationService
+        {
+            private bool $deleted = false;
+
+            public function __construct(private readonly ChatIndex $component, private readonly int $conversationIdToDelete) {}
+
+            public function extractStreamMetadata(string $chunk, string $buffer = ''): array
+            {
+                if (! $this->deleted) {
+                    $this->deleted = true;
+                    $this->component->deleteConversation($this->conversationIdToDelete);
+                }
+
+                return parent::extractStreamMetadata($chunk, $buffer);
+            }
+        });
+
+        $this->assertDatabaseMissing('conversations', [
+            'id' => $conversation->id,
+        ]);
+
+        $this->assertDatabaseMissing('messages', [
+            'conversation_id' => $conversation->id,
+            'role' => 'assistant',
+            'content' => 'Jawaban AI setelah conversation terhapus.',
+        ]);
+    }
+
+    public function test_save_assistant_message_returns_null_when_create_hits_conversation_fk_race(): void
+    {
+        $service = new class extends ChatOrchestrationService
+        {
+            protected function conversationExists(int $conversationId): bool
+            {
+                return true;
+            }
+
+            protected function createAssistantMessage(int $conversationId, string $content): Message
+            {
+                $pdoException = new \PDOException('Cannot add or update a child row: a foreign key constraint fails');
+                $pdoException->errorInfo = ['23000', 1452, 'Cannot add or update a child row: a foreign key constraint fails'];
+
+                throw new QueryException(
+                    'mysql',
+                    'insert into `messages` (`conversation_id`, `role`, `content`) values (?, ?, ?)',
+                    [$conversationId, 'assistant', $content],
+                    $pdoException
+                );
+            }
+        };
+
+        $result = $service->saveAssistantMessage(999999, 'Assistant response');
+
+        $this->assertNull($result);
     }
 
     public function test_loading_conversation_dispatches_active_history_event(): void

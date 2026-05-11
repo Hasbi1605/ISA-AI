@@ -6,6 +6,7 @@ use App\Models\Conversation;
 use App\Models\Message;
 use App\Models\Document;
 use Illuminate\Auth\Access\AuthorizationException;
+use Illuminate\Database\QueryException;
 use Illuminate\Support\Facades\Auth;
 
 class ChatOrchestrationService
@@ -179,13 +180,43 @@ class ChatOrchestrationService
         return trim($cleanContent);
     }
 
-    public function saveAssistantMessage(int $conversationId, string $content): Message
+    public function saveAssistantMessage(int $conversationId, string $content): ?Message
+    {
+        if (! $this->conversationExists($conversationId)) {
+            return null;
+        }
+
+        try {
+            return $this->createAssistantMessage($conversationId, $content);
+        } catch (QueryException $e) {
+            if ($this->isConversationFkViolation($e)) {
+                return null;
+            }
+
+            throw $e;
+        }
+    }
+
+    protected function conversationExists(int $conversationId): bool
+    {
+        return Conversation::query()->whereKey($conversationId)->exists();
+    }
+
+    protected function createAssistantMessage(int $conversationId, string $content): Message
     {
         return Message::create([
             'conversation_id' => $conversationId,
             'role' => 'assistant',
-            'content' => $content
+            'content' => $content,
         ]);
+    }
+
+    protected function isConversationFkViolation(QueryException $e): bool
+    {
+        $sqlState = $e->errorInfo[0] ?? null;
+        $errorCode = $e->errorInfo[1] ?? null;
+
+        return $sqlState === '23000' && (int) $errorCode === 1452;
     }
 
     public function extractStreamMetadata(string $chunk, string $buffer = ''): array

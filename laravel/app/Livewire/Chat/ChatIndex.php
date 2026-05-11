@@ -572,9 +572,16 @@ class ChatIndex extends Component
         }
 
         $assistantMsg = $orchestrator->saveAssistantMessage($conversationIdForRequest, $cleanContent);
-        $this->newMessageId = $assistantMsg->id;
+        if ($assistantMsg !== null) {
+            $this->newMessageId = $assistantMsg->id;
+        }
 
-        if ((int) $this->currentConversationId === $conversationIdForRequest) {
+        $originConversationStillExists = Conversation::query()
+            ->whereKey($conversationIdForRequest)
+            ->where('user_id', Auth::id())
+            ->exists();
+
+        if ((int) $this->currentConversationId === $conversationIdForRequest && $originConversationStillExists) {
             $this->loadConversation($conversationIdForRequest, clearNewMessageId: false);
         }
         $this->loadConversations();
