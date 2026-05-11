@@ -271,12 +271,26 @@
                         <div class="flex items-center gap-2 mb-1">
                             <span class="text-[13px] font-bold text-stone-800 dark:text-[#F8FAFC]">ISTA AI</span>
                         </div>
-                        <div class="inline-flex w-auto items-center rounded-xl rounded-bl-md border border-stone-200/60 bg-white/80 px-4 py-3 backdrop-blur-sm dark:border-gray-800 dark:bg-gray-800">
-                            <div class="flex space-x-1.5 py-1">
-                                <div class="h-2 w-2 bg-gray-400 dark:bg-[#64748B] rounded-full animate-bounce"></div>
-                                <div class="h-2 w-2 bg-gray-400 dark:bg-[#64748B] rounded-full animate-bounce [animation-delay:-0.15s]"></div>
-                                <div class="h-2 w-2 bg-gray-400 dark:bg-[#64748B] rounded-full animate-bounce [animation-delay:-0.3s]"></div>
-                            </div>
+                        <div class="inline-flex w-auto items-center gap-2.5 rounded-xl rounded-bl-md border border-stone-200/60 bg-white/80 px-4 py-3 backdrop-blur-sm dark:border-gray-800 dark:bg-gray-800" role="status" aria-live="polite">
+                            <span class="relative inline-flex h-4 w-4 items-center justify-center">
+                                <span class="absolute inset-0 animate-spin" style="animation-duration: 2.8s; animation-timing-function: linear;">
+                                    <span class="absolute left-1/2 top-0 h-1.5 w-1.5 -translate-x-1/2 rounded-full bg-gray-400/90 dark:bg-[#64748B]"></span>
+                                    <span class="absolute left-[12%] top-[62%] h-1.5 w-1.5 rounded-full bg-gray-400/75 dark:bg-[#64748B]/90"></span>
+                                    <span class="absolute right-[12%] top-[62%] h-1.5 w-1.5 rounded-full bg-gray-400/60 dark:bg-[#64748B]/80"></span>
+                                </span>
+                                <span class="absolute left-1/2 top-0 h-1.5 w-1.5 -translate-x-1/2 rounded-full bg-gray-500/90 dark:bg-[#94A3B8] animate-pulse" style="animation-duration: 1.3s;"></span>
+                                <span class="absolute left-[12%] top-[62%] h-1.5 w-1.5 rounded-full bg-gray-500/80 dark:bg-[#94A3B8]/90 animate-pulse" style="animation-duration: 1.5s; animation-delay: 0.12s;"></span>
+                                <span class="absolute right-[12%] top-[62%] h-1.5 w-1.5 rounded-full bg-gray-500/70 dark:bg-[#94A3B8]/80 animate-pulse" style="animation-duration: 1.7s; animation-delay: 0.24s;"></span>
+                            </span>
+                            <span class="ista-loading-shimmer ista-label-enter text-[12px] font-medium whitespace-nowrap"
+                                x-text="memoLoadingPhase"
+                                x-effect="
+                                    memoLoadingPhaseKey;
+                                    $el.classList.remove('ista-label-enter');
+                                    void $el.offsetWidth;
+                                    $el.classList.add('ista-label-enter');
+                                "
+                            ></span>
                         </div>
                     </div>
                 </div>

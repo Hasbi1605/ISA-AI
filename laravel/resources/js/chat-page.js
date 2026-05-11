@@ -130,6 +130,22 @@ const registerChatPageData = (Alpine) => {
     Alpine.data('chatMessages', () => ({
         optimisticUserMessage: '',
         isSwitchingConversation: false,
+        streaming: false,
+        streamingText: '',
+        modelName: '',
+        sources: [],
+        loadingContext: 'general',
+        loadingPhase: 'AI sedang berpikir',
+        loadingPhaseKey: 0,
+        loadingPhaseTimeout: null,
+        phase2Timeout: null,
+        hasFirstAssistantChunk: false,
+        phase1Done: false,
+        phase2Done: false,
+        shimmerActive: false,
+        _messageCompleteHandler: null,
+        chatMutationObserver: null,
+        wireListeners: [],
 
         init() {
             this.$el.dataset.chatMessagesReady = 'true';
@@ -138,15 +154,169 @@ const registerChatPageData = (Alpine) => {
             const chatBox = this.$refs.chatBox;
 
             if (chatBox) {
-                const observer = new MutationObserver(() => this.scrollToBottom());
-                observer.observe(chatBox, { childList: true, subtree: true, characterData: true });
+                this.chatMutationObserver = new MutationObserver(() => this.scrollToBottom());
+                this.chatMutationObserver.observe(chatBox, { childList: true, subtree: true, characterData: true });
             }
 
-            this.$wire.on('assistant-output', () => this.scrollToBottom());
-            this.$wire.on('user-message-acked', () => {
+            this._messageCompleteHandler = () => this.resetStreamingState();
+            window.addEventListener('message-complete', this._messageCompleteHandler);
+            this.registerWireListener('assistant-output', (data) => {
+                this.streamingText += data[0] || '';
+                this.streaming = true;
+                this.hasFirstAssistantChunk = true;
+                this.scrollToBottom();
+
+                // Jangan langsung pindah ke "Menampilkan jawaban" — biarkan
+                // chain timeout fase 1→2→3 yang mengatur. Kalau fase 2 sudah
+                // selesai (phase2Done), baru boleh pindah sekarang.
+                if (this.phase2Done) {
+                    this.loadingPhase = 'Menampilkan jawaban';
+                    this.loadingPhaseKey++;
+                    this.shimmerActive = false;
+                }
+                // Kalau belum, phase2Timeout akan memanggil tryShowAnswer()
+                // setelah fase 2 selesai.
+            });
+            this.registerWireListener('model-name', (data) => {
+                this.modelName = data[0] || '';
+            });
+            this.registerWireListener('assistant-sources', (data) => {
+                this.sources = data[0] || [];
+            });
+            this.registerWireListener('assistant-message-persisted', () => this.resetStreamingState());
+            this.registerWireListener('user-message-acked', () => {
                 this.optimisticUserMessage = '';
                 this.scrollToBottom();
             });
+        },
+
+        registerWireListener(event, callback) {
+            const cleanup = this.$wire.on(event, callback);
+            if (typeof cleanup === 'function') {
+                this.wireListeners.push(cleanup);
+            }
+        },
+
+        destroy() {
+            this.clearLoadingPhaseTimeout();
+            this.clearPhase2Timeout();
+            if (this._messageCompleteHandler) {
+                window.removeEventListener('message-complete', this._messageCompleteHandler);
+                this._messageCompleteHandler = null;
+            }
+            if (this.chatMutationObserver) {
+                this.chatMutationObserver.disconnect();
+                this.chatMutationObserver = null;
+            }
+            if (this.wireListeners && this.wireListeners.length > 0) {
+                this.wireListeners.forEach((cleanup) => {
+                    if (typeof cleanup === 'function') {
+                        try {
+                            cleanup();
+                        } catch (e) {
+                            // Defensive: ignore cleanup errors
+                        }
+                    }
+                });
+                this.wireListeners = [];
+            }
+        },
+
+        clearLoadingPhaseTimeout() {
+            if (this.loadingPhaseTimeout) {
+                window.clearTimeout(this.loadingPhaseTimeout);
+                this.loadingPhaseTimeout = null;
+            }
+        },
+
+        clearPhase2Timeout() {
+            if (this.phase2Timeout) {
+                window.clearTimeout(this.phase2Timeout);
+                this.phase2Timeout = null;
+            }
+        },
+
+        // Dipanggil setelah fase 2 selesai. Kalau chunk sudah ada, langsung
+        // tampilkan "Menampilkan jawaban". Kalau belum, tunggu chunk datang
+        // (assistant-output handler akan cek phase2Done).
+        tryShowAnswer() {
+            this.phase2Done = true;
+            if (this.hasFirstAssistantChunk) {
+                this.loadingPhase = 'Menampilkan jawaban';
+                this.loadingPhaseKey++;
+                this.shimmerActive = false;
+            }
+        },
+
+        startStreamingPlaceholder(context = 'general') {
+            this.resetStreamingState(false);
+            this.streaming = true;
+            this.loadingContext = context;
+            this.loadingPhaseKey++;
+            this.loadingPhase = this.loadingPhaseLabels()[0];
+            this.shimmerActive = true;
+            this.phase1Done = false;
+            this.phase2Done = false;
+
+            const labels = this.loadingPhaseLabels();
+
+            if (labels.length > 2) {
+                // Kontekstual: fase 1 (Mencari jawaban / Sedang membaca dokumen)
+                // bertahan 8000ms, lalu fase 2 (AI sedang berpikir) juga 8000ms,
+                // baru tryShowAnswer(). Chain ini tidak bisa di-cancel oleh chunk
+                // yang datang lebih awal — chunk hanya di-buffer sampai fase selesai.
+                this.loadingPhaseTimeout = window.setTimeout(() => {
+                    this.phase1Done = true;
+                    this.loadingPhase = labels[1]; // "AI sedang berpikir"
+                    this.loadingPhaseKey++;
+
+                    this.phase2Timeout = window.setTimeout(() => {
+                        this.tryShowAnswer();
+                    }, 8000);
+                }, 8000);
+            } else {
+                // General: langsung "AI sedang berpikir", fase 2 juga 8000ms.
+                this.phase1Done = true;
+                this.phase2Timeout = window.setTimeout(() => {
+                    this.tryShowAnswer();
+                }, 8000);
+            }
+        },
+
+        resetStreamingState(stopStreaming = true) {
+            this.clearLoadingPhaseTimeout();
+            this.clearPhase2Timeout();
+
+            this.loadingPhaseKey = 0;
+            this.hasFirstAssistantChunk = false;
+            this.phase1Done = false;
+            this.phase2Done = false;
+            this.loadingContext = 'general';
+            this.loadingPhase = 'AI sedang berpikir';
+            this.shimmerActive = false;
+            this.streamingText = '';
+            this.modelName = '';
+            this.sources = [];
+
+            if (stopStreaming) {
+                this.streaming = false;
+            }
+        },
+
+        loadingPhaseLabels() {
+            if (this.loadingContext === 'web-search') {
+                return ['Mencari jawaban', 'AI sedang berpikir', 'Menampilkan jawaban'];
+            }
+
+            if (this.loadingContext === 'documents') {
+                return ['Sedang membaca dokumen', 'AI sedang berpikir', 'Menampilkan jawaban'];
+            }
+
+            if (this.loadingContext === 'hybrid') {
+                return ['Sedang membaca dokumen + Mencari di web', 'AI sedang berpikir', 'Menampilkan jawaban'];
+            }
+
+            return ['AI sedang berpikir', 'Menampilkan jawaban'];
         },
 
         scrollToBottom(smooth = false) {
@@ -697,14 +867,21 @@ const registerChatPageData = (Alpine) => {
             this.messageAcked = false;
             this.isSendingMessage = true;
 
-            this.$dispatch('message-send', { text });
+            const normalizedDocs = this.normalizedDocumentIds();
+            const hasDocs = normalizedDocs.length > 0;
+            const hasWeb = Boolean(this.webSearchMode);
+            const loadingContext = hasWeb && hasDocs
+                ? 'hybrid'
+                : (hasWeb ? 'web-search' : (hasDocs ? 'documents' : 'general'));
+
+            this.$dispatch('message-send', { text, loadingContext });
             this.scrollChatToBottom(true);
             this.stabilizeChatScroll();
 
             this.promptDraft = '';
             this.autoResizeTextarea(this.$refs.chatInput);
             this.$wire.webSearchMode = Boolean(this.webSearchMode);
-            this.$wire.conversationDocuments = this.normalizedDocumentIds();
+            this.$wire.conversationDocuments = normalizedDocs;
 
             this.$wire.sendMessage(text)
                 .catch(() => {
@@ -921,6 +1098,12 @@ const registerChatPageData = (Alpine) => {
         memoMobilePanel: 'chat',
         memoRevisionText: '',
         memoRevisionLoading: false,
+        memoLoadingPhase: 'Membuat ulang memo',
+        memoLoadingPhaseKey: 0,
+        memoLoadingPhaseTimeout: null,
+        memoPhase2Timeout: null,
+        memoPhase2Done: false,
+        memoShimmerActive: false,
 
         init() {
             const mediaQuery = window.matchMedia('(max-width: 1023px)');
@@ -968,6 +1151,8 @@ const registerChatPageData = (Alpine) => {
 
             this.memoRevisionText = message;
             this.memoRevisionLoading = true;
+            this.memoShimmerActive = true;
+            this.startMemoLoadingPhase();
 
             textarea.value = '';
             textarea.style.height = 'auto';
@@ -979,8 +1164,60 @@ const registerChatPageData = (Alpine) => {
                 .finally(() => {
                     this.memoRevisionText = '';
                     this.memoRevisionLoading = false;
+                    this.resetMemoLoadingPhase();
                     this.scrollMemoChatToBottom();
                 });
+        },
+
+        memoLoadingLabels() {
+            return ['Membuat ulang memo', 'AI sedang berpikir', 'Menampilkan jawaban'];
+        },
+
+        clearMemoLoadingPhaseTimeout() {
+            if (this.memoLoadingPhaseTimeout) {
+                window.clearTimeout(this.memoLoadingPhaseTimeout);
+                this.memoLoadingPhaseTimeout = null;
+            }
+        },
+
+        clearMemoPhase2Timeout() {
+            if (this.memoPhase2Timeout) {
+                window.clearTimeout(this.memoPhase2Timeout);
+                this.memoPhase2Timeout = null;
+            }
+        },
+
+        startMemoLoadingPhase() {
+            this.resetMemoLoadingPhase();
+            this.memoLoadingPhaseKey++;
+            this.memoLoadingPhase = this.memoLoadingLabels()[0];
+            this.memoShimmerActive = true;
+            this.memoPhase2Done = false;
+
+            // Fase 1 ("Membuat ulang memo") 8000ms, lalu fase 2
+            // ("AI sedang berpikir") juga 8000ms — chain tidak bisa
+            // di-cancel, sehingga perbandingan durasi 1:1.
+            this.memoLoadingPhaseTimeout = window.setTimeout(() => {
+                this.memoLoadingPhase = this.memoLoadingLabels()[1];
+                this.memoLoadingPhaseKey++;
+
+                this.memoPhase2Timeout = window.setTimeout(() => {
+                    this.memoPhase2Done = true;
+                    this.memoLoadingPhase = this.memoLoadingLabels()[2];
+                    this.memoLoadingPhaseKey++;
+                    this.memoShimmerActive = false;
+                }, 8000);
+            }, 8000);
+        },
+
+        resetMemoLoadingPhase() {
+            this.clearMemoLoadingPhaseTimeout();
+            this.clearMemoPhase2Timeout();
+
+            this.memoLoadingPhaseKey = 0;
+            this.memoPhase2Done = false;
+            this.memoLoadingPhase = 'Membuat ulang memo';
+            this.memoShimmerActive = false;
         },
 
         scrollMemoChatToBottom() {
