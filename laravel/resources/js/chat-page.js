@@ -1102,7 +1102,6 @@ const registerChatPageData = (Alpine) => {
 
             this.memoRevisionText = message;
             this.memoRevisionLoading = true;
-            this.memoLoadingPhaseKey++;
             this.memoShimmerActive = true;
             this.startMemoLoadingPhase();
 
