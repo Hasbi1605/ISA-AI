@@ -227,7 +227,10 @@ const registerChatPageData = (Alpine) => {
             this.shimmerActive = true;
             this.clearLoadingPhaseTimeout();
 
-            // Schedule transition to "AI sedang berpikir" after ~3000ms for non-general contexts
+            // Biarkan label pertama (Mencari jawaban / Sedang membaca dokumen / ...)
+            // terasa cukup lama sebelum fade ke "AI sedang berpikir" supaya transisi
+            // tidak terasa buru-buru. ~5s enak untuk dibaca + ada cukup waktu untuk
+            // sheen shimmer berjalan beberapa cycle.
             const labels = this.loadingPhaseLabels();
             if (labels.length > 2) {
                 this.loadingPhaseTimeout = window.setTimeout(() => {
@@ -235,7 +238,7 @@ const registerChatPageData = (Alpine) => {
                         this.loadingPhase = labels[1];
                         this.loadingPhaseKey++;
                     }
-                }, 3000);
+                }, 5000);
             }
         },
 
@@ -1138,11 +1141,13 @@ const registerChatPageData = (Alpine) => {
             this.memoShimmerActive = true;
             this.clearMemoLoadingPhaseTimeout();
 
-            // Schedule transition to "AI sedang berpikir" after ~3000ms
+            // "Membuat ulang memo" dibiarkan tampil ~5 detik supaya transisi ke
+            // "AI sedang berpikir" tidak terasa tergesa-gesa dan shimmer sempat
+            // terlihat jalan.
             this.memoLoadingPhaseTimeout = window.setTimeout(() => {
                 this.memoLoadingPhase = this.memoLoadingLabels()[1];
                 this.memoLoadingPhaseKey++;
-            }, 3000);
+            }, 5000);
         },
 
         resetMemoLoadingPhase() {

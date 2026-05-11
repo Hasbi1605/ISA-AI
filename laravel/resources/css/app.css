@@ -147,3 +147,73 @@
         @apply mt-1 text-[11px] font-semibold text-rose-600 dark:text-rose-400;
     }
 }
+
+/* Chat / memo loading label: stack old & new label on the same grid cell
+   so Alpine x-for leave+enter transitions overlap and create a smooth
+   cross-fade (fade-through) between phases. */
+.ista-loading-label-stack {
+    display: inline-grid;
+    grid-template-areas: "phase";
+    align-items: center;
+    line-height: 1.4;
+}
+
+.ista-loading-label-stack > * {
+    grid-area: phase;
+}
+
+/* Edge-to-edge sheen that travels across the label text. Uses a narrow,
+   bright band so it feels like a glimmer passing through the word. */
+@keyframes istaLoadingSheen {
+    0% {
+        background-position: 220% 0;
+    }
+
+    100% {
+        background-position: -120% 0;
+    }
+}
+
+.ista-loading-shimmer {
+    background-image: linear-gradient(
+        100deg,
+        rgba(100, 116, 139, 0.9) 0%,
+        rgba(100, 116, 139, 0.9) 36%,
+        rgba(248, 250, 252, 0.98) 50%,
+        rgba(100, 116, 139, 0.9) 64%,
+        rgba(100, 116, 139, 0.9) 100%
+    );
+    background-size: 220% 100%;
+    background-repeat: no-repeat;
+    background-clip: text;
+    -webkit-background-clip: text;
+    color: transparent;
+    -webkit-text-fill-color: transparent;
+    animation: istaLoadingSheen 2.4s ease-in-out infinite;
+    will-change: background-position;
+}
+
+.dark .ista-loading-shimmer {
+    background-image: linear-gradient(
+        100deg,
+        rgba(148, 163, 184, 0.78) 0%,
+        rgba(148, 163, 184, 0.78) 36%,
+        rgba(226, 232, 240, 0.98) 50%,
+        rgba(148, 163, 184, 0.78) 64%,
+        rgba(148, 163, 184, 0.78) 100%
+    );
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .ista-loading-shimmer {
+        animation: none;
+        background-image: none;
+        color: #64748b;
+        -webkit-text-fill-color: #64748b;
+    }
+
+    .dark .ista-loading-shimmer {
+        color: #94a3b8;
+        -webkit-text-fill-color: #94a3b8;
+    }
+}
