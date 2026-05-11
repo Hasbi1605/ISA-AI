@@ -185,6 +185,13 @@ async def chat_stream(request: ChatRequest):
 
         if success and not chunks:
             if should_web_search:
+                context_data = get_context_for_query(
+                    query,
+                    force_web_search=request.force_web_search,
+                    allow_auto_realtime_web=allow_auto_realtime_web,
+                    documents_active=True,
+                    explicit_web_request=explicit_web_request,
+                )
                 return StreamingResponse(
                     get_llm_stream(
                         request.messages,
@@ -192,6 +199,7 @@ async def chat_stream(request: ChatRequest):
                         allow_auto_realtime_web=allow_auto_realtime_web,
                         documents_active=True,
                         explicit_web_request=explicit_web_request,
+                        precomputed_context=context_data,
                     ),
                     media_type="text/event-stream",
                 )
@@ -202,6 +210,13 @@ async def chat_stream(request: ChatRequest):
             return StreamingResponse(document_not_found_stream(), media_type="text/event-stream")
 
         if should_web_search:
+            context_data = get_context_for_query(
+                query,
+                force_web_search=request.force_web_search,
+                allow_auto_realtime_web=allow_auto_realtime_web,
+                documents_active=True,
+                explicit_web_request=explicit_web_request,
+            )
             return StreamingResponse(
                 get_llm_stream(
                     request.messages,
@@ -209,6 +224,7 @@ async def chat_stream(request: ChatRequest):
                     allow_auto_realtime_web=allow_auto_realtime_web,
                     documents_active=True,
                     explicit_web_request=explicit_web_request,
+                    precomputed_context=context_data,
                 ),
                 media_type="text/event-stream",
             )
@@ -218,6 +234,16 @@ async def chat_stream(request: ChatRequest):
 
         return StreamingResponse(document_error_stream(), media_type="text/event-stream")
 
+    context_data = None
+    if should_web_search:
+        context_data = get_context_for_query(
+            query,
+            force_web_search=request.force_web_search,
+            allow_auto_realtime_web=allow_auto_realtime_web,
+            documents_active=False,
+            explicit_web_request=explicit_web_request,
+        )
+
     return StreamingResponse(
         get_llm_stream(
             request.messages,
@@ -225,6 +251,7 @@ async def chat_stream(request: ChatRequest):
             allow_auto_realtime_web=allow_auto_realtime_web,
             documents_active=False,
             explicit_web_request=explicit_web_request,
+            precomputed_context=context_data,
         ),
         media_type="text/event-stream",
     )

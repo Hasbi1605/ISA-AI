@@ -200,9 +200,6 @@ def test_bedrock_titan_embeddings_invokes_bedrock_runtime_and_pads(monkeypatch):
 def test_get_embeddings_falls_back_to_bedrock_titan_when_github_fails(monkeypatch):
     class FailingGithubEmbedding:
         def __init__(self, **_kwargs):
-            pass
-
-        def embed_query(self, _text):
             raise RuntimeError("github limited")
 
     class FakeBedrockEmbedding:
@@ -251,3 +248,131 @@ def test_get_embeddings_falls_back_to_bedrock_titan_when_github_fails(monkeypatc
     assert isinstance(embeddings, FakeBedrockEmbedding)
     assert embeddings.kwargs["api_key"] == "bedrock-token"
     assert embeddings.kwargs["dimensions"] == 1024
+
+
+def test_get_embeddings_does_not_probe_embed_query_on_selection(monkeypatch):
+    rag_embeddings.reset_embeddings_cache()
+
+    class NoProbeEmbedding:
+        def __init__(self, **kwargs):
+            self.kwargs = kwargs
+
+        def embed_query(self, _text):
+            raise AssertionError("embed_query should not be called during selection")
+
+    monkeypatch.setattr(rag_embeddings, "GithubOpenAIEmbeddings", NoProbeEmbedding)
+    monkeypatch.setattr(rag_embeddings, "get_env", lambda name, default=None: "token" if name == "GITHUB_TOKEN" else default)
+    monkeypatch.setattr(
+        rag_embeddings,
+        "EMBEDDING_MODELS",
+        [{
+            "name": "github-primary",
+            "provider": "github",
+            "model": "text-embedding-3-large",
+            "api_key_env": "GITHUB_TOKEN",
+            "tpm_limit": 500000,
+            "dimensions": 3072,
+        }],
+    )
+
+    embeddings, provider, index = rag_embeddings.get_embeddings_with_fallback()
+
+    assert isinstance(embeddings, NoProbeEmbedding)
+    assert provider == "github-primary"
+    assert index == 0
+
+
+def test_get_embeddings_uses_cached_provider_until_signature_changes(monkeypatch):
+    rag_embeddings.reset_embeddings_cache()
+    calls = {"count": 0}
+
+    class CountedEmbedding:
+        def __init__(self, **kwargs):
+            calls["count"] += 1
+            self.kwargs = kwargs
+
+    monkeypatch.setattr(rag_embeddings, "GithubOpenAIEmbeddings", CountedEmbedding)
+    monkeypatch.setattr(rag_embeddings, "get_env", lambda name, default=None: "token-a" if name == "GITHUB_TOKEN" else default)
+    monkeypatch.setattr(rag_embeddings, "EMBEDDING_MODELS", [{
+        "name": "github-primary",
+        "provider": "github",
+        "model": "text-embedding-3-large",
+        "api_key_env": "GITHUB_TOKEN",
+        "tpm_limit": 500000,
+        "dimensions": 3072,
+    }])
+
+    rag_embeddings.get_embeddings_with_fallback()
+    rag_embeddings.get_embeddings_with_fallback()
+    assert calls["count"] == 1
+
+
+def test_get_embeddings_falls_back_when_provider_construction_fails(monkeypatch):
+    rag_embeddings.reset_embeddings_cache()
+
+    class FailingGithubEmbedding:
+        def __init__(self, **_kwargs):
+            raise RuntimeError("construct fail")
+
+    class FakeBedrockEmbedding:
+        def __init__(self, **kwargs):
+            self.kwargs = kwargs
+
+    monkeypatch.setattr(rag_embeddings, "GithubOpenAIEmbeddings", FailingGithubEmbedding)
+    monkeypatch.setattr(rag_embeddings, "BedrockTitanEmbeddings", FakeBedrockEmbedding)
+    monkeypatch.setattr(rag_embeddings, "get_env", lambda name, default=None: {
+        "GITHUB_TOKEN": "github-token",
+        "AWS_BEARER_TOKEN_BEDROCK": "bedrock-token",
+        "AWS_BEDROCK_REGION": default,
+    }.get(name, default))
+    monkeypatch.setattr(rag_embeddings, "EMBEDDING_MODELS", [
+        {
+            "name": "github",
+            "provider": "github",
+            "model": "text-embedding-3-large",
+            "api_key_env": "GITHUB_TOKEN",
+            "tpm_limit": 500000,
+            "dimensions": 3072,
+        },
+        {
+            "name": "titan",
+            "provider": "bedrock_titan",
+            "model": "amazon.titan-embed-text-v2:0",
+            "api_key_env": "AWS_BEARER_TOKEN_BEDROCK",
+            "region": "us-east-1",
+            "dimensions": 1024,
+            "normalize": True,
+            "timeout": 30,
+        },
+    ])
+
+    embeddings, provider, index = rag_embeddings.get_embeddings_with_fallback()
+
+    assert provider == "titan"
+    assert index == 1
+    assert isinstance(embeddings, FakeBedrockEmbedding)
+
+
+def test_get_embeddings_skips_model_without_key(monkeypatch):
+    rag_embeddings.reset_embeddings_cache()
+
+    class FakeBedrockEmbedding:
+        def __init__(self, **kwargs):
+            self.kwargs = kwargs
+
+    monkeypatch.setattr(rag_embeddings, "BedrockTitanEmbeddings", FakeBedrockEmbedding)
+    monkeypatch.setattr(rag_embeddings, "get_env", lambda name, default=None: {
+        "GITHUB_TOKEN": "",
+        "AWS_BEARER_TOKEN_BEDROCK": "bedrock-token",
+        "AWS_BEDROCK_REGION": default,
+    }.get(name, default))
+    monkeypatch.setattr(rag_embeddings, "EMBEDDING_MODELS", [
+        {"name": "github", "provider": "github", "model": "text-embedding-3-large", "api_key_env": "GITHUB_TOKEN", "tpm_limit": 1},
+        {"name": "titan", "provider": "bedrock_titan", "model": "amazon.titan-embed-text-v2:0", "api_key_env": "AWS_BEARER_TOKEN_BEDROCK", "dimensions": 1024},
+    ])
+
+    embeddings, provider, index = rag_embeddings.get_embeddings_with_fallback()
+
+    assert provider == "titan"
+    assert index == 1
+    assert isinstance(embeddings, FakeBedrockEmbedding)

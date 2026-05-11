@@ -1,5 +1,5 @@
 import logging
-from typing import List, Tuple, Optional
+from typing import Any, Dict, List, Tuple, Optional
 from urllib.parse import quote
 
 import requests
@@ -138,6 +138,44 @@ class BedrockTitanEmbeddings(Embeddings):
         return vectors[0] if vectors else []
 
 
+
+
+_EMBEDDINGS_CACHE: Dict[str, Any] = {
+    "signature": None,
+    "embeddings": None,
+    "provider": "none",
+    "index": -1,
+}
+
+
+def _build_signature(model_index: int) -> Tuple[Any, ...]:
+    model_signatures = []
+    for model_config in EMBEDDING_MODELS:
+        model_signatures.append((
+            model_config.get("name"),
+            model_config.get("provider"),
+            model_config.get("model"),
+            model_config.get("api_key_env"),
+            model_config.get("region"),
+            model_config.get("dimensions"),
+            model_config.get("normalize"),
+            model_config.get("timeout"),
+        ))
+    key_values = tuple(get_env(cfg.get("api_key_env", "")) for cfg in EMBEDDING_MODELS)
+    return (model_index, tuple(model_signatures), key_values)
+
+
+def _set_embeddings_cache(signature: Tuple[Any, ...], embeddings: Optional[Embeddings], provider: str, index: int) -> None:
+    _EMBEDDINGS_CACHE["signature"] = signature
+    _EMBEDDINGS_CACHE["embeddings"] = embeddings
+    _EMBEDDINGS_CACHE["provider"] = provider
+    _EMBEDDINGS_CACHE["index"] = index
+
+
+def reset_embeddings_cache() -> None:
+    _set_embeddings_cache(None, None, "none", -1)
+
+
 def count_tokens(text: str) -> int:
     if TIKTOKEN_ENCODER is None:
         return len(text) // 4
@@ -150,6 +188,14 @@ def count_tokens(text: str) -> int:
 
 
 def get_embeddings_with_fallback(model_index: int = 0) -> Tuple[Optional[Embeddings], str, int]:
+    signature = _build_signature(model_index)
+    if _EMBEDDINGS_CACHE.get("signature") == signature:
+        return (
+            _EMBEDDINGS_CACHE.get("embeddings"),
+            _EMBEDDINGS_CACHE.get("provider", "none"),
+            _EMBEDDINGS_CACHE.get("index", -1),
+        )
+
     for idx in range(model_index, len(EMBEDDING_MODELS)):
         model_config = EMBEDDING_MODELS[idx]
         api_key = get_env(model_config["api_key_env"])
@@ -166,8 +212,8 @@ def get_embeddings_with_fallback(model_index: int = 0) -> Tuple[Optional[Embeddi
                     openai_api_key=api_key,
                     dimensions=model_config.get("dimensions", MAX_EMBEDDING_DIM),
                 )
-                _ = embeddings.embed_query("test")
                 logger.info(f"✅ Menggunakan {model_config['name']} (TPM: {model_config['tpm_limit']:,}, Dim: {MAX_EMBEDDING_DIM})")
+                _set_embeddings_cache(signature, embeddings, model_config["name"], idx)
                 return embeddings, model_config["name"], idx
 
             if model_config["provider"] == "bedrock_titan":
@@ -179,8 +225,8 @@ def get_embeddings_with_fallback(model_index: int = 0) -> Tuple[Optional[Embeddi
                     normalize=model_config.get("normalize", True),
                     timeout=model_config.get("timeout", 30),
                 )
-                _ = embeddings.embed_query("test")
                 logger.info(f"✅ Menggunakan {model_config['name']} (Dim native: {model_config.get('dimensions', 1024)}, Dim index: {MAX_EMBEDDING_DIM})")
+                _set_embeddings_cache(signature, embeddings, model_config["name"], idx)
                 return embeddings, model_config["name"], idx
 
         except Exception as e:
@@ -188,4 +234,5 @@ def get_embeddings_with_fallback(model_index: int = 0) -> Tuple[Optional[Embeddi
             logger.warning(f"⚠️ {model_config['name']} gagal: {error_msg}")
 
     logger.error("❌ Semua embedding provider gagal atau tidak tersedia")
+    _set_embeddings_cache(signature, None, "none", -1)
     return None, "none", -1

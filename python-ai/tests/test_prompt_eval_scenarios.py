@@ -234,3 +234,33 @@ async def test_eval_summarize_endpoint_returns_http_exception_when_prompt_placeh
     assert exc.value.status_code == 500
     assert "Gagal merender prompt" in exc.value.detail
     assert "missing_placeholder" in exc.value.detail
+
+
+def test_get_llm_stream_uses_precomputed_context_without_fetch(monkeypatch):
+    import app.llm_manager as manager
+
+    def boom(*_args, **_kwargs):
+        raise AssertionError("get_context_for_query should not be called")
+
+    captured = {}
+
+    def fake_stream(enhanced_messages, sources=None):
+        captured["messages"] = enhanced_messages
+        captured["sources"] = sources
+        if False:
+            yield ""
+
+    monkeypatch.setattr(manager, "get_context_for_query", boom)
+    monkeypatch.setattr(manager, "_stream_with_cascade", fake_stream)
+
+    list(
+        manager.get_llm_stream(
+            [{"role": "user", "content": "berita terbaru"}],
+            precomputed_context={
+                "search_context": "KONTEKS WEB TERBARU\nHASIL PENCARIAN WEB: ...",
+                "search_results": [{"title": "A", "url": "https://example.com", "snippet": "S"}],
+            },
+        )
+    )
+
+    assert captured["sources"][0]["url"] == "https://example.com"

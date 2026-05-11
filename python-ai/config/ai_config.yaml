@@ -274,7 +274,7 @@ retrieval:
     enabled: true
     mode: always     # 'always' | 'smart' | 'off'
     max_tokens: 100  # jawaban hipotetis singkat (100 token = ~2-3 kalimat)
-    timeout: 3       # detik — timeout ketat: jika lambat, skip gracefully
+    timeout: 2       # detik — timeout ketat: jika lambat, skip gracefully
 
 
 # ============================================

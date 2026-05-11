@@ -1,5 +1,5 @@
 import logging
-from typing import Dict, Generator, List
+from typing import Any, Dict, Generator, List, Optional
 
 from app.env_utils import get_env
 from app.services.llm_streaming import (
@@ -94,6 +94,7 @@ def get_llm_stream(
     allow_auto_realtime_web: bool = True,
     documents_active: bool = False,
     explicit_web_request: bool = False,
+    precomputed_context: Optional[Dict[str, Any]] = None,
 ) -> Generator[str, None, None]:
     """
     Generator yang yield token dari LLM terbaik yang tersedia.
@@ -116,15 +117,17 @@ def get_llm_stream(
     web_sources: list = []
     if query:
         try:
-            context_data = get_context_for_query(
-                query,
-                force_web_search=force_web_search,
-                allow_auto_realtime_web=allow_auto_realtime_web,
-                documents_active=documents_active,
-                explicit_web_request=explicit_web_request,
-            )
-            search_context = context_data.get("search_context", "")
-            web_sources = extract_web_sources(context_data)
+            context_data = precomputed_context
+            if context_data is None:
+                context_data = get_context_for_query(
+                    query,
+                    force_web_search=force_web_search,
+                    allow_auto_realtime_web=allow_auto_realtime_web,
+                    documents_active=documents_active,
+                    explicit_web_request=explicit_web_request,
+                )
+            search_context = (context_data or {}).get("search_context", "")
+            web_sources = extract_web_sources(context_data or {})
         except Exception as e:
             logger.warning("⚠️  Web search/RAG context gagal: %s", e)
 
