@@ -158,23 +158,24 @@ async def chat_stream(request: ChatRequest):
     if documents_active and query:
         search_relevant_chunks, build_rag_prompt = _get_rag_document_helpers()
         if should_web_search:
-            retrieval_task = asyncio.to_thread(
+            chunks, success = await asyncio.to_thread(
                 search_relevant_chunks,
                 query,
                 request.document_filenames,
                 _get_rag_top_k(),
                 request.user_id,
             )
-            web_task = asyncio.to_thread(
-                get_context_for_query,
-                query,
-                request.force_web_search,
-                allow_auto_realtime_web,
-                True,
-                explicit_web_request,
-            )
-            (chunks, success), context_data = await asyncio.gather(retrieval_task, web_task)
-            web_context = context_data.get("search_context", "") if isinstance(context_data, dict) else ""
+            web_context = ""
+            if success and chunks:
+                context_data = await asyncio.to_thread(
+                    get_context_for_query,
+                    query,
+                    request.force_web_search,
+                    allow_auto_realtime_web,
+                    True,
+                    explicit_web_request,
+                )
+                web_context = context_data.get("search_context", "") if isinstance(context_data, dict) else ""
         else:
             chunks, success = await asyncio.to_thread(
                 search_relevant_chunks,
