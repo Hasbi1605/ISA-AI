@@ -223,7 +223,7 @@ class ChatUiTest extends TestCase
             ->assertDontSee('Membuka chat...', false)
             ->assertSee('x-on:conversation-loading.window="isSwitchingConversation = true"', false)
             ->assertSee('x-on:conversation-activated.window="setActiveConversation($event.detail.id)"', false)
-            ->assertSee(':disabled="isNavigating"', false)
+            ->assertDontSee(':disabled="isNavigating"', false)
             ->assertSee('data-chat-history-id=', false)
             ->assertSee('isLoading(', false)
             ->assertSee('chat-history-item', false)
@@ -236,6 +236,67 @@ class ChatUiTest extends TestCase
             ->assertSee('chat-tab-switch', false)
             ->assertSee('activeTab === \'chat\'', false)
             ->assertDontSee('wire:click="$set(\'tab\', \'chat\')"', false);
+    }
+
+    public function test_send_message_saves_assistant_message_to_original_conversation_when_active_changes_mid_request(): void
+    {
+        $user = User::factory()->create();
+
+        $conversationA = Conversation::create([
+            'user_id' => $user->id,
+            'title' => 'Conversation A',
+        ]);
+
+        $conversationB = Conversation::create([
+            'user_id' => $user->id,
+            'title' => 'Conversation B',
+        ]);
+
+        $this->app->bind(AIService::class, fn () => new class($conversationB->id) extends AIService
+        {
+            public function __construct(private readonly int $switchConversationId) {}
+
+            public function sendChat(array $messages, ?array $document_filenames = null, ?string $user_id = null, bool $force_web_search = false, ?string $source_policy = null, bool $allow_auto_realtime_web = true): \Generator
+            {
+                app()->instance('chat_test_switch_target', $this->switchConversationId);
+
+                yield 'Jawaban AI tetap masuk ke conversation asal.';
+            }
+        });
+
+        $component = Livewire::actingAs($user)
+            ->test(ChatIndex::class)
+            ->set('currentConversationId', $conversationA->id);
+
+        /** @var ChatIndex $componentInstance */
+        $componentInstance = $component->instance();
+
+        $component
+            ->set('prompt', 'Pesan pengguna awal')
+            ->call('sendMessage', aiService: app(AIService::class), orchestrator: new class($componentInstance, $conversationB->id) extends ChatOrchestrationService
+            {
+                public function __construct(private readonly ChatIndex $component, private readonly int $targetConversationId) {}
+
+                public function extractStreamMetadata(string $chunk, string $buffer = ''): array
+                {
+                    $this->component->startNewChat();
+                    $this->component->loadConversation($this->targetConversationId);
+
+                    return parent::extractStreamMetadata($chunk, $buffer);
+                }
+            });
+
+        $this->assertDatabaseHas('messages', [
+            'conversation_id' => $conversationA->id,
+            'role' => 'assistant',
+            'content' => 'Jawaban AI tetap masuk ke conversation asal.',
+        ]);
+
+        $this->assertDatabaseMissing('messages', [
+            'conversation_id' => $conversationB->id,
+            'role' => 'assistant',
+            'content' => 'Jawaban AI tetap masuk ke conversation asal.',
+        ]);
     }
 
     public function test_loading_conversation_dispatches_active_history_event(): void

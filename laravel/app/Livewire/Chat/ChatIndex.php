@@ -512,7 +512,9 @@ class ChatIndex extends Component
             $this->prompt
         );
 
-        $userMessageArray = $orchestrator->saveUserMessage($this->currentConversationId, $this->prompt);
+        $conversationIdForRequest = (int) $this->currentConversationId;
+
+        $userMessageArray = $orchestrator->saveUserMessage($conversationIdForRequest, $this->prompt);
         $this->messages[] = $userMessageArray;
         $this->dispatch('user-message-acked');
         $this->prompt = '';
@@ -569,10 +571,12 @@ class ChatIndex extends Component
             $cleanContent .= $orchestrator->sanitizeAndFormatSources($this->sources);
         }
 
-        $assistantMsg = $orchestrator->saveAssistantMessage($this->currentConversationId, $cleanContent);
+        $assistantMsg = $orchestrator->saveAssistantMessage($conversationIdForRequest, $cleanContent);
         $this->newMessageId = $assistantMsg->id;
 
-        $this->loadConversation($this->currentConversationId, clearNewMessageId: false);
+        if ((int) $this->currentConversationId === $conversationIdForRequest) {
+            $this->loadConversation($conversationIdForRequest, clearNewMessageId: false);
+        }
         $this->loadConversations();
         $this->dispatch('assistant-message-persisted');
     }

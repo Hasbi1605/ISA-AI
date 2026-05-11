@@ -74,3 +74,17 @@ Analisis awal menunjukkan beberapa bottleneck berbasis kode:
 - PR dibuat, dideploy ke `https://ista-ai.app`, dan browser QA pasca-deploy selesai.
 - Review/QC tidak menemukan blocker.
 - Full final verification Laravel dan Python dijalankan sebelum meminta approval merge.
+
+## Follow-up Sebelum Merge: Navigasi Saat Chat Loading
+
+### Masalah
+User masih tidak bisa membuat chat baru atau pindah ke history chat lain ketika request chat sedang loading, baik chat biasa, RAG dokumen, maupun web search. Perilaku yang diinginkan adalah navigasi history/new chat tetap responsif walaupun proses AI untuk percakapan sebelumnya masih berjalan.
+
+### Scope Tambahan
+- Perbaiki mekanisme UI/Livewire chat history agar tombol New Chat dan history tidak terkunci oleh proses streaming chat yang lama.
+- Pastikan perpindahan history tidak merusak penyimpanan jawaban AI untuk percakapan asal.
+- Tambahkan test Laravel/JS-relevan bila memungkinkan untuk mencegah regresi.
+
+### Risiko Tambahan
+- Livewire request panjang dapat mengantre action lain pada komponen yang sama; fix harus menghindari kehilangan pesan atau menyimpan assistant response ke conversation yang salah.
+- Jika navigasi dilakukan via full page reload, proses streaming yang sedang berjalan bisa dibatalkan di browser; perlu memastikan data server tetap konsisten atau UX-nya jelas.

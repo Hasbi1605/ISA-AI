@@ -379,7 +379,7 @@ const registerChatPageData = (Alpine) => {
 
             this.setActiveConversation(conversationId);
 
-            if (this.isNavigating || previousConversationId === conversationId) {
+            if (previousConversationId === conversationId) {
                 return Promise.resolve();
             }
 
@@ -402,10 +402,6 @@ const registerChatPageData = (Alpine) => {
         },
 
         startNewChat() {
-            if (this.isNavigating) {
-                return Promise.resolve();
-            }
-
             this.setActiveConversation(null);
             this.loadingConversationId = null;
             this.isNavigating = true;

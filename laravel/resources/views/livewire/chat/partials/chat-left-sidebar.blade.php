@@ -24,7 +24,7 @@
     </div>
 
     <div class="p-4 pt-2 pb-5">
-        <button type="button" @click="startNewChat(); if(isMobile) showLeftSidebar = false;" :disabled="isNavigating" class="w-full flex items-center justify-start px-4 py-2.5 rounded-lg border border-stone-200/60 dark:border-[#334155] dark:bg-transparent bg-white hover:bg-gray-50 dark:hover:bg-white/5 font-medium text-[13px] text-gray-700 dark:text-gray-200 transition-all duration-200 shadow-sm disabled:cursor-wait disabled:opacity-70">
+        <button type="button" @click="startNewChat(); if(isMobile) showLeftSidebar = false;" class="w-full flex items-center justify-start px-4 py-2.5 rounded-lg border border-stone-200/60 dark:border-[#334155] dark:bg-transparent bg-white hover:bg-gray-50 dark:hover:bg-white/5 font-medium text-[13px] text-gray-700 dark:text-gray-200 transition-all duration-200 shadow-sm">
             <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 mr-2 text-[#64748B] dark:text-gray-300" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M12 5v14m-7-7h14" />
             </svg>
@@ -45,7 +45,6 @@
                     <li class="group relative" wire:key="chat-history-visible-{{ $conversation->id }}">
                         <button type="button" @click="loadConversation({{ $conversation->id }}); if(isMobile) showLeftSidebar = false;"
                            data-chat-history-id="{{ $conversation->id }}"
-                           :disabled="isNavigating"
                            :class="{ 'is-active': isActive({{ $conversation->id }}) }"
                            class="chat-history-item {{ (int) $currentConversationId === (int) $conversation->id ? 'is-active' : '' }}">
                             <img src="{{ $uiIcons['historyLight'] }}" alt="" class="h-4 w-4 mr-2.5 flex-shrink-0 dark:hidden" />
@@ -83,7 +82,6 @@
                         <li class="group relative" wire:key="chat-history-older-{{ $conversation->id }}">
                             <button type="button" @click="loadConversation({{ $conversation->id }}); if(isMobile) showLeftSidebar = false;"
                                data-chat-history-id="{{ $conversation->id }}"
-                               :disabled="isNavigating"
                                :class="{ 'is-active': isActive({{ $conversation->id }}) }"
                                class="chat-history-item {{ (int) $currentConversationId === (int) $conversation->id ? 'is-active' : '' }}">
                                 <img src="{{ $uiIcons['historyLight'] }}" alt="" class="h-4 w-4 mr-2.5 flex-shrink-0 dark:hidden" />
