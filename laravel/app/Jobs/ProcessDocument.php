@@ -3,7 +3,6 @@
 namespace App\Jobs;
 
 use App\Models\Document;
-use Exception;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Bus\Dispatchable;
 use Illuminate\Foundation\Queue\Queueable;
@@ -40,9 +39,8 @@ class ProcessDocument implements ShouldQueue
      */
     public function handle(): void
     {
-        try {
-            // 1. Update status to processing
-            $this->document->update(['status' => 'processing']);
+        // 1. Update status to processing
+        $this->document->update(['status' => 'processing']);
 
             // 2. Prepare file - Try both private and public paths
             $filePath = Storage::disk('local')->path($this->document->file_path);
@@ -52,9 +50,20 @@ class ProcessDocument implements ShouldQueue
                 $filePath = Storage::disk('local')->path('private/'.$this->document->file_path);
             }
 
-            if (! file_exists($filePath)) {
-                throw new Exception("File not found. Tried: {$this->document->file_path} and private/{$this->document->file_path}");
-            }
+        if (! file_exists($filePath)) {
+            $this->document->update(['status' => 'error']);
+            logger()->error("Document processing failed for ID {$this->document->id}: File not found. Tried: {$this->document->file_path} and private/{$this->document->file_path}");
+
+            return;
+        }
+
+        $fileContent = file_get_contents($filePath);
+        if ($fileContent === false) {
+            $this->document->update(['status' => 'error']);
+            logger()->error("Document processing failed for ID {$this->document->id}: unable to read file");
+
+            return;
+        }
 
             // 3. Send to Python Microservice (with extended timeout for embedding)
             $pythonUrl = rtrim((string) config('services.ai_document_service.url', config('services.ai_service.url', 'http://127.0.0.1:8001')), '/')
@@ -67,35 +76,29 @@ class ProcessDocument implements ShouldQueue
                 ])
                 ->attach(
                     'file',
-                    file_get_contents($filePath),
+                    $fileContent,
                     $this->document->original_name
                 )
                 ->post($pythonUrl, [
                     'user_id' => (string) $this->document->user_id,
                 ]);
 
-            if ($response->successful()) {
-                // 4. Update status to ready
-                $this->document->update(['status' => 'ready']);
+        if ($response->successful()) {
+            // 4. Update status to ready
+            $this->document->update(['status' => 'ready']);
 
                 // 5. Dispatch preview rendering job as a fallback if the
                 // eager upload-time dispatch has not already completed it.
-                try {
-                    $freshDocument = $this->document->fresh();
-                    if ($freshDocument !== null && $freshDocument->preview_status !== Document::PREVIEW_STATUS_READY) {
-                        RenderDocumentPreview::dispatch($freshDocument);
-                    }
-                } catch (\Throwable $e) {
-                    logger()->warning("Preview dispatch failed for document {$this->document->id}, proceeding: ".$e->getMessage());
+            try {
+                $freshDocument = $this->document->fresh();
+                if ($freshDocument !== null && $freshDocument->preview_status !== Document::PREVIEW_STATUS_READY) {
+                    RenderDocumentPreview::dispatch($freshDocument);
                 }
-            } else {
-                throw new Exception('Microservice error: '.$response->body());
+            } catch (\Throwable $e) {
+                logger()->warning("Preview dispatch failed for document {$this->document->id}, proceeding: ".$e->getMessage());
             }
-
-        } catch (Exception $e) {
-            $this->document->update(['status' => 'error']);
-            // Log the error
-            logger()->error("Document processing failed for ID {$this->document->id}: ".$e->getMessage());
+        } else {
+            throw new \RuntimeException('Microservice error: '.$response->body());
         }
     }
 

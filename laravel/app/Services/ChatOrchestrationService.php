@@ -5,6 +5,7 @@ namespace App\Services;
 use App\Models\Conversation;
 use App\Models\Message;
 use App\Models\Document;
+use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Support\Facades\Auth;
 
 class ChatOrchestrationService
@@ -27,6 +28,14 @@ class ChatOrchestrationService
                 'title' => substr($prompt, 0, 50) . '...'
             ]);
             return $conversation->id;
+        }
+
+        $ownedConversationExists = Conversation::where('id', $currentConversationId)
+            ->where('user_id', Auth::id())
+            ->exists();
+
+        if (! $ownedConversationExists) {
+            throw new AuthorizationException('Unauthorized conversation access.');
         }
 
         return $currentConversationId;
@@ -60,9 +69,13 @@ class ChatOrchestrationService
             return null;
         }
 
-        return Document::whereIn('id', $conversationDocuments)
+        $filenames = Document::whereIn('id', $conversationDocuments)
+            ->where('user_id', Auth::id())
+            ->where('status', 'ready')
             ->pluck('original_name')
             ->toArray();
+
+        return empty($filenames) ? null : $filenames;
     }
 
     public function getSourcePolicy(?array $documentFilenames): string

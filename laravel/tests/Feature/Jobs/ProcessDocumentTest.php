@@ -11,7 +11,6 @@ use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\Facades\Storage;
 use Tests\TestCase;
-use Exception;
 
 class ProcessDocumentTest extends TestCase
 {
@@ -52,7 +51,7 @@ class ProcessDocumentTest extends TestCase
         });
     }
 
-    public function test_job_updates_status_to_error_on_http_failure(): void
+    public function test_job_throws_runtime_exception_on_http_failure(): void
     {
         Storage::fake('local');
         config()->set('services.ai_document_service.url', 'http://python-ai-docs:8002');
@@ -76,10 +75,29 @@ class ProcessDocumentTest extends TestCase
         ]);
 
         $job = new ProcessDocument($document);
+        $this->expectException(\RuntimeException::class);
+        $this->expectExceptionMessage('Microservice error:');
         $job->handle();
+    }
 
-        $this->assertEquals('error', $document->fresh()->status);
-        Http::assertSent(fn ($request) => $request->url() === 'http://python-ai-docs:8002/api/documents/process');
+    public function test_failed_method_sets_document_status_to_error(): void
+    {
+        $user = User::factory()->create();
+
+        $document = Document::create([
+            'user_id' => $user->id,
+            'filename' => 'failed-callback.pdf',
+            'original_name' => 'failed-callback.pdf',
+            'file_path' => 'documents/' . $user->id . '/failed-callback.pdf',
+            'mime_type' => 'application/pdf',
+            'file_size_bytes' => 123,
+            'status' => 'processing',
+        ]);
+
+        $job = new ProcessDocument($document);
+        $job->failed(new \RuntimeException('permanent failure'));
+
+        $this->assertSame('error', $document->fresh()->status);
     }
 
     public function test_job_updates_status_to_error_if_file_missing(): void

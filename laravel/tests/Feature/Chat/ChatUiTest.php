@@ -8,7 +8,9 @@ use App\Models\Document;
 use App\Models\Message;
 use App\Models\User;
 use App\Services\AIService;
+use App\Services\ChatOrchestrationService;
 use App\Services\DocumentExportService;
+use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\RateLimiter;
@@ -49,6 +51,74 @@ class ChatUiTest extends TestCase
             ->assertHasErrors(['rate_limit']);
     }
 
+    public function test_create_conversation_if_needed_throws_for_unowned_conversation(): void
+    {
+        $userA = User::factory()->create();
+        $userB = User::factory()->create();
+
+        $conversation = Conversation::create([
+            'user_id' => $userA->id,
+            'title' => 'Owned by A',
+        ]);
+
+        $service = new ChatOrchestrationService();
+
+        $this->actingAs($userB);
+        $this->expectException(AuthorizationException::class);
+        $this->expectExceptionMessage('Unauthorized conversation access.');
+
+        $service->createConversationIfNeeded($conversation->id, 'Prompt dari user B');
+    }
+
+    public function test_get_document_filenames_scopes_owned_and_ready_documents_only(): void
+    {
+        $user = User::factory()->create();
+        $otherUser = User::factory()->create();
+
+        $ownedReady = Document::create([
+            'user_id' => $user->id,
+            'filename' => 'owned-ready.pdf',
+            'original_name' => 'owned-ready.pdf',
+            'file_path' => 'documents/'.$user->id.'/owned-ready.pdf',
+            'mime_type' => 'application/pdf',
+            'file_size_bytes' => 100,
+            'status' => 'ready',
+        ]);
+
+        $ownedProcessing = Document::create([
+            'user_id' => $user->id,
+            'filename' => 'owned-processing.pdf',
+            'original_name' => 'owned-processing.pdf',
+            'file_path' => 'documents/'.$user->id.'/owned-processing.pdf',
+            'mime_type' => 'application/pdf',
+            'file_size_bytes' => 100,
+            'status' => 'processing',
+        ]);
+
+        $otherReady = Document::create([
+            'user_id' => $otherUser->id,
+            'filename' => 'other-ready.pdf',
+            'original_name' => 'other-ready.pdf',
+            'file_path' => 'documents/'.$otherUser->id.'/other-ready.pdf',
+            'mime_type' => 'application/pdf',
+            'file_size_bytes' => 100,
+            'status' => 'ready',
+        ]);
+
+        $service = new ChatOrchestrationService();
+
+        $this->actingAs($user);
+
+        $result = $service->getDocumentFilenames([
+            $ownedReady->id,
+            $ownedProcessing->id,
+            $otherReady->id,
+        ]);
+
+        $this->assertSame(['owned-ready.pdf'], $result);
+        $this->assertNull($service->getDocumentFilenames([$ownedProcessing->id, $otherReady->id]));
+    }
+
     public function test_send_message_rejects_prompt_over_8000_chars_before_rate_limit_or_ai_call(): void
     {
         $user = User::factory()->create();
@@ -66,6 +136,37 @@ class ChatUiTest extends TestCase
             ->set('prompt', str_repeat('a', 8001))
             ->call('sendMessage')
             ->assertHasErrors(['prompt' => 'max']);
+    }
+
+    public function test_send_message_does_not_persist_message_for_unauthorized_conversation(): void
+    {
+        $userA = User::factory()->create();
+        $userB = User::factory()->create();
+
+        $conversationA = Conversation::create([
+            'user_id' => $userA->id,
+            'title' => 'Owned by user A',
+        ]);
+
+        $this->app->bind(AIService::class, fn () => new class extends AIService
+        {
+            public function sendChat(array $messages, ?array $document_filenames = null, ?string $user_id = null, bool $force_web_search = false, ?string $source_policy = null, bool $allow_auto_realtime_web = true): \Generator
+            {
+                throw new \RuntimeException('AIService should not be called for unauthorized conversation access.');
+            }
+        });
+
+        Livewire::actingAs($userB)
+            ->test(ChatIndex::class)
+            ->set('currentConversationId', $conversationA->id)
+            ->set('prompt', 'Pesan tidak berizin')
+            ->call('sendMessage');
+
+        $this->assertDatabaseMissing('messages', [
+            'conversation_id' => $conversationA->id,
+            'content' => 'Pesan tidak berizin',
+        ]);
+        $this->assertCount(0, Message::where('conversation_id', $conversationA->id)->get());
     }
 
     public function test_save_answer_to_google_drive_rate_limited_returns_error_before_export_service_call(): void
