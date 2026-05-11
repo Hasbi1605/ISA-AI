@@ -138,7 +138,10 @@ const registerChatPageData = (Alpine) => {
         loadingPhase: 'AI sedang berpikir',
         loadingPhaseKey: 0,
         loadingPhaseTimeout: null,
+        phase2Timeout: null,
         hasFirstAssistantChunk: false,
+        phase1Done: false,
+        phase2Done: false,
         shimmerActive: false,
         _messageCompleteHandler: null,
         chatMutationObserver: null,
@@ -161,11 +164,18 @@ const registerChatPageData = (Alpine) => {
                 this.streamingText += data[0] || '';
                 this.streaming = true;
                 this.hasFirstAssistantChunk = true;
-                this.loadingPhase = 'Menampilkan jawaban';
-                this.loadingPhaseKey++;
-                this.shimmerActive = false;
-                this.clearLoadingPhaseTimeout();
                 this.scrollToBottom();
+
+                // Jangan langsung pindah ke "Menampilkan jawaban" — biarkan
+                // chain timeout fase 1→2→3 yang mengatur. Kalau fase 2 sudah
+                // selesai (phase2Done), baru boleh pindah sekarang.
+                if (this.phase2Done) {
+                    this.loadingPhase = 'Menampilkan jawaban';
+                    this.loadingPhaseKey++;
+                    this.shimmerActive = false;
+                }
+                // Kalau belum, phase2Timeout akan memanggil tryShowAnswer()
+                // setelah fase 2 selesai.
             });
             this.registerWireListener('model-name', (data) => {
                 this.modelName = data[0] || '';
@@ -189,6 +199,7 @@ const registerChatPageData = (Alpine) => {
 
         destroy() {
             this.clearLoadingPhaseTimeout();
+            this.clearPhase2Timeout();
             if (this._messageCompleteHandler) {
                 window.removeEventListener('message-complete', this._messageCompleteHandler);
                 this._messageCompleteHandler = null;
@@ -218,6 +229,25 @@ const registerChatPageData = (Alpine) => {
             }
         },
 
+        clearPhase2Timeout() {
+            if (this.phase2Timeout) {
+                window.clearTimeout(this.phase2Timeout);
+                this.phase2Timeout = null;
+            }
+        },
+
+        // Dipanggil setelah fase 2 selesai. Kalau chunk sudah ada, langsung
+        // tampilkan "Menampilkan jawaban". Kalau belum, tunggu chunk datang
+        // (assistant-output handler akan cek phase2Done).
+        tryShowAnswer() {
+            this.phase2Done = true;
+            if (this.hasFirstAssistantChunk) {
+                this.loadingPhase = 'Menampilkan jawaban';
+                this.loadingPhaseKey++;
+                this.shimmerActive = false;
+            }
+        },
+
         startStreamingPlaceholder(context = 'general') {
             this.resetStreamingState(false);
             this.streaming = true;
@@ -225,28 +255,42 @@ const registerChatPageData = (Alpine) => {
             this.loadingPhaseKey++;
             this.loadingPhase = this.loadingPhaseLabels()[0];
             this.shimmerActive = true;
-            this.clearLoadingPhaseTimeout();
+            this.phase1Done = false;
+            this.phase2Done = false;
 
-            // Biarkan label pertama (Mencari jawaban / Sedang membaca dokumen / ...)
-            // terasa cukup lama sebelum fade ke "AI sedang berpikir" supaya transisi
-            // tidak terasa buru-buru. ~5s enak untuk dibaca + ada cukup waktu untuk
-            // sheen shimmer berjalan beberapa cycle.
             const labels = this.loadingPhaseLabels();
+
             if (labels.length > 2) {
+                // Kontekstual: fase 1 (Mencari jawaban / Sedang membaca dokumen)
+                // bertahan 5000ms, lalu fase 2 (AI sedang berpikir) juga 5000ms,
+                // baru tryShowAnswer(). Chain ini tidak bisa di-cancel oleh chunk
+                // yang datang lebih awal — chunk hanya di-buffer sampai fase selesai.
                 this.loadingPhaseTimeout = window.setTimeout(() => {
-                    if (!this.hasFirstAssistantChunk) {
-                        this.loadingPhase = labels[1];
-                        this.loadingPhaseKey++;
-                    }
+                    this.phase1Done = true;
+                    this.loadingPhase = labels[1]; // "AI sedang berpikir"
+                    this.loadingPhaseKey++;
+
+                    this.phase2Timeout = window.setTimeout(() => {
+                        this.tryShowAnswer();
+                    }, 5000);
+                }, 5000);
+            } else {
+                // General: langsung "AI sedang berpikir", fase 2 juga 5000ms.
+                this.phase1Done = true;
+                this.phase2Timeout = window.setTimeout(() => {
+                    this.tryShowAnswer();
                 }, 5000);
             }
         },
 
         resetStreamingState(stopStreaming = true) {
             this.clearLoadingPhaseTimeout();
+            this.clearPhase2Timeout();
 
             this.loadingPhaseKey = 0;
             this.hasFirstAssistantChunk = false;
+            this.phase1Done = false;
+            this.phase2Done = false;
             this.loadingContext = 'general';
             this.loadingPhase = 'AI sedang berpikir';
             this.shimmerActive = false;
@@ -1057,6 +1101,8 @@ const registerChatPageData = (Alpine) => {
         memoLoadingPhase: 'Membuat ulang memo',
         memoLoadingPhaseKey: 0,
         memoLoadingPhaseTimeout: null,
+        memoPhase2Timeout: null,
+        memoPhase2Done: false,
         memoShimmerActive: false,
 
         init() {
@@ -1134,26 +1180,42 @@ const registerChatPageData = (Alpine) => {
             }
         },
 
+        clearMemoPhase2Timeout() {
+            if (this.memoPhase2Timeout) {
+                window.clearTimeout(this.memoPhase2Timeout);
+                this.memoPhase2Timeout = null;
+            }
+        },
+
         startMemoLoadingPhase() {
             this.resetMemoLoadingPhase();
             this.memoLoadingPhaseKey++;
             this.memoLoadingPhase = this.memoLoadingLabels()[0];
             this.memoShimmerActive = true;
-            this.clearMemoLoadingPhaseTimeout();
+            this.memoPhase2Done = false;
 
-            // "Membuat ulang memo" dibiarkan tampil ~5 detik supaya transisi ke
-            // "AI sedang berpikir" tidak terasa tergesa-gesa dan shimmer sempat
-            // terlihat jalan.
+            // Fase 1 ("Membuat ulang memo") 5000ms, lalu fase 2
+            // ("AI sedang berpikir") juga 5000ms — chain tidak bisa
+            // di-cancel, sehingga perbandingan durasi 1:1.
             this.memoLoadingPhaseTimeout = window.setTimeout(() => {
                 this.memoLoadingPhase = this.memoLoadingLabels()[1];
                 this.memoLoadingPhaseKey++;
+
+                this.memoPhase2Timeout = window.setTimeout(() => {
+                    this.memoPhase2Done = true;
+                    this.memoLoadingPhase = this.memoLoadingLabels()[2];
+                    this.memoLoadingPhaseKey++;
+                    this.memoShimmerActive = false;
+                }, 5000);
             }, 5000);
         },
 
         resetMemoLoadingPhase() {
             this.clearMemoLoadingPhaseTimeout();
+            this.clearMemoPhase2Timeout();
 
             this.memoLoadingPhaseKey = 0;
+            this.memoPhase2Done = false;
             this.memoLoadingPhase = 'Membuat ulang memo';
             this.memoShimmerActive = false;
         },
