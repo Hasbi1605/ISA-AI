@@ -262,7 +262,7 @@ const registerChatPageData = (Alpine) => {
 
             if (labels.length > 2) {
                 // Kontekstual: fase 1 (Mencari jawaban / Sedang membaca dokumen)
-                // bertahan 5000ms, lalu fase 2 (AI sedang berpikir) juga 5000ms,
+                // bertahan 8000ms, lalu fase 2 (AI sedang berpikir) juga 8000ms,
                 // baru tryShowAnswer(). Chain ini tidak bisa di-cancel oleh chunk
                 // yang datang lebih awal — chunk hanya di-buffer sampai fase selesai.
                 this.loadingPhaseTimeout = window.setTimeout(() => {
@@ -272,14 +272,14 @@ const registerChatPageData = (Alpine) => {
 
                     this.phase2Timeout = window.setTimeout(() => {
                         this.tryShowAnswer();
-                    }, 5000);
-                }, 5000);
+                    }, 8000);
+                }, 8000);
             } else {
-                // General: langsung "AI sedang berpikir", fase 2 juga 5000ms.
+                // General: langsung "AI sedang berpikir", fase 2 juga 8000ms.
                 this.phase1Done = true;
                 this.phase2Timeout = window.setTimeout(() => {
                     this.tryShowAnswer();
-                }, 5000);
+                }, 8000);
             }
         },
 
@@ -1194,8 +1194,8 @@ const registerChatPageData = (Alpine) => {
             this.memoShimmerActive = true;
             this.memoPhase2Done = false;
 
-            // Fase 1 ("Membuat ulang memo") 5000ms, lalu fase 2
-            // ("AI sedang berpikir") juga 5000ms — chain tidak bisa
+            // Fase 1 ("Membuat ulang memo") 8000ms, lalu fase 2
+            // ("AI sedang berpikir") juga 8000ms — chain tidak bisa
             // di-cancel, sehingga perbandingan durasi 1:1.
             this.memoLoadingPhaseTimeout = window.setTimeout(() => {
                 this.memoLoadingPhase = this.memoLoadingLabels()[1];
@@ -1206,8 +1206,8 @@ const registerChatPageData = (Alpine) => {
                     this.memoLoadingPhase = this.memoLoadingLabels()[2];
                     this.memoLoadingPhaseKey++;
                     this.memoShimmerActive = false;
-                }, 5000);
-            }, 5000);
+                }, 8000);
+            }, 8000);
         },
 
         resetMemoLoadingPhase() {
