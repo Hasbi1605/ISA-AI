@@ -282,20 +282,15 @@
                                 <span class="absolute left-[12%] top-[62%] h-1.5 w-1.5 rounded-full bg-gray-500/80 dark:bg-[#94A3B8]/90 animate-pulse" style="animation-duration: 1.5s; animation-delay: 0.12s;"></span>
                                 <span class="absolute right-[12%] top-[62%] h-1.5 w-1.5 rounded-full bg-gray-500/70 dark:bg-[#94A3B8]/80 animate-pulse" style="animation-duration: 1.7s; animation-delay: 0.24s;"></span>
                             </span>
-                            <span class="ista-loading-label-stack text-[12px] font-medium min-w-[7rem]">
-                                <template x-for="label in [memoLoadingPhase]" :key="memoLoadingPhaseKey">
-                                    <span
-                                        class="ista-loading-shimmer whitespace-nowrap"
-                                        x-text="label"
-                                        x-transition:enter="transition ease-out duration-[700ms]"
-                                        x-transition:enter-start="opacity-0 blur-[4px] -translate-y-[2px]"
-                                        x-transition:enter-end="opacity-100 blur-0 translate-y-0"
-                                        x-transition:leave="transition ease-in duration-[500ms]"
-                                        x-transition:leave-start="opacity-100 blur-0 translate-y-0"
-                                        x-transition:leave-end="opacity-0 blur-[4px] translate-y-[2px]"
-                                    ></span>
-                                </template>
-                            </span>
+                            <span class="ista-loading-shimmer ista-label-enter text-[12px] font-medium whitespace-nowrap"
+                                x-text="memoLoadingPhase"
+                                x-effect="
+                                    memoLoadingPhaseKey;
+                                    $el.classList.remove('ista-label-enter');
+                                    void $el.offsetWidth;
+                                    $el.classList.add('ista-label-enter');
+                                "
+                            ></span>
                         </div>
                     </div>
                 </div>
