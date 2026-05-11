@@ -136,9 +136,10 @@ const registerChatPageData = (Alpine) => {
         sources: [],
         loadingContext: 'general',
         loadingPhase: 'AI sedang berpikir',
-        loadingPhaseTimer: null,
-        loadingPhaseStep: 0,
+        loadingPhaseKey: 0,
+        loadingPhaseTimeout: null,
         hasFirstAssistantChunk: false,
+        shimmerActive: false,
         _messageCompleteHandler: null,
         chatMutationObserver: null,
         wireListeners: [],
@@ -161,6 +162,9 @@ const registerChatPageData = (Alpine) => {
                 this.streaming = true;
                 this.hasFirstAssistantChunk = true;
                 this.loadingPhase = 'Menampilkan jawaban';
+                this.loadingPhaseKey++;
+                this.shimmerActive = false;
+                this.clearLoadingPhaseTimeout();
                 this.scrollToBottom();
             });
             this.registerWireListener('model-name', (data) => {
@@ -184,10 +188,7 @@ const registerChatPageData = (Alpine) => {
         },
 
         destroy() {
-            if (this.loadingPhaseTimer) {
-                window.clearInterval(this.loadingPhaseTimer);
-                this.loadingPhaseTimer = null;
-            }
+            this.clearLoadingPhaseTimeout();
             if (this._messageCompleteHandler) {
                 window.removeEventListener('message-complete', this._messageCompleteHandler);
                 this._messageCompleteHandler = null;
@@ -210,25 +211,42 @@ const registerChatPageData = (Alpine) => {
             }
         },
 
+        clearLoadingPhaseTimeout() {
+            if (this.loadingPhaseTimeout) {
+                window.clearTimeout(this.loadingPhaseTimeout);
+                this.loadingPhaseTimeout = null;
+            }
+        },
+
         startStreamingPlaceholder(context = 'general') {
             this.resetStreamingState(false);
             this.streaming = true;
             this.loadingContext = context;
-            this.loadingPhaseStep = 0;
+            this.loadingPhaseKey++;
             this.loadingPhase = this.loadingPhaseLabels()[0];
-            this.startLoadingPhaseTimer();
+            this.shimmerActive = true;
+            this.clearLoadingPhaseTimeout();
+
+            // Schedule transition to "AI sedang berpikir" after ~3000ms for non-general contexts
+            const labels = this.loadingPhaseLabels();
+            if (labels.length > 2) {
+                this.loadingPhaseTimeout = window.setTimeout(() => {
+                    if (!this.hasFirstAssistantChunk) {
+                        this.loadingPhase = labels[1];
+                        this.loadingPhaseKey++;
+                    }
+                }, 3000);
+            }
         },
 
         resetStreamingState(stopStreaming = true) {
-            if (this.loadingPhaseTimer) {
-                window.clearInterval(this.loadingPhaseTimer);
-                this.loadingPhaseTimer = null;
-            }
+            this.clearLoadingPhaseTimeout();
 
-            this.loadingPhaseStep = 0;
+            this.loadingPhaseKey = 0;
             this.hasFirstAssistantChunk = false;
             this.loadingContext = 'general';
             this.loadingPhase = 'AI sedang berpikir';
+            this.shimmerActive = false;
             this.streamingText = '';
             this.modelName = '';
             this.sources = [];
@@ -252,24 +270,6 @@ const registerChatPageData = (Alpine) => {
             }
 
             return ['AI sedang berpikir', 'Menampilkan jawaban'];
-        },
-
-        startLoadingPhaseTimer() {
-            this.loadingPhaseTimer = window.setInterval(() => {
-                if (this.hasFirstAssistantChunk) {
-                    this.loadingPhase = 'Menampilkan jawaban';
-                    window.clearInterval(this.loadingPhaseTimer);
-                    this.loadingPhaseTimer = null;
-                    return;
-                }
-
-                const labels = this.loadingPhaseLabels();
-                const maxIndexBeforeAnswer = Math.max(labels.length - 2, 0);
-                this.loadingPhaseStep = this.loadingPhaseStep >= maxIndexBeforeAnswer
-                    ? maxIndexBeforeAnswer
-                    : this.loadingPhaseStep + 1;
-                this.loadingPhase = labels[this.loadingPhaseStep] || labels[0];
-            }, 1400);
         },
 
         scrollToBottom(smooth = false) {
@@ -1052,8 +1052,9 @@ const registerChatPageData = (Alpine) => {
         memoRevisionText: '',
         memoRevisionLoading: false,
         memoLoadingPhase: 'Membuat ulang memo',
-        memoLoadingPhaseTimer: null,
-        memoLoadingPhaseStep: 0,
+        memoLoadingPhaseKey: 0,
+        memoLoadingPhaseTimeout: null,
+        memoShimmerActive: false,
 
         init() {
             const mediaQuery = window.matchMedia('(max-width: 1023px)');
@@ -1101,6 +1102,8 @@ const registerChatPageData = (Alpine) => {
 
             this.memoRevisionText = message;
             this.memoRevisionLoading = true;
+            this.memoLoadingPhaseKey++;
+            this.memoShimmerActive = true;
             this.startMemoLoadingPhase();
 
             textarea.value = '';
@@ -1122,25 +1125,33 @@ const registerChatPageData = (Alpine) => {
             return ['Membuat ulang memo', 'AI sedang berpikir', 'Menampilkan jawaban'];
         },
 
+        clearMemoLoadingPhaseTimeout() {
+            if (this.memoLoadingPhaseTimeout) {
+                window.clearTimeout(this.memoLoadingPhaseTimeout);
+                this.memoLoadingPhaseTimeout = null;
+            }
+        },
+
         startMemoLoadingPhase() {
             this.resetMemoLoadingPhase();
-            this.memoLoadingPhaseStep = 0;
+            this.memoLoadingPhaseKey++;
             this.memoLoadingPhase = this.memoLoadingLabels()[0];
-            this.memoLoadingPhaseTimer = window.setInterval(() => {
-                const labels = this.memoLoadingLabels();
-                this.memoLoadingPhaseStep = Math.min(this.memoLoadingPhaseStep + 1, labels.length - 1);
-                this.memoLoadingPhase = labels[this.memoLoadingPhaseStep];
-            }, 1400);
+            this.memoShimmerActive = true;
+            this.clearMemoLoadingPhaseTimeout();
+
+            // Schedule transition to "AI sedang berpikir" after ~3000ms
+            this.memoLoadingPhaseTimeout = window.setTimeout(() => {
+                this.memoLoadingPhase = this.memoLoadingLabels()[1];
+                this.memoLoadingPhaseKey++;
+            }, 3000);
         },
 
         resetMemoLoadingPhase() {
-            if (this.memoLoadingPhaseTimer) {
-                window.clearInterval(this.memoLoadingPhaseTimer);
-                this.memoLoadingPhaseTimer = null;
-            }
+            this.clearMemoLoadingPhaseTimeout();
 
-            this.memoLoadingPhaseStep = 0;
+            this.memoLoadingPhaseKey = 0;
             this.memoLoadingPhase = 'Membuat ulang memo';
+            this.memoShimmerActive = false;
         },
 
         scrollMemoChatToBottom() {

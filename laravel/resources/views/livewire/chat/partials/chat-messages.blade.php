@@ -1,3 +1,41 @@
+<style>
+@keyframes shimmer-sheen {
+  0% { background-position: -200% center; }
+  100% { background-position: 200% center; }
+}
+.chat-loading-shimmer {
+  display: inline-block;
+  color: transparent;
+  -webkit-text-fill-color: transparent;
+  background: linear-gradient(90deg,
+    #64748B 0%,
+    #64748B 20%,
+    rgba(255,255,255,0.7) 40%,
+    rgba(255,255,255,0.95) 50%,
+    rgba(255,255,255,0.7) 60%,
+    #64748B 80%,
+    #64748B 100%
+  );
+  background-size: 200% 100%;
+  background-clip: text;
+  -webkit-background-clip: text;
+  animation: shimmer-sheen 1.6s linear infinite;
+}
+.dark .chat-loading-shimmer {
+  background: linear-gradient(90deg,
+    #475569 0%,
+    #475569 20%,
+    rgba(148,163,184,0.6) 40%,
+    rgba(148,163,184,0.9) 50%,
+    rgba(148,163,184,0.6) 60%,
+    #475569 80%,
+    #475569 100%
+  );
+  background-size: 200% 100%;
+  background-clip: text;
+  -webkit-background-clip: text;
+}
+</style>
 <div x-data="chatMessages"
      class="mx-auto min-h-0 w-full max-w-4xl flex-1 overflow-y-auto px-3 py-5 sm:px-6 sm:py-7 space-y-6 sm:space-y-8"
      x-ref="chatBox"
@@ -326,19 +364,28 @@
                        :class="streamingText === '' ? 'inline-flex items-center px-4 py-3 w-auto' : 'px-4 py-3 w-full max-w-[656px]'"
                        role="status"
                        aria-live="polite">
-                      <div x-show="streamingText === ''" class="inline-flex items-center gap-2.5 py-1">
-                         <span class="relative inline-flex h-4 w-4 items-center justify-center">
-                             <span class="absolute inset-0 animate-spin" style="animation-duration: 2.8s; animation-timing-function: linear;">
-                                 <span class="absolute left-1/2 top-0 h-1.5 w-1.5 -translate-x-1/2 rounded-full bg-gray-400/90 dark:bg-[#64748B]"></span>
-                                 <span class="absolute left-[12%] top-[62%] h-1.5 w-1.5 rounded-full bg-gray-400/75 dark:bg-[#64748B]/90"></span>
-                                 <span class="absolute right-[12%] top-[62%] h-1.5 w-1.5 rounded-full bg-gray-400/60 dark:bg-[#64748B]/80"></span>
-                             </span>
-                             <span class="absolute left-1/2 top-0 h-1.5 w-1.5 -translate-x-1/2 rounded-full bg-gray-500/90 dark:bg-[#94A3B8] animate-pulse" style="animation-duration: 1.3s;"></span>
-                             <span class="absolute left-[12%] top-[62%] h-1.5 w-1.5 rounded-full bg-gray-500/80 dark:bg-[#94A3B8]/90 animate-pulse" style="animation-duration: 1.5s; animation-delay: 0.12s;"></span>
-                             <span class="absolute right-[12%] top-[62%] h-1.5 w-1.5 rounded-full bg-gray-500/70 dark:bg-[#94A3B8]/80 animate-pulse" style="animation-duration: 1.7s; animation-delay: 0.24s;"></span>
-                         </span>
-                         <span class="text-[12px] font-medium text-[#64748B] dark:text-[#94A3B8]" x-text="loadingPhase"></span>
-                       </div>
+<div x-show="streamingText === ''" class="inline-flex items-center gap-2.5 py-1">
+                          <span class="relative inline-flex h-4 w-4 items-center justify-center">
+                              <span class="absolute inset-0 animate-spin" style="animation-duration: 2.8s; animation-timing-function: linear;">
+                                  <span class="absolute left-1/2 top-0 h-1.5 w-1.5 -translate-x-1/2 rounded-full bg-gray-400/90 dark:bg-[#64748B]"></span>
+                                  <span class="absolute left-[12%] top-[62%] h-1.5 w-1.5 rounded-full bg-gray-400/75 dark:bg-[#64748B]/90"></span>
+                                  <span class="absolute right-[12%] top-[62%] h-1.5 w-1.5 rounded-full bg-gray-400/60 dark:bg-[#64748B]/80"></span>
+                              </span>
+                              <span class="absolute left-1/2 top-0 h-1.5 w-1.5 -translate-x-1/2 rounded-full bg-gray-500/90 dark:bg-[#94A3B8] animate-pulse" style="animation-duration: 1.3s;"></span>
+                              <span class="absolute left-[12%] top-[62%] h-1.5 w-1.5 rounded-full bg-gray-500/80 dark:bg-[#94A3B8]/90 animate-pulse" style="animation-duration: 1.5s; animation-delay: 0.12s;"></span>
+                              <span class="absolute right-[12%] top-[62%] h-1.5 w-1.5 rounded-full bg-gray-500/70 dark:bg-[#94A3B8]/80 animate-pulse" style="animation-duration: 1.7s; animation-delay: 0.24s;"></span>
+                          </span>
+                          <template x-for="(_, i) in [1]" :key="loadingPhaseKey">
+                              <span
+                                  class="text-[12px] font-medium"
+                                  :class="shimmerActive && loadingPhase !== 'Menampilkan jawaban' ? 'chat-loading-shimmer' : 'text-[#64748B] dark:text-[#94A3B8]'"
+                                  x-text="loadingPhase"
+                                  x-transition:enter="transition ease-out duration-500"
+                                  x-transition:enter-start="opacity-0"
+                                  x-transition:enter-end="opacity-100"
+                              ></span>
+                          </template>
+                        </div>
                     <p x-show="streamingText !== ''" class="whitespace-pre-wrap break-words [overflow-wrap:anywhere]" x-text="streamingText"></p>
                   </div>
 
