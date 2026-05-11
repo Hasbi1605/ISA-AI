@@ -8,7 +8,9 @@ use App\Models\Document;
 use App\Models\Message;
 use App\Models\User;
 use App\Services\AIService;
+use App\Services\ChatOrchestrationService;
 use App\Services\DocumentExportService;
+use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\RateLimiter;
@@ -47,6 +49,74 @@ class ChatUiTest extends TestCase
             ->set('prompt', 'Halo')
             ->call('sendMessage')
             ->assertHasErrors(['rate_limit']);
+    }
+
+    public function test_create_conversation_if_needed_throws_for_unowned_conversation(): void
+    {
+        $userA = User::factory()->create();
+        $userB = User::factory()->create();
+
+        $conversation = Conversation::create([
+            'user_id' => $userA->id,
+            'title' => 'Owned by A',
+        ]);
+
+        $service = new ChatOrchestrationService();
+
+        $this->actingAs($userB);
+        $this->expectException(AuthorizationException::class);
+        $this->expectExceptionMessage('Unauthorized conversation access.');
+
+        $service->createConversationIfNeeded($conversation->id, 'Prompt dari user B');
+    }
+
+    public function test_get_document_filenames_scopes_owned_and_ready_documents_only(): void
+    {
+        $user = User::factory()->create();
+        $otherUser = User::factory()->create();
+
+        $ownedReady = Document::create([
+            'user_id' => $user->id,
+            'filename' => 'owned-ready.pdf',
+            'original_name' => 'owned-ready.pdf',
+            'file_path' => 'documents/'.$user->id.'/owned-ready.pdf',
+            'mime_type' => 'application/pdf',
+            'file_size_bytes' => 100,
+            'status' => 'ready',
+        ]);
+
+        $ownedProcessing = Document::create([
+            'user_id' => $user->id,
+            'filename' => 'owned-processing.pdf',
+            'original_name' => 'owned-processing.pdf',
+            'file_path' => 'documents/'.$user->id.'/owned-processing.pdf',
+            'mime_type' => 'application/pdf',
+            'file_size_bytes' => 100,
+            'status' => 'processing',
+        ]);
+
+        $otherReady = Document::create([
+            'user_id' => $otherUser->id,
+            'filename' => 'other-ready.pdf',
+            'original_name' => 'other-ready.pdf',
+            'file_path' => 'documents/'.$otherUser->id.'/other-ready.pdf',
+            'mime_type' => 'application/pdf',
+            'file_size_bytes' => 100,
+            'status' => 'ready',
+        ]);
+
+        $service = new ChatOrchestrationService();
+
+        $this->actingAs($user);
+
+        $result = $service->getDocumentFilenames([
+            $ownedReady->id,
+            $ownedProcessing->id,
+            $otherReady->id,
+        ]);
+
+        $this->assertSame(['owned-ready.pdf'], $result);
+        $this->assertNull($service->getDocumentFilenames([$ownedProcessing->id, $otherReady->id]));
     }
 
     public function test_send_message_rejects_prompt_over_8000_chars_before_rate_limit_or_ai_call(): void
