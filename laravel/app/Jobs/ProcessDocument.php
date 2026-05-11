@@ -57,6 +57,14 @@ class ProcessDocument implements ShouldQueue
             return;
         }
 
+        $fileContent = file_get_contents($filePath);
+        if ($fileContent === false) {
+            $this->document->update(['status' => 'error']);
+            logger()->error("Document processing failed for ID {$this->document->id}: unable to read file");
+
+            return;
+        }
+
             // 3. Send to Python Microservice (with extended timeout for embedding)
             $pythonUrl = rtrim((string) config('services.ai_document_service.url', config('services.ai_service.url', 'http://127.0.0.1:8001')), '/')
                 .'/api/documents/process';
@@ -68,7 +76,7 @@ class ProcessDocument implements ShouldQueue
                 ])
                 ->attach(
                     'file',
-                    file_get_contents($filePath),
+                    $fileContent,
                     $this->document->original_name
                 )
                 ->post($pythonUrl, [

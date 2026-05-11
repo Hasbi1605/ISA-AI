@@ -138,6 +138,37 @@ class ChatUiTest extends TestCase
             ->assertHasErrors(['prompt' => 'max']);
     }
 
+    public function test_send_message_does_not_persist_message_for_unauthorized_conversation(): void
+    {
+        $userA = User::factory()->create();
+        $userB = User::factory()->create();
+
+        $conversationA = Conversation::create([
+            'user_id' => $userA->id,
+            'title' => 'Owned by user A',
+        ]);
+
+        $this->app->bind(AIService::class, fn () => new class extends AIService
+        {
+            public function sendChat(array $messages, ?array $document_filenames = null, ?string $user_id = null, bool $force_web_search = false, ?string $source_policy = null, bool $allow_auto_realtime_web = true): \Generator
+            {
+                throw new \RuntimeException('AIService should not be called for unauthorized conversation access.');
+            }
+        });
+
+        Livewire::actingAs($userB)
+            ->test(ChatIndex::class)
+            ->set('currentConversationId', $conversationA->id)
+            ->set('prompt', 'Pesan tidak berizin')
+            ->call('sendMessage');
+
+        $this->assertDatabaseMissing('messages', [
+            'conversation_id' => $conversationA->id,
+            'content' => 'Pesan tidak berizin',
+        ]);
+        $this->assertCount(0, Message::where('conversation_id', $conversationA->id)->get());
+    }
+
     public function test_save_answer_to_google_drive_rate_limited_returns_error_before_export_service_call(): void
     {
         $user = User::factory()->create();

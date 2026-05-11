@@ -78,8 +78,6 @@ class ProcessDocumentTest extends TestCase
         $this->expectException(\RuntimeException::class);
         $this->expectExceptionMessage('Microservice error:');
         $job->handle();
-
-        Http::assertSent(fn ($request) => $request->url() === 'http://python-ai-docs:8002/api/documents/process');
     }
 
     public function test_failed_method_sets_document_status_to_error(): void
