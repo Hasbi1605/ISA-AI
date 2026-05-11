@@ -199,7 +199,10 @@ class ChatOrchestrationService
 
     protected function conversationExists(int $conversationId): bool
     {
-        return Conversation::query()->whereKey($conversationId)->exists();
+        return Conversation::query()
+            ->whereKey($conversationId)
+            ->where('user_id', Auth::id())
+            ->exists();
     }
 
     protected function createAssistantMessage(int $conversationId, string $content): Message

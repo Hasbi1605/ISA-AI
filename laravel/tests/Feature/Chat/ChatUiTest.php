@@ -381,6 +381,30 @@ class ChatUiTest extends TestCase
         $this->assertNull($result);
     }
 
+    public function test_save_assistant_message_returns_null_for_conversation_not_owned_by_current_user(): void
+    {
+        $owner = User::factory()->create();
+        $otherUser = User::factory()->create();
+
+        $conversation = Conversation::create([
+            'user_id' => $owner->id,
+            'title' => 'Owned by owner',
+        ]);
+
+        $this->actingAs($otherUser);
+
+        $service = new ChatOrchestrationService();
+
+        $result = $service->saveAssistantMessage($conversation->id, 'Assistant response should be blocked');
+
+        $this->assertNull($result);
+        $this->assertDatabaseMissing('messages', [
+            'conversation_id' => $conversation->id,
+            'role' => 'assistant',
+            'content' => 'Assistant response should be blocked',
+        ]);
+    }
+
     public function test_loading_conversation_dispatches_active_history_event(): void
     {
         $user = User::factory()->create();
