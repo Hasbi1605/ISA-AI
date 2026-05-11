@@ -162,45 +162,48 @@
     grid-area: phase;
 }
 
-/* Edge-to-edge sheen that travels across the label text. Uses a narrow,
-   bright band so it feels like a glimmer passing through the word. */
+/* Edge-to-edge sheen that travels across the label text. The gradient is
+   deliberately symmetric (grey → bright band → grey) so it tiles seamlessly
+   with background-repeat: repeat. Because the text color is transparent and
+   the background is clipped to the text shape, the repeating grey segments
+   keep the label always visible while the bright band sweeps through. */
 @keyframes istaLoadingSheen {
     0% {
-        background-position: 220% 0;
+        background-position: 0% 0;
     }
 
     100% {
-        background-position: -120% 0;
+        background-position: -200% 0;
     }
 }
 
 .ista-loading-shimmer {
     background-image: linear-gradient(
         100deg,
-        rgba(100, 116, 139, 0.9) 0%,
-        rgba(100, 116, 139, 0.9) 36%,
+        rgba(100, 116, 139, 0.95) 0%,
+        rgba(100, 116, 139, 0.95) 40%,
         rgba(248, 250, 252, 0.98) 50%,
-        rgba(100, 116, 139, 0.9) 64%,
-        rgba(100, 116, 139, 0.9) 100%
+        rgba(100, 116, 139, 0.95) 60%,
+        rgba(100, 116, 139, 0.95) 100%
     );
-    background-size: 220% 100%;
-    background-repeat: no-repeat;
+    background-size: 200% 100%;
+    background-repeat: repeat;
     background-clip: text;
     -webkit-background-clip: text;
     color: transparent;
     -webkit-text-fill-color: transparent;
-    animation: istaLoadingSheen 2.4s ease-in-out infinite;
+    animation: istaLoadingSheen 2.4s linear infinite;
     will-change: background-position;
 }
 
 .dark .ista-loading-shimmer {
     background-image: linear-gradient(
         100deg,
-        rgba(148, 163, 184, 0.78) 0%,
-        rgba(148, 163, 184, 0.78) 36%,
+        rgba(148, 163, 184, 0.85) 0%,
+        rgba(148, 163, 184, 0.85) 40%,
         rgba(226, 232, 240, 0.98) 50%,
-        rgba(148, 163, 184, 0.78) 64%,
-        rgba(148, 163, 184, 0.78) 100%
+        rgba(148, 163, 184, 0.85) 60%,
+        rgba(148, 163, 184, 0.85) 100%
     );
 }
 
