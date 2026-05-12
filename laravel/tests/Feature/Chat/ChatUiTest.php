@@ -239,7 +239,8 @@ class ChatUiTest extends TestCase
             ->assertSee('activeTab === \'chat\'', false)
             ->assertDontSee('wire:click="$set(\'tab\', \'chat\')"', false)
             ->assertSee('data-chat-conversation-id=', false)
-            ->assertSee('data-chat-last-message-role=', false);
+            ->assertSee('data-chat-last-message-role=', false)
+            ->assertSee('data-chat-last-user-message-created-at=', false);
     }
 
     public function test_chat_route_with_conversation_id_loads_selected_conversation_messages(): void
@@ -261,6 +262,7 @@ class ChatUiTest extends TestCase
         $response
             ->assertOk()
             ->assertSee('Halo dari history URL', false)
+            ->assertSee('data-chat-last-user-message-created-at=', false)
             ->assertSee('data-chat-history-id="'.$conversation->id.'"', false);
     }
 

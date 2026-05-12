@@ -1,5 +1,8 @@
 let hasRegisteredChatPageData = false;
 const CHAT_PENDING_STORAGE_KEY = 'ista.chat.pendingResponses.v1';
+const CHAT_PENDING_MARKER_TTL_MS = 10 * 60 * 1000;
+const CHAT_PENDING_RECENT_TTL_MS = 3 * 60 * 1000;
+const GLOBAL_PAGE_LOADER_SUPPRESS_STORAGE_KEY = 'ista.globalPageLoader.suppressOnce';
 
 const loadPendingConversationMarkers = () => {
     try {
@@ -15,6 +18,16 @@ const loadPendingConversationMarkers = () => {
 const savePendingConversationMarkers = (markers) => {
     try {
         window.localStorage?.setItem(CHAT_PENDING_STORAGE_KEY, JSON.stringify(markers || {}));
+    } catch (_) {
+        // ignore storage write errors
+    }
+};
+
+const suppressGlobalPageLoaderOnce = () => {
+    window.__suppressGlobalPageLoaderOnce = true;
+
+    try {
+        window.sessionStorage?.setItem(GLOBAL_PAGE_LOADER_SUPPRESS_STORAGE_KEY, '1');
     } catch (_) {
         // ignore storage write errors
     }
@@ -175,11 +188,17 @@ const registerChatPageData = (Alpine) => {
             const lastRole = metaEl.dataset.chatLastMessageRole || '';
             const lastUserId = Number(metaEl.dataset.chatLastUserMessageId || '0');
             const lastAssistantId = Number(metaEl.dataset.chatLastAssistantMessageId || '0');
+            const lastUserCreatedAt = metaEl.dataset.chatLastUserMessageCreatedAt || '';
+            const lastUserCreatedAtMs = lastUserCreatedAt ? Date.parse(lastUserCreatedAt) : NaN;
+            const pendingAgeMs = Number.isFinite(lastUserCreatedAtMs)
+                ? Math.max(Date.now() - lastUserCreatedAtMs, 0)
+                : null;
 
             return {
                 conversationId: Number.isFinite(conversationId) ? conversationId : null,
                 lastRole,
                 hasPendingUserWithoutAssistant: lastUserId > 0 && (lastAssistantId === 0 || lastAssistantId < lastUserId),
+                pendingAgeMs,
             };
         },
 
@@ -202,16 +221,29 @@ const registerChatPageData = (Alpine) => {
         },
 
         maybeRestorePendingPlaceholder() {
-            const { conversationId, hasPendingUserWithoutAssistant } = this.getConversationMeta();
+            const { conversationId, hasPendingUserWithoutAssistant, pendingAgeMs } = this.getConversationMeta();
             if (!conversationId || !hasPendingUserWithoutAssistant) {
                 return;
             }
 
             const markers = loadPendingConversationMarkers();
             const marker = markers[conversationId];
-            if (!marker) return;
+            const markerAgeMs = marker?.ts ? Date.now() - Number(marker.ts) : Number.POSITIVE_INFINITY;
+            const hasFreshMarker = marker && markerAgeMs >= 0 && markerAgeMs <= CHAT_PENDING_MARKER_TTL_MS;
+            const hasRecentPendingUser = pendingAgeMs !== null && pendingAgeMs <= CHAT_PENDING_RECENT_TTL_MS;
 
-            this.startStreamingPlaceholder(marker.loadingContext || 'general');
+            if (marker && !hasFreshMarker) {
+                delete markers[conversationId];
+                savePendingConversationMarkers(markers);
+            }
+
+            if (!hasFreshMarker && !hasRecentPendingUser) {
+                return;
+            }
+
+            const loadingContext = hasFreshMarker ? (marker.loadingContext || 'general') : 'general';
+            this.markConversationPending(conversationId, loadingContext);
+            this.startStreamingPlaceholder(loadingContext);
             this.scrollToBottom();
         },
 
@@ -521,7 +553,7 @@ const registerChatPageData = (Alpine) => {
             this.loadingConversationId = conversationId;
             this.isNavigating = true;
             this.$dispatch('conversation-loading');
-            window.__suppressGlobalPageLoaderOnce = true;
+            suppressGlobalPageLoaderOnce();
             window.location.assign(event.currentTarget.href);
         },
 
@@ -536,7 +568,7 @@ const registerChatPageData = (Alpine) => {
             this.isNavigating = true;
             this.$dispatch('chat-new-optimistic');
             this.$dispatch('conversation-loading');
-            window.__suppressGlobalPageLoaderOnce = true;
+            suppressGlobalPageLoaderOnce();
             window.location.assign(event.currentTarget.href);
         },
 
@@ -907,14 +939,23 @@ const registerChatPageData = (Alpine) => {
                 const payload = data?.[0] || {};
                 const ackConversationId = Number(payload.conversationId || this.$wire.currentConversationId || 0);
                 if (ackConversationId > 0) {
-                    window.dispatchEvent(new CustomEvent('chat-mark-pending', {
-                        detail: {
-                            conversationId: ackConversationId,
-                            loadingContext: this._pendingLoadingContext || 'general',
-                        },
-                    }));
+                    this.markPendingConversation(ackConversationId, this._pendingLoadingContext || 'general');
                 }
             });
+        },
+
+        markPendingConversation(conversationId, loadingContext = 'general') {
+            const id = Number(conversationId);
+            if (!Number.isFinite(id) || id <= 0) {
+                return;
+            }
+
+            window.dispatchEvent(new CustomEvent('chat-mark-pending', {
+                detail: {
+                    conversationId: id,
+                    loadingContext,
+                },
+            }));
         },
 
         previewConversationDocuments(event) {
@@ -1031,6 +1072,11 @@ const registerChatPageData = (Alpine) => {
             this.scrollChatToBottom(true);
             this.stabilizeChatScroll();
             this._pendingLoadingContext = loadingContext;
+
+            const currentConversationId = Number(this.$wire.currentConversationId || 0);
+            if (currentConversationId > 0) {
+                this.markPendingConversation(currentConversationId, loadingContext);
+            }
 
             this.promptDraft = '';
             this.autoResizeTextarea(this.$refs.chatInput);

@@ -10,6 +10,7 @@
          data-chat-conversation-id="{{ $currentConversationId ?? '' }}"
          data-chat-last-message-role="{{ !empty($messages) ? ($messages[array_key_last($messages)]['role'] ?? '') : '' }}"
          data-chat-last-user-message-id="{{ collect($messages)->where('role', 'user')->last()['id'] ?? '' }}"
+         data-chat-last-user-message-created-at="{{ collect($messages)->where('role', 'user')->last()['created_at'] ?? '' }}"
          data-chat-last-assistant-message-id="{{ collect($messages)->where('role', 'assistant')->last()['id'] ?? '' }}"
          aria-hidden="true"></div>
     @if(empty($messages))
