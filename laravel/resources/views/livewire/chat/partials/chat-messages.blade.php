@@ -4,8 +4,15 @@
      data-chat-box
      x-on:message-streamed.window="scrollToBottom()"
      x-on:message-send.window="optimisticUserMessage = $event.detail.text; isSwitchingConversation = false; startStreamingPlaceholder($event.detail.loadingContext || 'general'); scrollToBottom(true)"
-     x-on:conversation-loading.window="isSwitchingConversation = true; optimisticUserMessage = ''"
-     x-on:conversation-loaded.window="isSwitchingConversation = false; resetStreamingState(); scrollToBottom()">
+     x-on:conversation-loading.window="isSwitchingConversation = true; optimisticUserMessage = ''; resetStreamingState()"
+     x-on:conversation-loaded.window="isSwitchingConversation = false; resetStreamingState(); $nextTick(() => { maybeRestorePendingPlaceholder(); scrollToBottom(); })">
+    <div class="hidden"
+         data-chat-conversation-id="{{ $currentConversationId ?? '' }}"
+         data-chat-last-message-role="{{ !empty($messages) ? ($messages[array_key_last($messages)]['role'] ?? '') : '' }}"
+         data-chat-last-user-message-id="{{ collect($messages)->where('role', 'user')->last()['id'] ?? '' }}"
+         data-chat-last-user-message-created-at="{{ collect($messages)->where('role', 'user')->last()['created_at'] ?? '' }}"
+         data-chat-last-assistant-message-id="{{ collect($messages)->where('role', 'assistant')->last()['id'] ?? '' }}"
+         aria-hidden="true"></div>
     @if(empty($messages))
         <div x-show="!optimisticUserMessage && !isSwitchingConversation" x-transition.opacity class="h-full flex flex-col items-center justify-center text-center">
             <div class="h-16 w-16 mb-6">

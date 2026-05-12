@@ -2,6 +2,7 @@
 
 namespace App\Livewire\Chat;
 
+use App\Jobs\GenerateChatResponse;
 use App\Models\CloudStorageFile;
 use App\Models\Conversation;
 use App\Models\Document;
@@ -42,6 +43,8 @@ class ChatIndex extends Component
     public $messages = [];
 
     public $conversations = [];
+
+    public $pendingConversationIds = [];
 
     public $selectedDocuments = [];
 
@@ -100,11 +103,21 @@ class ChatIndex extends Component
 
         if (! $user) {
             $this->conversations = collect();
+            $this->pendingConversationIds = [];
 
             return;
         }
 
-        $this->conversations = $user->conversations()->orderBy('updated_at', 'desc')->get();
+        $this->conversations = $user->conversations()
+            ->with('latestMessage')
+            ->orderBy('updated_at', 'desc')
+            ->get();
+        $this->pendingConversationIds = $this->conversations
+            ->filter(fn (Conversation $conversation) => $this->conversationHasPendingResponse($conversation))
+            ->pluck('id')
+            ->map(fn ($id) => (int) $id)
+            ->values()
+            ->all();
     }
 
     protected function chatDocumentStateService(): ChatDocumentStateService
@@ -512,69 +525,81 @@ class ChatIndex extends Component
             $this->prompt
         );
 
-        $userMessageArray = $orchestrator->saveUserMessage($this->currentConversationId, $this->prompt);
+        $conversationIdForRequest = (int) $this->currentConversationId;
+
+        $userMessageArray = $orchestrator->saveUserMessage($conversationIdForRequest, $this->prompt);
         $this->messages[] = $userMessageArray;
-        $this->dispatch('user-message-acked');
+        $this->dispatch('user-message-acked', conversationId: $conversationIdForRequest, messageId: $userMessageArray['id'] ?? null);
         $this->prompt = '';
         $this->sources = [];
 
         $history = $orchestrator->buildHistory($this->messages);
+        $conversationDocuments = array_values(array_map('intval', $this->conversationDocuments));
+        $webSearchMode = (bool) $this->webSearchMode;
 
-        $this->stream('assistant-output', '', true);
+        Conversation::query()
+            ->whereKey($conversationIdForRequest)
+            ->where('user_id', Auth::id())
+            ->touch();
 
-        $documentFilenames = $orchestrator->getDocumentFilenames($this->conversationDocuments);
-        $sourcePolicy = $orchestrator->getSourcePolicy($documentFilenames);
-        $allowAutoRealtimeWeb = $orchestrator->shouldAllowAutoRealtimeWeb($documentFilenames);
-
-        $fullResponse = '';
-        $modelName = 'AI';
-        $streamBuffer = '';
-
-        foreach (
-            $aiService->sendChat(
-                $history,
-                $documentFilenames,
-                (string) Auth::id(),
-                $this->webSearchMode,
-                $sourcePolicy,
-                $allowAutoRealtimeWeb
-            ) as $chunk
-        ) {
-            [$chunk, $streamBuffer, $parsedModelName, $parsedSources] = $orchestrator->extractStreamMetadata(
-                (string) $chunk,
-                $streamBuffer
-            );
-
-            if ($parsedModelName !== null) {
-                $modelName = $parsedModelName;
-                $this->stream('model-name', $modelName);
-            }
-
-            if (! empty($parsedSources)) {
-                $this->sources = $parsedSources;
-                $this->dispatch('assistant-sources', $this->sources);
-            }
-
-            $chunk = $orchestrator->sanitizeAssistantOutput((string) $chunk);
-
-            if ($chunk !== '') {
-                $fullResponse .= $chunk;
-                $this->stream('assistant-output', $chunk);
-            }
-        }
-
-        $cleanContent = $orchestrator->cleanResponseContent($fullResponse);
-
-        if (! empty($this->sources)) {
-            $cleanContent .= $orchestrator->sanitizeAndFormatSources($this->sources);
-        }
-
-        $assistantMsg = $orchestrator->saveAssistantMessage($this->currentConversationId, $cleanContent);
-        $this->newMessageId = $assistantMsg->id;
-
-        $this->loadConversation($this->currentConversationId, clearNewMessageId: false);
         $this->loadConversations();
-        $this->dispatch('assistant-message-persisted');
+        $this->dispatch('conversation-activated', id: $conversationIdForRequest);
+
+        GenerateChatResponse::dispatch(
+            $conversationIdForRequest,
+            (int) Auth::id(),
+            $history,
+            $conversationDocuments,
+            $webSearchMode,
+        );
+
+        return [
+            'conversationId' => $conversationIdForRequest,
+            'messageId' => $userMessageArray['id'] ?? null,
+        ];
+    }
+
+    public function refreshPendingChatState(): void
+    {
+        $previousPendingIds = collect($this->pendingConversationIds)
+            ->map(fn ($id) => (int) $id)
+            ->values();
+        $activeConversationId = $this->currentConversationId ? (int) $this->currentConversationId : null;
+
+        $this->loadConversations();
+
+        $currentPendingIds = collect($this->pendingConversationIds)
+            ->map(fn ($id) => (int) $id)
+            ->values();
+        $completedIds = $previousPendingIds->diff($currentPendingIds)->values();
+
+        if ($activeConversationId !== null && ($previousPendingIds->contains($activeConversationId) || $currentPendingIds->contains($activeConversationId))) {
+            $latestAssistantId = Message::query()
+                ->where('conversation_id', $activeConversationId)
+                ->where('role', 'assistant')
+                ->latest('id')
+                ->value('id');
+
+            if ($completedIds->contains($activeConversationId) && $latestAssistantId) {
+                $this->newMessageId = (int) $latestAssistantId;
+            }
+
+            $this->loadConversation($activeConversationId, clearNewMessageId: false);
+        }
+
+        foreach ($completedIds as $completedConversationId) {
+            $latestAssistantId = Message::query()
+                ->where('conversation_id', (int) $completedConversationId)
+                ->where('role', 'assistant')
+                ->latest('id')
+                ->value('id');
+
+            $this->dispatch(
+                'assistant-message-persisted',
+                conversationId: (int) $completedConversationId,
+                messageId: $latestAssistantId ? (int) $latestAssistantId : null,
+            );
+        }
     }
 
     public function render()
@@ -582,6 +607,19 @@ class ChatIndex extends Component
         return view('livewire.chat.chat-index', [
             'googleDriveUploadAvailable' => app(GoogleDriveService::class)->canUploadWithConfiguredAccount(),
         ]);
+    }
+
+    private function conversationHasPendingResponse(Conversation $conversation): bool
+    {
+        $latestMessage = $conversation->latestMessage;
+
+        if (! $latestMessage || $latestMessage->role !== 'user') {
+            return false;
+        }
+
+        $createdAt = $latestMessage->created_at;
+
+        return $createdAt === null || $createdAt->greaterThan(now()->subMinutes(30));
     }
 
     private function normalizeDriveExportFormat(string $targetFormat): ?string

@@ -2,6 +2,7 @@ import re
 import hashlib
 import unicodedata
 import logging
+import threading
 from typing import List, Tuple, Dict, Optional
 
 from app.env_utils import get_env_bool, get_env_int
@@ -18,13 +19,16 @@ logger = logging.getLogger(__name__)
 SCORE_PATTERN = re.compile(r"\b(\d{1,2})\s*[-:]\s*(\d{1,2})\b")
 
 _langsearch_service = None
+_langsearch_service_lock = threading.Lock()
 
 
 def get_langsearch_service():
     global _langsearch_service
     if _langsearch_service is None:
-        from app.services.langsearch_service import LangSearchService
-        _langsearch_service = LangSearchService()
+        with _langsearch_service_lock:
+            if _langsearch_service is None:
+                from app.services.langsearch_service import LangSearchService
+                _langsearch_service = LangSearchService()
     return _langsearch_service
 
 

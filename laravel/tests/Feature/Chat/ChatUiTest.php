@@ -2,6 +2,7 @@
 
 namespace Tests\Feature\Chat;
 
+use App\Jobs\GenerateChatResponse;
 use App\Livewire\Chat\ChatIndex;
 use App\Models\Conversation;
 use App\Models\Document;
@@ -11,8 +12,10 @@ use App\Services\AIService;
 use App\Services\ChatOrchestrationService;
 use App\Services\DocumentExportService;
 use Illuminate\Auth\Access\AuthorizationException;
+use Illuminate\Database\QueryException;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\Facades\RateLimiter;
 use Livewire\Livewire;
 use Tests\TestCase;
@@ -61,7 +64,7 @@ class ChatUiTest extends TestCase
             'title' => 'Owned by A',
         ]);
 
-        $service = new ChatOrchestrationService();
+        $service = new ChatOrchestrationService;
 
         $this->actingAs($userB);
         $this->expectException(AuthorizationException::class);
@@ -105,7 +108,7 @@ class ChatUiTest extends TestCase
             'status' => 'ready',
         ]);
 
-        $service = new ChatOrchestrationService();
+        $service = new ChatOrchestrationService;
 
         $this->actingAs($user);
 
@@ -211,8 +214,25 @@ class ChatUiTest extends TestCase
             'user_id' => $user->id,
             'title' => 'History test',
         ]);
+        $pendingConversation = Conversation::create([
+            'user_id' => $user->id,
+            'title' => 'Pending history test',
+        ]);
+        Message::create([
+            'conversation_id' => $pendingConversation->id,
+            'role' => 'user',
+            'content' => 'Prompt yang masih menunggu jawaban',
+        ]);
 
         $response = $this->actingAs($user)->get('/chat');
+        $chatPageJs = file_get_contents(resource_path('js/chat-page.js'));
+        $this->assertIsString($chatPageJs);
+        $this->assertStringContainsString('pendingConversationIds', $chatPageJs);
+        $this->assertStringContainsString('completedConversationIds', $chatPageJs);
+        $this->assertStringContainsString('normalizeWirePayload', $chatPageJs);
+        $this->assertStringContainsString('this.activeConversationId === conversationId', $chatPageJs);
+        $this->assertStringContainsString('this.markConversationRead(this.activeConversationId)', $chatPageJs);
+        $this->assertStringContainsString('window.history.pushState', $chatPageJs);
 
         $response
             ->assertOk()
@@ -223,9 +243,18 @@ class ChatUiTest extends TestCase
             ->assertDontSee('Membuka chat...', false)
             ->assertSee('x-on:conversation-loading.window="isSwitchingConversation = true"', false)
             ->assertSee('x-on:conversation-activated.window="setActiveConversation($event.detail.id)"', false)
-            ->assertSee(':disabled="isNavigating"', false)
+            ->assertDontSee(':disabled="isNavigating"', false)
             ->assertSee('data-chat-history-id=', false)
-            ->assertSee('isLoading(', false)
+            ->assertSee('pendingConversationIds:', false)
+            ->assertSee('isPending(', false)
+            ->assertSee('isCompleteUnread(', false)
+            ->assertSee('Jawaban baru tersedia', false)
+            ->assertSee('h-3 w-3 shrink-0 rounded-full border', false)
+            ->assertSee('min-w-0 flex-1 truncate', false)
+            ->assertSee('bg-sky-500', false)
+            ->assertSee('wire:poll.3s="refreshPendingChatState"', false)
+            ->assertSee('navigateToConversation($event,', false)
+            ->assertSee('navigateToNewChat($event)', false)
             ->assertSee('chat-history-item', false)
             ->assertSee('wire:key="chat-history-visible-', false)
             ->assertSee('openGoogleDrivePicker()', false)
@@ -235,7 +264,246 @@ class ChatUiTest extends TestCase
             ->assertSee('Pilih file untuk chat', false)
             ->assertSee('chat-tab-switch', false)
             ->assertSee('activeTab === \'chat\'', false)
-            ->assertDontSee('wire:click="$set(\'tab\', \'chat\')"', false);
+            ->assertDontSee('wire:click="$set(\'tab\', \'chat\')"', false)
+            ->assertSee('data-chat-conversation-id=', false)
+            ->assertSee('data-chat-last-message-role=', false)
+            ->assertSee('data-chat-last-user-message-created-at=', false);
+    }
+
+    public function test_chat_route_with_conversation_id_loads_selected_conversation_messages(): void
+    {
+        $user = User::factory()->create();
+        $conversation = Conversation::create([
+            'user_id' => $user->id,
+            'title' => 'Conversation terpilih via URL',
+        ]);
+
+        Message::create([
+            'conversation_id' => $conversation->id,
+            'role' => 'user',
+            'content' => 'Halo dari history URL',
+        ]);
+
+        $response = $this->actingAs($user)->get(route('chat', ['id' => $conversation->id]));
+
+        $response
+            ->assertOk()
+            ->assertSee('Halo dari history URL', false)
+            ->assertSee('data-chat-last-user-message-created-at=', false)
+            ->assertSee('data-chat-history-id="'.$conversation->id.'"', false);
+    }
+
+    public function test_chat_route_with_foreign_conversation_id_returns_404(): void
+    {
+        $owner = User::factory()->create();
+        $otherUser = User::factory()->create();
+
+        $conversation = Conversation::create([
+            'user_id' => $owner->id,
+            'title' => 'Conversation user lain',
+        ]);
+
+        $this->actingAs($otherUser)
+            ->get(route('chat', ['id' => $conversation->id]))
+            ->assertNotFound();
+    }
+
+    public function test_send_message_queues_response_and_allows_loading_another_conversation_without_waiting(): void
+    {
+        Queue::fake();
+
+        $user = User::factory()->create();
+
+        $conversationB = Conversation::create([
+            'user_id' => $user->id,
+            'title' => 'Conversation B',
+        ]);
+
+        $component = Livewire::actingAs($user)
+            ->test(ChatIndex::class);
+
+        $component
+            ->set('prompt', 'Pesan pengguna awal')
+            ->call('sendMessage', aiService: app(AIService::class));
+
+        $conversationA = Conversation::query()
+            ->where('user_id', $user->id)
+            ->where('title', 'like', 'Pesan pengguna awal%')
+            ->firstOrFail();
+
+        $component
+            ->assertSet('currentConversationId', $conversationA->id)
+            ->assertSet('pendingConversationIds', [$conversationA->id])
+            ->assertDispatched('user-message-acked')
+            ->assertDispatched('conversation-activated', id: $conversationA->id);
+
+        Queue::assertPushed(GenerateChatResponse::class, function (GenerateChatResponse $job) use ($conversationA, $user) {
+            return $job->conversationId === (int) $conversationA->id
+                && $job->userId === (int) $user->id
+                && $job->history[count($job->history) - 1]['content'] === 'Pesan pengguna awal';
+        });
+
+        $component
+            ->call('loadConversation', $conversationB->id)
+            ->assertSet('currentConversationId', $conversationB->id);
+
+        $this->assertDatabaseHas('messages', [
+            'conversation_id' => $conversationA->id,
+            'role' => 'user',
+            'content' => 'Pesan pengguna awal',
+        ]);
+    }
+
+    public function test_generate_chat_response_skips_assistant_persistence_when_origin_conversation_deleted_before_job_runs(): void
+    {
+        $user = User::factory()->create();
+
+        $conversation = Conversation::create([
+            'user_id' => $user->id,
+            'title' => 'Conversation asal',
+        ]);
+
+        $this->app->bind(AIService::class, fn () => new class extends AIService
+        {
+            public function sendChat(array $messages, ?array $document_filenames = null, ?string $user_id = null, bool $force_web_search = false, ?string $source_policy = null, bool $allow_auto_realtime_web = true): \Generator
+            {
+                throw new \RuntimeException('AIService should not be called for deleted conversation.');
+            }
+        });
+
+        $conversation->delete();
+        $job = new GenerateChatResponse(
+            conversationId: (int) $conversation->id,
+            userId: (int) $user->id,
+            history: [['role' => 'user', 'content' => 'Pesan user sebelum hapus conversation']],
+        );
+        $job->handle(app(AIService::class), new ChatOrchestrationService);
+
+        $this->assertDatabaseMissing('conversations', [
+            'id' => $conversation->id,
+        ]);
+
+        $this->assertDatabaseMissing('messages', [
+            'conversation_id' => $conversation->id,
+            'role' => 'assistant',
+            'content' => 'Maaf, jawaban gagal diproses. Silakan coba kirim ulang.',
+        ]);
+    }
+
+    public function test_generate_chat_response_persists_assistant_message_to_origin_conversation(): void
+    {
+        $user = User::factory()->create();
+
+        $conversation = Conversation::create([
+            'user_id' => $user->id,
+            'title' => 'Conversation job asal',
+        ]);
+
+        $this->app->bind(AIService::class, fn () => new class extends AIService
+        {
+            public function sendChat(array $messages, ?array $document_filenames = null, ?string $user_id = null, bool $force_web_search = false, ?string $source_policy = null, bool $allow_auto_realtime_web = true): \Generator
+            {
+                yield 'Jawaban AI dari background job.';
+            }
+        });
+
+        $job = new GenerateChatResponse(
+            conversationId: (int) $conversation->id,
+            userId: (int) $user->id,
+            history: [['role' => 'user', 'content' => 'Pesan user untuk job']],
+        );
+
+        $job->handle(app(AIService::class), new ChatOrchestrationService);
+
+        $this->assertDatabaseHas('messages', [
+            'conversation_id' => $conversation->id,
+            'role' => 'assistant',
+            'content' => 'Jawaban AI dari background job.',
+        ]);
+    }
+
+    public function test_send_message_dispatches_ack_and_queues_response_with_conversation_id_payload(): void
+    {
+        Queue::fake();
+
+        $user = User::factory()->create();
+
+        $this->app->bind(AIService::class, fn () => new class extends AIService
+        {
+            public function sendChat(array $messages, ?array $document_filenames = null, ?string $user_id = null, bool $force_web_search = false, ?string $source_policy = null, bool $allow_auto_realtime_web = true): \Generator
+            {
+                yield 'Jawaban AI untuk payload event.';
+            }
+        });
+
+        $component = Livewire::actingAs($user)
+            ->test(ChatIndex::class)
+            ->set('prompt', 'Halo payload event')
+            ->call('sendMessage', aiService: app(AIService::class));
+
+        $conversationId = (int) $component->get('currentConversationId');
+
+        $component->assertDispatched('user-message-acked', function (string $_event, array $payload) use ($conversationId) {
+            return (int) ($payload['conversationId'] ?? 0) === $conversationId
+                && (int) ($payload['messageId'] ?? 0) > 0;
+        });
+
+        Queue::assertPushed(GenerateChatResponse::class, function (GenerateChatResponse $job) use ($conversationId, $user) {
+            return $job->conversationId === $conversationId
+                && $job->userId === (int) $user->id;
+        });
+    }
+
+    public function test_save_assistant_message_returns_null_when_create_hits_conversation_fk_race(): void
+    {
+        $service = new class extends ChatOrchestrationService
+        {
+            protected function conversationExists(int $conversationId): bool
+            {
+                return true;
+            }
+
+            protected function createAssistantMessage(int $conversationId, string $content): Message
+            {
+                $pdoException = new \PDOException('Cannot add or update a child row: a foreign key constraint fails');
+                $pdoException->errorInfo = ['23000', 1452, 'Cannot add or update a child row: a foreign key constraint fails'];
+
+                throw new QueryException(
+                    'mysql',
+                    'insert into `messages` (`conversation_id`, `role`, `content`) values (?, ?, ?)',
+                    [$conversationId, 'assistant', $content],
+                    $pdoException
+                );
+            }
+        };
+
+        $result = $service->saveAssistantMessage(999999, 'Assistant response');
+
+        $this->assertNull($result);
+    }
+
+    public function test_save_assistant_message_returns_null_for_conversation_not_owned_by_current_user(): void
+    {
+        $owner = User::factory()->create();
+        $otherUser = User::factory()->create();
+
+        $conversation = Conversation::create([
+            'user_id' => $owner->id,
+            'title' => 'Owned by owner',
+        ]);
+
+        $this->actingAs($otherUser);
+
+        $service = new ChatOrchestrationService;
+
+        $result = $service->saveAssistantMessage($conversation->id, 'Assistant response should be blocked');
+
+        $this->assertNull($result);
+        $this->assertDatabaseMissing('messages', [
+            'conversation_id' => $conversation->id,
+            'role' => 'assistant',
+            'content' => 'Assistant response should be blocked',
+        ]);
     }
 
     public function test_loading_conversation_dispatches_active_history_event(): void
@@ -408,6 +676,42 @@ class ChatUiTest extends TestCase
             ->call('loadConversation', $conversation->id, false)
             ->assertSet('newMessageId', $message->id)
             ->assertSee('wire:key="msg-typing-'.$message->id.'"', false);
+    }
+
+    public function test_refresh_pending_chat_state_loads_completed_active_conversation(): void
+    {
+        $user = User::factory()->create();
+        $conversation = Conversation::create([
+            'user_id' => $user->id,
+            'title' => 'Pending refresh test',
+        ]);
+
+        Message::create([
+            'conversation_id' => $conversation->id,
+            'role' => 'user',
+            'content' => 'Tolong jawab setelah job selesai.',
+        ]);
+
+        $component = Livewire::actingAs($user)
+            ->test(ChatIndex::class, ['id' => $conversation->id])
+            ->assertSet('pendingConversationIds', [$conversation->id]);
+
+        $assistant = Message::create([
+            'conversation_id' => $conversation->id,
+            'role' => 'assistant',
+            'content' => 'Jawaban background sudah selesai.',
+        ]);
+        $conversation->touch();
+
+        $component
+            ->call('refreshPendingChatState')
+            ->assertSet('pendingConversationIds', [])
+            ->assertSet('newMessageId', $assistant->id)
+            ->assertSee('Jawaban background sudah selesai.', false)
+            ->assertDispatched('assistant-message-persisted', function (string $_event, array $payload) use ($conversation, $assistant) {
+                return (int) ($payload['conversationId'] ?? 0) === (int) $conversation->id
+                    && (int) ($payload['messageId'] ?? 0) === (int) $assistant->id;
+            });
     }
 
     public function test_chat_history_groups_today_by_jakarta_date(): void

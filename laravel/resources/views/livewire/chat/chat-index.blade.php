@@ -29,6 +29,10 @@
 
     {{-- ===== CHAT TAB CONTENT ===== --}}
     <div x-show="activeTab === 'chat'" class="flex w-full h-full overflow-hidden">
+        @if(! empty($pendingConversationIds))
+            <div wire:poll.3s="refreshPendingChatState" class="hidden" aria-hidden="true"></div>
+        @endif
+
         <!-- LEFT SIDEBAR: Chat History -->
         @include('livewire.chat.partials.chat-left-sidebar')
 
@@ -43,9 +47,9 @@
                             <img src="{{ $uiIcons['collapseLeftLight'] }}" alt="" class="h-5 w-5 dark:hidden transition-transform duration-300 ease-in-out" :class="showLeftSidebar ? 'rotate-0' : 'rotate-180'" />
                             <img src="{{ $uiIcons['collapseLeftDark'] }}" alt="" class="h-5 w-5 hidden dark:block transition-transform duration-300 ease-in-out" :class="showLeftSidebar ? 'rotate-0' : 'rotate-180'" />
                         </button>
-                        <button type="button"
-                                @click="$dispatch('chat-new-optimistic'); $dispatch('conversation-loading'); $wire.startNewChat().finally(() => $dispatch('conversation-loaded'))"
-                                class="group flex items-center gap-2"><div class="ista-brand-title text-xl text-ista-primary not-italic transition-transform duration-300 group-hover:scale-105">ISTA <span class="font-light italic text-ista-gold">AI</span></div></button>
+                        <a href="{{ route('chat', ['tab' => $tab]) }}"
+                           @click="window.chatHistoryNavigateToNewChat?.($event)"
+                           class="group flex items-center gap-2"><div class="ista-brand-title text-xl text-ista-primary not-italic transition-transform duration-300 group-hover:scale-105">ISTA <span class="font-light italic text-ista-gold">AI</span></div></a>
                     </div>
 
                     <!-- Center: Tab Toggle -->

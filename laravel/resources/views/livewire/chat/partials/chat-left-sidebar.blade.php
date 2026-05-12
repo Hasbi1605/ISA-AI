@@ -1,5 +1,5 @@
 <aside
-    x-data="chatHistory({ activeConversationId: @js($currentConversationId ? (int) $currentConversationId : null), showOlderChats: $wire.entangle('showOlderChats') })"
+    x-data="chatHistory({ activeConversationId: @js($currentConversationId ? (int) $currentConversationId : null), showOlderChats: $wire.entangle('showOlderChats'), pendingConversationIds: @js($pendingConversationIds ?? []) })"
     :class="[
         showLeftSidebar ? 'opacity-100 translate-x-0' : 'opacity-0 -translate-x-full pointer-events-none',
         isMobile ? 'fixed left-0 top-0 h-full w-[288px] shadow-2xl border-r border-stone-200/60 dark:border-[#1E293B]' : (showLeftSidebar ? 'relative w-[288px] border-r border-stone-200/60 dark:border-[#1E293B]' : 'relative w-0 border-r border-transparent')
@@ -24,12 +24,12 @@
     </div>
 
     <div class="p-4 pt-2 pb-5">
-        <button type="button" @click="startNewChat(); if(isMobile) showLeftSidebar = false;" :disabled="isNavigating" class="w-full flex items-center justify-start px-4 py-2.5 rounded-lg border border-stone-200/60 dark:border-[#334155] dark:bg-transparent bg-white hover:bg-gray-50 dark:hover:bg-white/5 font-medium text-[13px] text-gray-700 dark:text-gray-200 transition-all duration-200 shadow-sm disabled:cursor-wait disabled:opacity-70">
+        <a href="{{ route('chat', ['tab' => $tab]) }}" @click="navigateToNewChat($event); if(isMobile) showLeftSidebar = false;" class="w-full flex items-center justify-start px-4 py-2.5 rounded-lg border border-stone-200/60 dark:border-[#334155] dark:bg-transparent bg-white hover:bg-gray-50 dark:hover:bg-white/5 font-medium text-[13px] text-gray-700 dark:text-gray-200 transition-all duration-200 shadow-sm">
             <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 mr-2 text-[#64748B] dark:text-gray-300" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M12 5v14m-7-7h14" />
             </svg>
             New Chat
-        </button>
+        </a>
     </div>
 
     <div class="flex-1 overflow-y-auto overflow-x-hidden px-4">
@@ -43,16 +43,16 @@
             <ul class="space-y-1">
                 @forelse($todayChats as $conversation)
                     <li class="group relative" wire:key="chat-history-visible-{{ $conversation->id }}">
-                        <button type="button" @click="loadConversation({{ $conversation->id }}); if(isMobile) showLeftSidebar = false;"
+                        <a href="{{ route('chat', ['id' => $conversation->id, 'tab' => $tab]) }}" @click="navigateToConversation($event, {{ $conversation->id }}); if(isMobile) showLeftSidebar = false;"
                            data-chat-history-id="{{ $conversation->id }}"
-                           :disabled="isNavigating"
                            :class="{ 'is-active': isActive({{ $conversation->id }}) }"
                            class="chat-history-item {{ (int) $currentConversationId === (int) $conversation->id ? 'is-active' : '' }}">
                             <img src="{{ $uiIcons['historyLight'] }}" alt="" class="h-4 w-4 mr-2.5 flex-shrink-0 dark:hidden" />
                             <img src="{{ $uiIcons['historyDark'] }}" alt="" class="h-4 w-4 mr-2.5 flex-shrink-0 hidden dark:block" />
-                            <span class="truncate text-[13.2px]" title="{{ $conversation->title }}">{{ $conversation->title }}</span>
-                            <span x-show="isLoading({{ $conversation->id }})" class="ml-auto h-3 w-3 rounded-full border border-current border-t-transparent animate-spin" style="display: none;"></span>
-                        </button>
+                            <span class="min-w-0 flex-1 truncate text-[13.2px]" title="{{ $conversation->title }}">{{ $conversation->title }}</span>
+                            <span x-show="isLoading({{ $conversation->id }}) || isPending({{ $conversation->id }})" class="ml-auto h-3 w-3 shrink-0 rounded-full border border-current border-t-transparent animate-spin" style="display: none;"></span>
+                            <span x-show="isCompleteUnread({{ $conversation->id }})" class="ml-auto h-2.5 w-2.5 shrink-0 rounded-full bg-sky-500 shadow-[0_0_0_3px_rgba(14,165,233,0.12)]" style="display: none;" aria-label="Jawaban baru tersedia"></span>
+                        </a>
                         <button type="button" wire:click="deleteConversation({{ $conversation->id }})"
                                 wire:confirm="Delete this chat?"
                                 class="absolute right-2 top-1/2 -translate-y-1/2 p-1.5 rounded-md opacity-0 group-hover:opacity-100 hover:bg-red-100 dark:hover:bg-red-500/20 text-gray-400 hover:text-red-600 dark:hover:text-red-400 transition-all duration-200"
@@ -81,16 +81,16 @@
                 <ul x-show="showOlderChats" class="mt-1 space-y-1" style="{{ $showOlderChats ? '' : 'display: none;' }}">
                     @foreach($olderChats as $conversation)
                         <li class="group relative" wire:key="chat-history-older-{{ $conversation->id }}">
-                            <button type="button" @click="loadConversation({{ $conversation->id }}); if(isMobile) showLeftSidebar = false;"
+                            <a href="{{ route('chat', ['id' => $conversation->id, 'tab' => $tab]) }}" @click="navigateToConversation($event, {{ $conversation->id }}); if(isMobile) showLeftSidebar = false;"
                                data-chat-history-id="{{ $conversation->id }}"
-                               :disabled="isNavigating"
                                :class="{ 'is-active': isActive({{ $conversation->id }}) }"
                                class="chat-history-item {{ (int) $currentConversationId === (int) $conversation->id ? 'is-active' : '' }}">
                                 <img src="{{ $uiIcons['historyLight'] }}" alt="" class="h-4 w-4 mr-2.5 flex-shrink-0 dark:hidden" />
                                 <img src="{{ $uiIcons['historyDark'] }}" alt="" class="h-4 w-4 mr-2.5 flex-shrink-0 hidden dark:block" />
-                                <span class="truncate text-[13.2px]" title="{{ $conversation->title }}">{{ $conversation->title }}</span>
-                                <span x-show="isLoading({{ $conversation->id }})" class="ml-auto h-3 w-3 rounded-full border border-current border-t-transparent animate-spin" style="display: none;"></span>
-                            </button>
+                                <span class="min-w-0 flex-1 truncate text-[13.2px]" title="{{ $conversation->title }}">{{ $conversation->title }}</span>
+                                <span x-show="isLoading({{ $conversation->id }}) || isPending({{ $conversation->id }})" class="ml-auto h-3 w-3 shrink-0 rounded-full border border-current border-t-transparent animate-spin" style="display: none;"></span>
+                                <span x-show="isCompleteUnread({{ $conversation->id }})" class="ml-auto h-2.5 w-2.5 shrink-0 rounded-full bg-sky-500 shadow-[0_0_0_3px_rgba(14,165,233,0.12)]" style="display: none;" aria-label="Jawaban baru tersedia"></span>
+                            </a>
                             <button type="button" wire:click="deleteConversation({{ $conversation->id }})"
                                     wire:confirm="Delete this chat?"
                                     class="absolute right-2 top-1/2 -translate-y-1/2 p-1.5 rounded-md opacity-0 group-hover:opacity-100 hover:bg-red-100 dark:hover:bg-red-500/20 text-gray-400 hover:text-red-600 transition-all duration-200">

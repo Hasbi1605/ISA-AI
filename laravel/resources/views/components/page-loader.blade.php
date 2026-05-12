@@ -1,3 +1,17 @@
+<script>
+    (() => {
+        const suppressStorageKey = 'ista.globalPageLoader.suppressOnce';
+
+        try {
+            if (window.sessionStorage?.getItem(suppressStorageKey) === '1') {
+                document.documentElement.classList.add('suppress-global-page-loader');
+            }
+        } catch (_) {
+            // ignore storage read errors
+        }
+    })();
+</script>
+
 <style>
     /* Full screen modern animated overlay */
     #global-page-loader {
@@ -26,6 +40,12 @@
         pointer-events: none;
         /* Menghilang secara elegan memudar pelan pelan (Fade OUT) */
         transition: opacity 0.6s cubic-bezier(0.4, 0, 0.2, 1), visibility 0.6s cubic-bezier(0.4, 0, 0.2, 1);
+    }
+
+    html.suppress-global-page-loader #global-page-loader {
+        opacity: 0;
+        visibility: hidden;
+        pointer-events: none;
     }
     
     /* Smooth Pulse Animation */
@@ -85,8 +105,34 @@
 
 <script>
     (() => {
+        const suppressStorageKey = 'ista.globalPageLoader.suppressOnce';
+
+        const consumeSuppressLoader = () => {
+            if (window.__suppressGlobalPageLoaderOnce === true) {
+                window.__suppressGlobalPageLoaderOnce = false;
+                return true;
+            }
+
+            try {
+                if (window.sessionStorage?.getItem(suppressStorageKey) === '1') {
+                    window.sessionStorage.removeItem(suppressStorageKey);
+                    return true;
+                }
+            } catch (_) {
+                // ignore storage read errors
+            }
+
+            return false;
+        };
+
+        consumeSuppressLoader();
+
         if (!window.__globalPageLoaderHandlers) {
             const showLoader = () => {
+                if (consumeSuppressLoader()) {
+                    return;
+                }
+
                 const loaderEl = document.getElementById('global-page-loader');
                 if (loaderEl) loaderEl.classList.remove('loader-hidden');
             };
@@ -96,6 +142,7 @@
                 if (loaderEl) {
                     setTimeout(() => {
                         loaderEl.classList.add('loader-hidden');
+                        document.documentElement.classList.remove('suppress-global-page-loader');
                     }, 150);
                 }
             };

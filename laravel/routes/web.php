@@ -31,8 +31,9 @@ Route::view('profile', 'profile')
     ->middleware(['auth'])
     ->name('profile');
 
-Route::get('chat', ChatIndex::class)
+Route::get('chat/{id?}', ChatIndex::class)
     ->middleware(['auth', 'verified', 'throttle:30,1'])
+    ->whereNumber('id')
     ->name('chat');
 
 Route::post('onlyoffice/callback/{memo}', OnlyOfficeCallbackController::class)

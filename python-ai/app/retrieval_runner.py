@@ -1,10 +1,13 @@
 import json
+import logging
 import os
 import subprocess
 import sys
 from typing import Any, Dict, List, Tuple
 
-from app.env_utils import get_env_int
+from app.env_utils import get_env_bool, get_env_int
+
+logger = logging.getLogger(__name__)
 
 
 def _parse_search_payload(stdout: str) -> Dict[str, Any]:
@@ -21,6 +24,23 @@ def _parse_search_payload(stdout: str) -> Dict[str, Any]:
     raise ValueError("Subprocess did not return a valid retrieval JSON payload.")
 
 
+def _run_retrieval_search_inprocess(
+    query: str,
+    filenames: List[str] | None = None,
+    top_k: int = 5,
+    user_id: str | None = None,
+) -> Tuple[List[Dict[str, Any]], bool]:
+    from app.services.rag_retrieval import search_relevant_chunks
+
+    chunks, success = search_relevant_chunks(
+        query,
+        filenames,
+        top_k=top_k,
+        user_id=user_id,
+    )
+    return list(chunks or []), bool(success)
+
+
 def run_retrieval_search(
     query: str,
     filenames: List[str] | None = None,
@@ -30,6 +50,13 @@ def run_retrieval_search(
     timeout_seconds = get_env_int("DOCUMENT_RETRIEVAL_SUBPROCESS_TIMEOUT", 180)
     app_dir = os.path.dirname(os.path.dirname(__file__))
     filenames_json = json.dumps(filenames or [], ensure_ascii=False)
+    use_subprocess = get_env_bool("DOCUMENT_RETRIEVAL_USE_SUBPROCESS", False)
+
+    if not use_subprocess:
+        try:
+            return _run_retrieval_search_inprocess(query, filenames, top_k=top_k, user_id=user_id)
+        except Exception:
+            logger.exception("In-process retrieval failed; falling back to subprocess")
 
     completed = subprocess.run(
         [
