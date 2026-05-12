@@ -498,6 +498,7 @@ const registerChatPageData = (Alpine) => {
         init() {
             this.$nextTick(() => this.syncActiveHistoryItem());
             this.$watch('activeConversationId', () => this.syncActiveHistoryItem());
+            this.markConversationRead(this.activeConversationId);
             window.chatHistoryNavigateToNewChat = (event) => this.navigateToNewChat(event);
             this._chatMarkPendingHandler = (event) => {
                 const id = Number(event?.detail?.conversationId || 0);
@@ -555,6 +556,12 @@ const registerChatPageData = (Alpine) => {
             }
 
             this.pendingConversationIds = this.pendingConversationIds.filter((pendingId) => pendingId !== conversationId);
+
+            if (this.activeConversationId === conversationId) {
+                this.markConversationRead(conversationId);
+
+                return;
+            }
 
             if (!this.completedConversationIds.includes(conversationId)) {
                 this.completedConversationIds.push(conversationId);

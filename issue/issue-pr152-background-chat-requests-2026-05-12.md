@@ -61,3 +61,4 @@ Saat user mengirim pesan lalu berpindah ke history chat lain atau New Chat, tamp
 - Spinner pending di sidebar harus berhenti ketika jawaban background sudah tersimpan.
 - Conversation yang selesai diproses diberi titik biru sampai user membuka history tersebut.
 - Spinner sidebar harus berukuran bulat konsisten walaupun judul history panjang.
+- Titik biru hanya muncul jika user sedang tidak berada di conversation yang selesai diproses.

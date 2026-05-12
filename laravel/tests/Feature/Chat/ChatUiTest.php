@@ -230,6 +230,8 @@ class ChatUiTest extends TestCase
         $this->assertStringContainsString('pendingConversationIds', $chatPageJs);
         $this->assertStringContainsString('completedConversationIds', $chatPageJs);
         $this->assertStringContainsString('normalizeWirePayload', $chatPageJs);
+        $this->assertStringContainsString('this.activeConversationId === conversationId', $chatPageJs);
+        $this->assertStringContainsString('this.markConversationRead(this.activeConversationId)', $chatPageJs);
         $this->assertStringContainsString('window.history.pushState', $chatPageJs);
 
         $response
