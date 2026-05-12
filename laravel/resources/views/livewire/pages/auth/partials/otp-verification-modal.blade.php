@@ -1,15 +1,16 @@
 <div class="fixed inset-0" style="z-index: 9998; background-color: rgba(0, 0, 0, 0.88); backdrop-filter: blur(8px);"></div>
 
-<div class="fixed inset-0 z-[9999] flex items-center justify-center p-4">
-    <div class="ista-glass-card relative w-full max-w-md p-8 animate-enter-1 border-white/95 bg-white/80 shadow-[0_0_0_1px_rgba(255,255,255,0.65),0_0_110px_rgba(255,255,255,0.4),0_30px_70px_-15px_rgba(0,0,0,0.58)] hover:translate-y-0 hover:shadow-[0_0_0_1px_rgba(255,255,255,0.65),0_0_110px_rgba(255,255,255,0.4),0_30px_70px_-15px_rgba(0,0,0,0.58)] dark:border-gray-700/90 dark:bg-gray-900/90 dark:shadow-[0_0_0_1px_rgba(31,41,55,0.9),0_30px_70px_-15px_rgba(0,0,0,0.8)] dark:hover:shadow-[0_0_0_1px_rgba(31,41,55,0.9),0_30px_70px_-15px_rgba(0,0,0,0.8)]" style="backdrop-filter: blur(22px) saturate(135%);">
-        <button wire:click="cancelVerification" class="absolute right-4 top-4 text-stone-500 transition-colors hover:text-stone-700" type="button" aria-label="Tutup popup verifikasi">
+<div class="fixed inset-0 z-[9999] flex items-center justify-center p-4" x-data="{ previousFocus: null, close() { $wire.cancelVerification(); this.$nextTick(() => this.previousFocus?.focus?.()); }, focusables() { return Array.from($el.querySelectorAll('button, input, [href], select, textarea, [tabindex]:not([tabindex=\'-1\'])')).filter(el => !el.disabled && el.offsetParent !== null); } }" x-init="previousFocus = document.activeElement; document.body.classList.add('overflow-hidden'); $nextTick(() => document.getElementById('otp_0')?.focus())" x-on:keydown.escape.prevent.stop="close()" x-on:keydown.tab.prevent="const items = focusables(); if (!items.length) return; const first = items[0]; const last = items[items.length - 1]; const current = items.indexOf(document.activeElement); if ($event.shiftKey) { (document.activeElement === first || current === -1 ? last : items[current - 1]).focus(); } else { (document.activeElement === last || current === -1 ? first : items[current + 1]).focus(); }" x-on:otp-modal-close.window="previousFocus?.focus?.()" x-effect="if (!$wire.showVerificationModal) { document.body.classList.remove('overflow-hidden'); previousFocus?.focus?.(); }" x-on:destroy="document.body.classList.remove('overflow-hidden')" data-focus-trap="otp-verification-modal">
+    <div class="ista-glass-card relative w-full max-w-md p-8 animate-enter-1 border-white/95 bg-white/80 shadow-[0_0_0_1px_rgba(255,255,255,0.65),0_0_110px_rgba(255,255,255,0.4),0_30px_70px_-15px_rgba(0,0,0,0.58)] hover:translate-y-0 hover:shadow-[0_0_0_1px_rgba(255,255,255,0.65),0_0_110px_rgba(255,255,255,0.4),0_30px_70px_-15px_rgba(0,0,0,0.58)] dark:border-gray-700/90 dark:bg-gray-900/90 dark:shadow-[0_0_0_1px_rgba(31,41,55,0.9),0_30px_70px_-15px_rgba(0,0,0,0.8)] dark:hover:shadow-[0_0_0_1px_rgba(31,41,55,0.9),0_30px_70px_-15px_rgba(0,0,0,0.8)]" style="backdrop-filter: blur(22px) saturate(135%);" role="dialog" aria-modal="true" aria-labelledby="otp-verification-title" aria-describedby="otp-verification-description">
+        <button @click="close()" class="absolute right-4 top-4 text-stone-500 transition-colors hover:text-stone-700" type="button" aria-label="Tutup popup verifikasi">
             <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
             </svg>
         </button>
 
-        <h2 class="mb-2 text-center text-2xl font-bold text-stone-900">Verifikasi Email</h2>
-        <p class="mb-6 text-center text-sm text-stone-600">Kami mengirimkan kode 6 digit ke email Anda. Masukkan kode untuk menyelesaikan pendaftaran.</p>
+        <h2 id="otp-verification-title" class="mb-2 text-center text-2xl font-bold text-stone-900">Verifikasi Email</h2>
+        <p id="otp-verification-description" class="mb-3 text-center text-sm text-stone-600">Kami mengirimkan kode 6 digit ke email Anda. Masukkan kode untuk menyelesaikan pendaftaran.</p>
+        <p class="mb-6 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-center text-xs font-medium text-amber-800">Jika kode kedaluwarsa atau tidak cocok, klik <strong>Kirim Ulang OTP</strong>. Kode baru akan membatalkan kode lama.</p>
 
         @if($otp_status)
             <p class="mb-4 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-center text-xs font-medium text-emerald-700">{{ $otp_status }}</p>
@@ -47,16 +48,20 @@
                     }
                 }"
             >
-                <label class="mb-2 block text-center text-sm font-medium text-stone-700">Kode Verifikasi</label>
+                <label id="otp-input-label" class="mb-2 block text-center text-sm font-medium text-stone-700">Kode verifikasi 6 digit</label>
                 <div class="mb-2 flex justify-center gap-2" @paste.prevent="handlePaste">
                     <template x-for="(digit, index) in otp" :key="index">
                         <input
                             type="text"
+                            inputmode="numeric"
+                            pattern="[0-9]*"
+                            autocomplete="one-time-code"
                             maxlength="1"
                             x-model="otp[index]"
                             :id="'otp_' + index"
                             @input="focusNext(index)"
                             @keydown="handleBackspace($event, index)"
+                            :aria-label="'Digit ' + (index + 1) + ' dari kode OTP'"
                             class="h-14 w-12 rounded-xl border border-stone-300 bg-white text-center text-2xl font-bold text-stone-800 shadow-inner transition-all focus:border-ista-primary focus:outline-none focus:ring-4 focus:ring-ista-primary/10 dark:border-gray-700 dark:bg-gray-950 dark:text-gray-100"
                             required
                             autofocus

@@ -77,6 +77,7 @@ class PasswordResetTest extends TestCase
 
             $component
                 ->assertRedirect('/login')
+                ->assertSessionHas('status', 'Kata sandi Anda telah berhasil diatur ulang. Silakan masuk.')
                 ->assertHasNoErrors();
 
             return true;

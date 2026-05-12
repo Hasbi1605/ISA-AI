@@ -46,7 +46,8 @@
                 @if (! $isConfigured)
                     <div class="rounded-2xl border border-amber-200 bg-amber-50 p-5 text-amber-900 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-100">
                         <p class="font-semibold">Google Drive belum siap</p>
-                        <p class="mt-1 text-sm leading-6">Lengkapi root folder dan hubungkan akun pusat agar file kantor bisa dipilih dari chat.</p>
+                        <p class="mt-1 text-sm leading-6">Koneksi Google Drive kantor belum tersedia. Coba beberapa saat lagi atau gunakan unggah file biasa.</p>
+                        <button type="button" wire:click="retryLoad" class="mt-4 rounded-xl bg-amber-700 px-4 py-2 text-xs font-semibold text-white hover:bg-amber-800">Cek ulang koneksi Drive</button>
                     </div>
                 @else
                     <div class="rounded-2xl border border-stone-200/80 bg-stone-50/80 p-4 dark:border-gray-800 dark:bg-gray-950/60">
@@ -114,7 +115,7 @@
                         </div>
                     </div>
 
-                    <div wire:loading.flex class="mt-4 items-center gap-2 px-1 text-sm text-stone-500 dark:text-gray-400">
+                    <div wire:loading.flex class="mt-4 items-center gap-2 px-1 text-sm text-stone-500 dark:text-gray-400" role="status" aria-live="polite">
                         <span class="h-4 w-4 rounded-full border-2 border-current border-t-transparent animate-spin"></span>
                         <span>Memuat file...</span>
                     </div>
@@ -128,8 +129,12 @@
                             @endif
 
                             @if ($errorMessage)
-                                <div class="rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-900 dark:border-rose-500/30 dark:bg-rose-500/10 dark:text-rose-100">
-                                    {{ $errorMessage }}
+                                <div class="rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-900 dark:border-rose-500/30 dark:bg-rose-500/10 dark:text-rose-100" role="alert">
+                                    <p>{{ $errorMessage }}</p>
+                                    <div class="mt-3 flex flex-wrap gap-2">
+                                        <button type="button" wire:click="retryLoad" class="rounded-xl bg-rose-700 px-3 py-2 text-xs font-semibold text-white hover:bg-rose-800">Coba muat ulang</button>
+                                        <span class="rounded-xl border border-rose-200 bg-white/70 px-3 py-2 text-xs font-semibold text-rose-800 dark:border-rose-400/30 dark:bg-rose-950/20 dark:text-rose-100">Jika masih gagal, coba lagi nanti atau gunakan unggah dokumen dari perangkat Anda.</span>
+                                    </div>
                                 </div>
                             @endif
                         </div>
@@ -233,7 +238,7 @@
                                                 wire:target="processFile(@js($item['id']))"
                                                 @disabled(! $isProcessable)
                                                 class="inline-flex min-w-[116px] items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-sm font-semibold transition disabled:cursor-not-allowed disabled:opacity-60 {{ $isProcessable ? 'bg-ista-primary text-white hover:bg-stone-800' : 'bg-stone-100 text-stone-400 dark:bg-gray-800 dark:text-gray-500' }}">
-                                            <span wire:loading.remove wire:target="processFile(@js($item['id']))">{{ $isProcessable ? 'Pakai' : 'Belum bisa' }}</span>
+                                            <span wire:loading.remove wire:target="processFile(@js($item['id']))">{{ $isProcessable ? 'Pakai untuk chat' : 'Belum bisa dipakai' }}</span>
                                             <span wire:loading.inline-flex wire:target="processFile(@js($item['id']))" class="items-center gap-2">
                                                 <span class="h-3.5 w-3.5 rounded-full border-2 border-current border-t-transparent animate-spin"></span>
                                                 Memproses
@@ -244,7 +249,11 @@
                             </article>
                         @empty
                             <div class="rounded-2xl border border-dashed border-stone-300 bg-white p-10 text-center text-sm text-stone-500 dark:border-gray-800 dark:bg-gray-900 dark:text-gray-400 lg:col-span-2">
-                                Folder ini belum berisi file yang bisa dipakai.
+                                @if ($search !== '')
+                                    Tidak ada file yang cocok dengan pencarian “{{ $search }}”. Hapus kata kunci atau coba folder lain.
+                                @else
+                                    Folder ini belum berisi dokumen yang bisa dipakai untuk chat.
+                                @endif
                             </div>
                         @endforelse
                     </div>

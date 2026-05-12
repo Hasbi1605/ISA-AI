@@ -50,6 +50,7 @@ new #[Layout('layouts.auth-canvas')] class extends Component
             return;
         }
 
+        Session::flash('status', 'Kata sandi Anda telah berhasil diatur ulang. Silakan masuk.');
         Session::flash('message', 'Kata sandi Anda telah berhasil diatur ulang. Silakan masuk.');
 
         $this->redirectRoute('login', navigate: true);

@@ -56,7 +56,9 @@ Route::middleware(['auth', 'verified'])
     ->group(function () {
         Route::redirect('/', '/chat?tab=memo')->name('index');
         Route::redirect('/create', '/chat?tab=memo')->name('create');
-        Route::redirect('/{memo}', '/chat?tab=memo')->name('edit');
+        Route::get('/{memo}', function (string $memo) {
+            return redirect()->route('chat', ['tab' => 'memo', 'memo' => $memo]);
+        })->name('edit');
         Route::redirect('/{legacyMemoPath}', '/chat?tab=memo')
             ->where('legacyMemoPath', '.*');
     });

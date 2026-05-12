@@ -57,6 +57,15 @@
         animation: subtlePulse 2s ease-in-out infinite;
         will-change: transform, opacity;
     }
+
+    .loader-slow-hint {
+        opacity: 0;
+        transition: opacity 0.25s ease;
+    }
+
+    #global-page-loader.loader-slow .loader-slow-hint {
+        opacity: 1;
+    }
     
     /* Gradient Spinner */
     .loader-spinner {
@@ -81,7 +90,7 @@
     }
 </style>
 
-<div id="global-page-loader">
+<div id="global-page-loader" role="status" aria-live="polite" aria-label="Memuat halaman">
     <div class="relative flex items-center justify-center mb-6">
         <!-- Spinner Ring -->
         <div class="loader-spinner"></div>
@@ -94,13 +103,14 @@
     
     <!-- Animated Loading Text -->
     <div class="flex items-center gap-1 text-[13px] md:text-sm font-semibold text-gray-500 dark:text-gray-400 tracking-[0.15em] uppercase">
-        <span>L</span><span>o</span><span>a</span><span>d</span><span>i</span><span>n</span><span>g</span>
+        <span>M</span><span>e</span><span>m</span><span>u</span><span>a</span><span>t</span>
         <span class="inline-flex gap-0.5 ml-1">
             <span class="animate-bounce [animation-delay:-0.3s] h-1 w-1 bg-current rounded-full"></span>
             <span class="animate-bounce [animation-delay:-0.15s] h-1 w-1 bg-current rounded-full"></span>
             <span class="animate-bounce h-1 w-1 bg-current rounded-full"></span>
         </span>
     </div>
+    <p class="loader-slow-hint mt-3 max-w-xs text-center text-xs text-gray-500 dark:text-gray-400">Koneksi lebih lambat dari biasanya. Kami masih menyiapkan halaman.</p>
 </div>
 
 <script>
@@ -134,14 +144,24 @@
                 }
 
                 const loaderEl = document.getElementById('global-page-loader');
-                if (loaderEl) loaderEl.classList.remove('loader-hidden');
+                if (loaderEl) {
+                    loaderEl.classList.remove('loader-hidden');
+                    window.clearTimeout(window.__globalPageLoaderSlowTimer);
+                    window.__globalPageLoaderSlowTimer = window.setTimeout(() => loaderEl.classList.add('loader-slow'), 2500);
+                    loaderEl.removeAttribute('aria-hidden');
+                    loaderEl.setAttribute('role', 'status');
+                }
             };
 
             const hideLoader = () => {
                 const loaderEl = document.getElementById('global-page-loader');
                 if (loaderEl) {
+                    window.clearTimeout(window.__globalPageLoaderSlowTimer);
+                    loaderEl.classList.remove('loader-slow');
                     setTimeout(() => {
                         loaderEl.classList.add('loader-hidden');
+                        loaderEl.setAttribute('aria-hidden', 'true');
+                        loaderEl.removeAttribute('role');
                         document.documentElement.classList.remove('suppress-global-page-loader');
                     }, 150);
                 }

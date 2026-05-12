@@ -5,6 +5,7 @@ namespace App\Livewire\Chat;
 use App\Models\User;
 use App\Services\CloudStorage\GoogleDriveService;
 use App\Services\DocumentLifecycleService;
+use App\Support\UserFacingError;
 use Illuminate\Support\Facades\Auth;
 use Livewire\Component;
 
@@ -117,6 +118,11 @@ class GoogleDrivePicker extends Component
         $this->loadFiles();
     }
 
+    public function retryLoad(): void
+    {
+        $this->loadFiles();
+    }
+
     public function processFile(string $fileId, DocumentLifecycleService $documentLifecycleService): void
     {
         /** @var User|null $user */
@@ -136,7 +142,8 @@ class GoogleDrivePicker extends Component
 
             $this->dispatch('google-drive-document-imported', documentId: $document->id);
         } catch (\Throwable $e) {
-            $this->errorMessage = $e->getMessage();
+            report($e);
+            $this->errorMessage = UserFacingError::message($e, 'Gagal menambahkan file dari Google Drive. Coba lagi atau pilih file lain.');
             $this->statusMessage = null;
         }
     }
@@ -216,7 +223,8 @@ class GoogleDrivePicker extends Component
         } catch (\Throwable $e) {
             $this->items = [];
             $this->nextPageToken = null;
-            $this->errorMessage = $e->getMessage();
+            report($e);
+            $this->errorMessage = UserFacingError::message($e, 'Gagal memuat file Google Drive. Periksa koneksi lalu coba muat ulang.');
         } finally {
             $this->isLoading = false;
         }

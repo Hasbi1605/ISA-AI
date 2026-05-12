@@ -5,11 +5,11 @@
 </div>
 
 <div class="pointer-events-none absolute inset-0 z-0 overflow-hidden">
-    <div class="animate-float-slow absolute left-1/4 top-1/4 h-64 w-64 cursor-pointer rounded-full bg-yellow-400/20 mix-blend-overlay blur-3xl"></div>
-    <div class="animate-float-reverse absolute bottom-1/4 right-1/4 h-80 w-80 cursor-pointer rounded-full bg-rose-500/10 mix-blend-multiply blur-3xl dark:mix-blend-screen"></div>
+    <div class="animate-float-slow absolute left-1/4 top-1/4 h-64 w-64 rounded-full bg-yellow-400/20 mix-blend-overlay blur-3xl"></div>
+    <div class="animate-float-reverse absolute bottom-1/4 right-1/4 h-80 w-80 rounded-full bg-rose-500/10 mix-blend-multiply blur-3xl dark:mix-blend-screen"></div>
 
-    <div class="animate-twinkle absolute left-20 top-10 h-2 w-2 cursor-pointer rounded-full bg-yellow-500 blur-[1px]" style="animation-delay: 0s"></div>
-    <div class="animate-twinkle absolute bottom-20 right-10 h-3 w-3 cursor-pointer rounded-full bg-rose-400 blur-[2px]" style="animation-delay: 1s"></div>
-    <div class="animate-twinkle absolute left-10 top-1/2 h-1.5 w-1.5 cursor-pointer rounded-full bg-white blur-[1px]" style="animation-delay: 2s"></div>
-    <div class="animate-twinkle absolute right-1/3 top-20 h-2 w-2 cursor-pointer rounded-full bg-yellow-600/60 blur-[1px]" style="animation-delay: 1.5s"></div>
+    <div class="animate-twinkle absolute left-20 top-10 h-2 w-2 rounded-full bg-yellow-500 blur-[1px]" style="animation-delay: 0s"></div>
+    <div class="animate-twinkle absolute bottom-20 right-10 h-3 w-3 rounded-full bg-rose-400 blur-[2px]" style="animation-delay: 1s"></div>
+    <div class="animate-twinkle absolute left-10 top-1/2 h-1.5 w-1.5 rounded-full bg-white blur-[1px]" style="animation-delay: 2s"></div>
+    <div class="animate-twinkle absolute right-1/3 top-20 h-2 w-2 rounded-full bg-yellow-600/60 blur-[1px]" style="animation-delay: 1.5s"></div>
 </div>

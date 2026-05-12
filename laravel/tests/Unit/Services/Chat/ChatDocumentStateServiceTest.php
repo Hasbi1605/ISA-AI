@@ -16,15 +16,17 @@ class ChatDocumentStateServiceTest extends TestCase
     {
         $user = User::factory()->create();
         $readyDocument = $this->createDocument($user, ['status' => 'ready']);
+        $errorDocument = $this->createDocument($user, ['status' => 'error']);
         $this->createDocument($user, ['status' => 'processing']);
         $this->createDocument($user, ['status' => 'pending']);
 
         $service = app(ChatDocumentStateService::class);
         $state = $service->loadAvailableDocuments($user->id);
 
-        $this->assertCount(3, $state['documents']);
+        $this->assertCount(4, $state['documents']);
         $this->assertTrue($state['has_documents_in_progress']);
         $this->assertSame([$readyDocument->id], $service->readyDocumentIds($user->id));
+        $this->assertContains($errorDocument->id, $state['documents']->pluck('id')->all());
     }
 
     public function test_selection_helpers_keep_only_ready_document_ids(): void

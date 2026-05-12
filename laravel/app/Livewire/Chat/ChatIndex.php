@@ -14,6 +14,7 @@ use App\Services\ChatOrchestrationService;
 use App\Services\CloudStorage\GoogleDriveService;
 use App\Services\DocumentExportService;
 use App\Services\DocumentLifecycleService;
+use App\Support\UserFacingError;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\RateLimiter;
 use Illuminate\Support\Facades\Storage;
@@ -236,7 +237,8 @@ class ChatIndex extends Component
             $this->loadAvailableDocuments();
             session()->flash('message', 'Dokumen berhasil dihapus.');
         } catch (\Throwable $e) {
-            session()->flash('error', 'Gagal menghapus dokumen: '.$e->getMessage());
+            report($e);
+            session()->flash('error', UserFacingError::message($e, 'Gagal menghapus dokumen. Silakan coba lagi.'));
         }
     }
 
@@ -266,7 +268,44 @@ class ChatIndex extends Component
             $this->loadAvailableDocuments();
             session()->flash('message', 'Dokumen terpilih berhasil dihapus.');
         } catch (\Throwable $e) {
-            session()->flash('error', 'Gagal menghapus dokumen terpilih: '.$e->getMessage());
+            report($e);
+            session()->flash('error', UserFacingError::message($e, 'Gagal menghapus dokumen terpilih. Silakan coba lagi.'));
+        }
+    }
+
+    public function reprocessDocument(int $documentId, DocumentLifecycleService $documentLifecycleService): void
+    {
+        if ($this->isRateLimited('reprocessDocument:'.$documentId, 3, 300)) {
+            session()->flash('error', 'Terlalu banyak percobaan proses ulang untuk dokumen ini. Coba lagi beberapa menit lagi.');
+            return;
+        }
+
+        $document = Document::where('id', $documentId)->where('user_id', Auth::id())->first();
+
+        if (! $document) {
+            session()->flash('error', 'Dokumen tidak ditemukan atau bukan milik Anda.');
+            return;
+        }
+
+        if ($document->status !== 'error') {
+            session()->flash('error', 'Hanya dokumen yang gagal diproses yang dapat dicoba ulang.');
+            return;
+        }
+
+        try {
+            $document->forceFill([
+                'status' => 'pending',
+                'preview_status' => Document::PREVIEW_STATUS_PENDING,
+                'preview_html_path' => null,
+            ])->save();
+            $documentLifecycleService->dispatchProcessing($document);
+            $this->selectedDocuments = $this->chatDocumentStateService()->removeDocumentIds($this->selectedDocuments, (int) $documentId);
+            $this->conversationDocuments = $this->chatDocumentStateService()->removeDocumentIds($this->conversationDocuments, (int) $documentId);
+            $this->loadAvailableDocuments();
+            session()->flash('message', 'Dokumen dijadwalkan ulang untuk diproses. Jika gagal lagi, unggah ulang file sumber.');
+        } catch (\Throwable $e) {
+            report($e);
+            session()->flash('error', UserFacingError::message($e, 'Gagal menjadwalkan proses ulang dokumen. Coba lagi sebentar.'));
         }
     }
 
@@ -334,7 +373,8 @@ class ChatIndex extends Component
             $this->attachmentUploadStatus = 'error';
             $this->attachmentUploadMessage = $message;
         } catch (\Throwable $e) {
-            session()->flash('error', 'Gagal mengunggah dokumen: '.$e->getMessage());
+            report($e);
+            session()->flash('error', UserFacingError::message($e, 'Gagal mengunggah dokumen. Periksa koneksi atau coba lagi.'));
             $this->attachmentUploadStatus = 'error';
             $this->attachmentUploadMessage = 'Upload gagal. Periksa format file dan coba lagi.';
         } finally {
@@ -356,11 +396,6 @@ class ChatIndex extends Component
                 ->first();
 
             if ($document) {
-                $this->conversationDocuments = $this->chatDocumentStateService()->addDocumentIds(
-                    $this->conversationDocuments,
-                    (int) $documentId,
-                );
-
                 $this->dispatch('conversation-documents-preview',
                     ids: $this->conversationDocuments,
                     documents: [[
@@ -474,9 +509,10 @@ class ChatIndex extends Component
                 'folder_external_id' => $upload['folder_external_id'],
             ];
         } catch (\Throwable $e) {
+            report($e);
             return [
                 'ok' => false,
-                'message' => $e->getMessage(),
+                'message' => UserFacingError::message($e, 'Upload ke Google Drive gagal. Coba lagi atau hubungi admin bila berulang.'),
             ];
         }
     }

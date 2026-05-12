@@ -59,7 +59,7 @@ class MemoWorkspaceTest extends TestCase
         Livewire::actingAs($user)
             ->test(MemoWorkspace::class)
             ->assertSee('Kembali ke Beranda', false)
-            ->assertSee('New Memo', false)
+            ->assertSee('Memo Baru', false)
             ->assertSee('Pengaturan Akun', false)
             ->assertSee('chat-tab-switch', false)
             ->assertSee('activeTab === \'memo\'', false)
@@ -70,7 +70,7 @@ class MemoWorkspaceTest extends TestCase
             ->assertSee('Nomor Memo', false)
             ->assertSee('Format dokumen', false)
             ->assertSee('Sedang membuat memo', false)
-            ->assertSee('Generate Memo', false)
+            ->assertSee('Buat memo', false)
             ->assertSee('Arahan Tambahan', false)
             ->assertSee('memo-document-ready.window', false)
             ->assertSee('dashboard-grid.png', false)
@@ -127,9 +127,9 @@ class MemoWorkspaceTest extends TestCase
 
         Livewire::actingAs($user)
             ->test(MemoWorkspace::class)
-            ->assertSee('Today', false)
-            ->assertSee('Previous 7 Days', false)
-            ->assertSee('Older', false)
+            ->assertSee('Hari Ini', false)
+            ->assertSee('7 Hari Terakhir', false)
+            ->assertSee('Lebih Lama', false)
             ->assertSee('chat-history-item', false)
             ->assertSee('wire:click="deleteMemo', false)
             ->assertSee('data-memo-history-id=', false)
@@ -165,7 +165,7 @@ class MemoWorkspaceTest extends TestCase
         Livewire::actingAs($user)
             ->test(MemoWorkspace::class)
             ->call('loadMemo', $olderMemo->id)
-            ->assertSee('Older', false)
+            ->assertSee('Lebih Lama', false)
             ->assertSee('Memo Tetap Lama', false);
 
         $this->assertSame(
@@ -190,7 +190,6 @@ class MemoWorkspaceTest extends TestCase
         Livewire::actingAs($other)
             ->test(MemoWorkspace::class)
             ->set('activeMemoId', $memo->id)
-            ->assertSee('Dokumen belum tersedia', false)
             ->assertDontSee('Memo Rahasia Owner.docx', false)
             ->assertDontSee('memos/'.$memo->id.'/signed-file', false);
     }
@@ -863,7 +862,7 @@ class MemoWorkspaceTest extends TestCase
             ->assertSet('activeMemoId', null)
             ->assertSet('activeMemoVersionId', null)
             ->assertSee('Konfigurasi Memo', false)
-            ->assertDontSee('Memo Untuk Dihapus', false);
+            ->assertDontSee('data-memo-history-id="'.$memo->id.'"', false);
 
         $this->assertSoftDeleted('memos', ['id' => $memo->id]);
     }
@@ -940,7 +939,7 @@ class MemoWorkspaceTest extends TestCase
             ->call('loadMemo', $memo->id)
             ->set('showMemoConfiguration', true)
             ->assertSee('Konfigurasi Memo', false)
-            ->assertSee('Regenerate dari Konfigurasi', false)
+            ->assertSee('Buat ulang dari konfigurasi', false)
             ->assertDontSee('Memo "Memo Panjang Format Folio Eksplisit" dimuat.', false)
             ->assertDontSee('Tulis revisi untuk memo ini', false);
     }

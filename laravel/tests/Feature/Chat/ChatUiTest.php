@@ -3,6 +3,7 @@
 namespace Tests\Feature\Chat;
 
 use App\Jobs\GenerateChatResponse;
+use App\Jobs\ProcessDocument;
 use App\Livewire\Chat\ChatIndex;
 use App\Models\Conversation;
 use App\Models\Document;
@@ -52,6 +53,38 @@ class ChatUiTest extends TestCase
             ->set('prompt', 'Halo')
             ->call('sendMessage')
             ->assertHasErrors(['rate_limit']);
+    }
+
+    public function test_error_document_is_visible_but_not_selectable_and_can_be_reprocessed_by_owner(): void
+    {
+        Queue::fake();
+        $user = User::factory()->create();
+        $document = Document::create([
+            'user_id' => $user->id,
+            'filename' => 'failed.pdf',
+            'original_name' => 'failed.pdf',
+            'file_path' => 'documents/'.$user->id.'/failed.pdf',
+            'mime_type' => 'application/pdf',
+            'file_size_bytes' => 100,
+            'status' => 'error',
+            'preview_status' => Document::PREVIEW_STATUS_FAILED,
+            'preview_html_path' => 'previews/stale.html',
+        ]);
+
+        Livewire::actingAs($user)
+            ->test(ChatIndex::class)
+            ->assertSee('Gagal')
+            ->assertSee('Tidak dipakai sebagai konteks AI sampai berhasil diproses ulang')
+            ->set('selectedDocuments', [$document->id])
+            ->call('addSelectedDocumentsToChat')
+            ->assertSet('conversationDocuments', [])
+            ->call('reprocessDocument', $document->id);
+
+        $document->refresh();
+        $this->assertSame('pending', $document->status);
+        $this->assertSame(Document::PREVIEW_STATUS_PENDING, $document->preview_status);
+        $this->assertNull($document->preview_html_path);
+        Queue::assertPushed(ProcessDocument::class);
     }
 
     public function test_create_conversation_if_needed_throws_for_unowned_conversation(): void
@@ -259,7 +292,7 @@ class ChatUiTest extends TestCase
             ->assertSee('wire:key="chat-history-visible-', false)
             ->assertSee('openGoogleDrivePicker()', false)
             ->assertSee('open-google-drive-picker', false)
-            ->assertSee('Ambil file dari Google Drive Kantor', false)
+            ->assertSee('Ambil dokumen dari Google Drive Kantor', false)
             ->assertSee('images/icons/google-drive.svg', false)
             ->assertSee('Pilih file untuk chat', false)
             ->assertSee('chat-tab-switch', false)
@@ -742,16 +775,16 @@ class ChatUiTest extends TestCase
 
             $response
                 ->assertOk()
-                ->assertSee('Today', false)
+                ->assertSee('Hari Ini', false)
                 ->assertSee('Percakapan hari ini', false)
-                ->assertSee('Previous 7 Days', false)
+                ->assertSee('7 Hari Terakhir', false)
                 ->assertSee('Percakapan kemarin', false);
         } finally {
             Carbon::setTestNow();
         }
     }
 
-    public function test_google_drive_import_is_added_to_chat_composer_documents(): void
+    public function test_google_drive_import_processing_document_is_not_added_as_ready_context(): void
     {
         $user = User::factory()->create();
         $document = Document::create([
@@ -770,7 +803,7 @@ class ChatUiTest extends TestCase
         Livewire::actingAs($user)
             ->test(ChatIndex::class)
             ->call('refreshDocumentsAfterGoogleDriveImport', $document->id)
-            ->assertSet('conversationDocuments', [$document->id])
+            ->assertSet('conversationDocuments', [])
             ->assertDispatched('conversation-documents-preview');
     }
 }

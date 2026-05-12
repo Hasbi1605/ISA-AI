@@ -52,7 +52,7 @@
     </div>
 
     <div class="lg:hidden border-b border-amber-200/70 bg-amber-50/[0.92] px-4 py-3 text-[12.5px] leading-relaxed text-amber-900 shadow-sm backdrop-blur-sm dark:border-amber-400/20 dark:bg-amber-500/10 dark:text-amber-100" role="note">
-        Mode memo paling nyaman dibuka lewat desktop. Di mobile, gunakan tampilan ini hanya untuk cek cepat atau kembali ke tab Chat jika perlu ruang kerja penuh.
+        Mode memo di mobile tersedia untuk review cepat. Gunakan tombol Dokumen untuk melihat hasil, atau lanjutkan penyuntingan detail di desktop bila membutuhkan ruang kerja penuh.
     </div>
 
     {{-- Dynamic Configuration / Chat Area --}}
@@ -67,13 +67,13 @@
                     </div>
                     <button type="button"
                             wire:click="$toggle('showMemoConfiguration')"
-                            class="shrink-0 rounded-lg border border-stone-200 px-2.5 py-1.5 text-[11px] font-semibold text-stone-600 transition hover:bg-stone-100 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800">
-                        {{ $showMemoConfiguration ? 'Tutup' : 'Edit' }}
+                            class="shrink-0 rounded-lg border border-ista-primary/30 bg-ista-primary/5 px-3 py-2 text-[12px] font-bold text-ista-primary transition hover:bg-ista-primary hover:text-white dark:border-amber-300/30 dark:bg-amber-300/10 dark:text-amber-200 dark:hover:bg-amber-300 dark:hover:text-gray-950">
+                        {{ $showMemoConfiguration ? 'Tutup konfigurasi' : 'Edit konfigurasi' }}
                     </button>
                 </div>
                 @if (($activeMemoVersions ?? collect())->count() > 1)
                     <div class="mt-3 flex items-center gap-2 border-t border-stone-100 pt-3 dark:border-gray-800">
-                        <label for="memo-version-select" class="shrink-0 text-[10.5px] font-bold uppercase tracking-wider text-stone-400 dark:text-gray-500">Versi</label>
+                        <label for="memo-version-select" class="shrink-0 text-[10.5px] font-bold uppercase tracking-wider text-stone-400 dark:text-gray-500">Versi memo</label>
                         <select id="memo-version-select"
                                 wire:change="switchMemoVersion($event.target.value)"
                                 class="min-w-0 flex-1 rounded-md border border-stone-200 bg-white px-2.5 py-1.5 text-[12px] font-semibold text-stone-700 shadow-sm focus:border-ista-primary focus:ring-1 focus:ring-ista-primary dark:border-gray-700 dark:bg-gray-800 dark:text-gray-100">
@@ -316,7 +316,7 @@
                         wire:target="generateConfiguredMemo,generateFromChat"
                         :disabled="$wire.isGenerating"
                         class="inline-flex h-10 w-full items-center justify-center gap-2 rounded-md bg-ista-primary px-4 text-[13px] font-semibold text-white shadow-sm transition hover:bg-ista-dark active:translate-y-px disabled:cursor-not-allowed disabled:opacity-50">
-                    <span wire:loading.remove wire:target="generateConfiguredMemo,generateFromChat">{{ $activeMemoId ? 'Regenerate dari Konfigurasi' : 'Generate Memo' }}</span>
+                    <span wire:loading.remove wire:target="generateConfiguredMemo,generateFromChat">{{ $activeMemoId ? 'Buat ulang dari konfigurasi' : 'Buat memo' }}</span>
                     <span wire:loading.inline-flex wire:target="generateConfiguredMemo,generateFromChat" class="items-center gap-2">
                         <span class="h-3.5 w-3.5 rounded-full border-2 border-white/70 border-t-transparent animate-spin" aria-hidden="true"></span>
                         <span>Memproses...</span>
@@ -331,18 +331,21 @@
                         x-ref="memoInput"
                         @keydown.enter="if(!$event.shiftKey) { $event.preventDefault(); submitMemoRevision($wire, $refs.memoInput); }"
                         placeholder="Tulis revisi untuk memo ini..."
+                        aria-describedby="memo-composer-hint"
                         rows="1"
                         class="chat-input w-full max-h-[120px] min-h-[44px] bg-transparent border-none focus:ring-0 focus:outline-none focus:border-transparent focus-visible:ring-0 focus-visible:outline-none resize-none text-[14px] text-stone-800 dark:text-[#F8FAFC] placeholder-[#94A3B8] dark:placeholder-[#64748B] px-2 py-[10px] hover:bg-transparent focus:bg-transparent"
                         style="outline: none !important; box-shadow: none !important;"
                         x-on:input="$el.style.height = 'auto'; $el.style.height = Math.min($el.scrollHeight, 120) + 'px'"
                     ></textarea>
 
-                    <div class="mt-2 flex items-center justify-end">
+                    <div class="mt-2 flex items-center justify-between gap-3">
+                        <p id="memo-composer-hint" class="text-[11px] text-[#94A3B8] dark:text-[#64748B]">Enter untuk kirim, Shift+Enter untuk baris baru.</p>
                         <button type="submit"
                                 wire:loading.attr="disabled"
                                 wire:target="sendMemoChat,generateRevisionFromChat"
                                 :disabled="memoRevisionLoading || $wire.isGenerating"
-                                class="bg-ista-primary hover:bg-ista-dark dark:bg-ista-primary dark:hover:bg-ista-dark disabled:opacity-50 disabled:cursor-not-allowed rounded-full transition-all duration-300 h-[32px] w-[32px] flex items-center justify-center group">
+                                class="bg-ista-primary hover:bg-ista-dark dark:bg-ista-primary dark:hover:bg-ista-dark disabled:opacity-50 disabled:cursor-not-allowed rounded-full transition-all duration-300 h-[32px] w-[32px] flex items-center justify-center group"
+                                aria-label="Kirim revisi memo">
                             <img src="{{ asset('images/icons/send-light.svg') }}" alt="" class="h-[17px] w-[17px] dark:hidden brightness-0 invert" />
                             <img src="{{ asset('images/icons/send-dark.svg') }}" alt="" class="h-[17px] w-[17px] hidden dark:block brightness-0 invert" />
                         </button>

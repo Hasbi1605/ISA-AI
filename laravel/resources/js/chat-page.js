@@ -3,6 +3,7 @@ const CHAT_PENDING_STORAGE_KEY = 'ista.chat.pendingResponses.v1';
 const CHAT_COMPLETED_STORAGE_KEY = 'ista.chat.completedResponses.v1';
 const CHAT_PENDING_MARKER_TTL_MS = 10 * 60 * 1000;
 const CHAT_PENDING_RECENT_TTL_MS = 3 * 60 * 1000;
+const CHAT_PENDING_STALE_WARNING_MS = 45 * 1000;
 
 const normalizeWirePayload = (data) => (Array.isArray(data) ? (data[0] || {}) : (data || {}));
 
@@ -186,6 +187,8 @@ const registerChatPageData = (Alpine) => {
         loadingPhaseKey: 0,
         loadingPhaseTimeout: null,
         phase2Timeout: null,
+        pendingStaleTimeout: null,
+        stalePendingWarning: '',
         hasFirstAssistantChunk: false,
         phase1Done: false,
         phase2Done: false,
@@ -249,10 +252,15 @@ const registerChatPageData = (Alpine) => {
             if (marker && !hasFreshMarker) {
                 delete markers[conversationId];
                 savePendingConversationMarkers(markers);
+                this.stalePendingWarning = 'Jawaban sebelumnya belum selesai atau koneksi terputus. Coba kirim ulang pertanyaan bila jawaban tidak muncul.';
             }
 
             if (!hasFreshMarker && !hasRecentPendingUser) {
                 return;
+            }
+
+            if (pendingAgeMs !== null && pendingAgeMs > CHAT_PENDING_STALE_WARNING_MS) {
+                this.stalePendingWarning = 'Jawaban AI masih belum selesai. Anda bisa menunggu sebentar atau kirim ulang pertanyaan bila diperlukan.';
             }
 
             const loadingContext = hasFreshMarker ? (marker.loadingContext || 'general') : 'general';
@@ -332,6 +340,7 @@ const registerChatPageData = (Alpine) => {
         destroy() {
             this.clearLoadingPhaseTimeout();
             this.clearPhase2Timeout();
+            this.clearPendingStaleTimeout();
             if (this._messageCompleteHandler) {
                 window.removeEventListener('message-complete', this._messageCompleteHandler);
                 this._messageCompleteHandler = null;
@@ -380,6 +389,13 @@ const registerChatPageData = (Alpine) => {
             }
         },
 
+        clearPendingStaleTimeout() {
+            if (this.pendingStaleTimeout) {
+                window.clearTimeout(this.pendingStaleTimeout);
+                this.pendingStaleTimeout = null;
+            }
+        },
+
         // Dipanggil setelah fase 2 selesai. Kalau chunk sudah ada, langsung
         // tampilkan "Menampilkan jawaban". Kalau belum, tunggu chunk datang
         // (assistant-output handler akan cek phase2Done).
@@ -399,8 +415,15 @@ const registerChatPageData = (Alpine) => {
             this.loadingPhaseKey++;
             this.loadingPhase = this.loadingPhaseLabels()[0];
             this.shimmerActive = true;
+            this.stalePendingWarning = '';
             this.phase1Done = false;
             this.phase2Done = false;
+            this.clearPendingStaleTimeout();
+            this.pendingStaleTimeout = window.setTimeout(() => {
+                if (this.streaming && !this.hasFirstAssistantChunk) {
+                    this.stalePendingWarning = 'Jawaban memakan waktu lebih lama dari biasanya. Tetap tunggu atau kirim ulang pertanyaan jika tidak ada perubahan.';
+                }
+            }, CHAT_PENDING_MARKER_TTL_MS);
 
             const labels = this.loadingPhaseLabels();
 
@@ -438,6 +461,7 @@ const registerChatPageData = (Alpine) => {
             this.loadingContext = 'general';
             this.loadingPhase = 'AI sedang berpikir';
             this.shimmerActive = false;
+            this.stalePendingWarning = '';
             this.streamingText = '';
             this.modelName = '';
             this.sources = [];
@@ -491,6 +515,7 @@ const registerChatPageData = (Alpine) => {
         completedConversationIds: loadStoredConversationIds(CHAT_COMPLETED_STORAGE_KEY),
         loadingConversationId: null,
         isNavigating: false,
+        flashMessage: '',
         _chatMarkPendingHandler: null,
         _assistantPersistedWindowHandler: null,
         _assistantPersistedCleanup: null,
@@ -514,6 +539,15 @@ const registerChatPageData = (Alpine) => {
                 const payload = normalizeWirePayload(data);
                 const id = Number(payload.conversationId || 0);
                 this.markConversationComplete(id);
+            });
+            window.addEventListener('chat-success-toast', (event) => {
+                this.flashMessage = event?.detail?.message || '';
+                if (!this.flashMessage) return;
+                window.setTimeout(() => {
+                    if (this.flashMessage === (event?.detail?.message || '')) {
+                        this.flashMessage = '';
+                    }
+                }, 5000);
             });
         },
 
@@ -788,7 +822,7 @@ const registerChatPageData = (Alpine) => {
 
         driveButtonLabel() {
             if (!this.driveUploadAvailable) {
-                return 'Upload Drive perlu koneksi akun pusat';
+                return 'Google Drive belum tersedia untuk jawaban ini.';
             }
 
             return this.driveLoading ? 'Mengupload ke Google Drive' : 'Upload ke Google Drive';
@@ -805,6 +839,7 @@ const registerChatPageData = (Alpine) => {
 
         toggleDriveMenu() {
             if (this.driveLoading || !this.driveUploadAvailable) {
+                this.driveError = 'Simpan ke Google Drive belum tersedia untuk jawaban ini.';
                 return;
             }
 
@@ -958,6 +993,16 @@ const registerChatPageData = (Alpine) => {
             status: document.status,
         })),
 
+        init() {
+            this.$watch('readyDocumentIds', () => this.syncSelectedDocuments());
+            this.$watch('availableDocuments', () => {
+                this.readyDocumentIds = this.availableDocuments
+                    .filter((document) => document.status === 'ready')
+                    .map((document) => Number(document.id));
+                this.syncSelectedDocuments();
+            });
+        },
+
         normalizedSelectedDocuments() {
             const ready = new Set(this.readyDocumentIds);
 
@@ -1004,7 +1049,7 @@ const registerChatPageData = (Alpine) => {
         },
 
         deleteSelectedDocuments() {
-            if (!window.confirm('Delete selected files from your documents?')) {
+            if (!window.confirm('Hapus dokumen terpilih dari daftar dokumen Anda? Dokumen yang dihapus tidak bisa dipakai sebagai konteks chat.')) {
                 return Promise.resolve();
             }
 
@@ -1479,7 +1524,7 @@ const registerChatPageData = (Alpine) => {
         },
 
         memoLoadingLabels() {
-            return ['Membuat ulang memo', 'AI sedang berpikir', 'Menampilkan jawaban'];
+            return ['Menyiapkan revisi memo', 'AI sedang menyusun memo', 'Menampilkan hasil revisi'];
         },
 
         clearMemoLoadingPhaseTimeout() {
@@ -1525,7 +1570,7 @@ const registerChatPageData = (Alpine) => {
 
             this.memoLoadingPhaseKey = 0;
             this.memoPhase2Done = false;
-            this.memoLoadingPhase = 'Membuat ulang memo';
+            this.memoLoadingPhase = 'Menyiapkan revisi memo';
             this.memoShimmerActive = false;
         },
 
@@ -1587,14 +1632,15 @@ const registerChatPageData = (Alpine) => {
 
         driveButtonLabel() {
             if (!this.driveUploadAvailable) {
-                return 'Upload Drive perlu koneksi akun pusat';
+                return 'Simpan ke Google Drive belum tersedia untuk dokumen ini.';
             }
 
-            return this.isDriveLoading() ? 'Menyiapkan upload ke Google Drive' : 'Upload ke GDrive Kantor';
+            return this.isDriveLoading() ? 'Menyiapkan upload ke Google Drive' : 'Upload ke Google Drive Kantor';
         },
 
         toggleDriveMenu() {
             if (this.isBusy() || !this.driveUploadAvailable) {
+                this.error = 'Simpan ke Google Drive belum tersedia untuk dokumen ini.';
                 return;
             }
 
