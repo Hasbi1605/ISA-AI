@@ -237,7 +237,9 @@ class ChatUiTest extends TestCase
             ->assertSee('Pilih file untuk chat', false)
             ->assertSee('chat-tab-switch', false)
             ->assertSee('activeTab === \'chat\'', false)
-            ->assertDontSee('wire:click="$set(\'tab\', \'chat\')"', false);
+            ->assertDontSee('wire:click="$set(\'tab\', \'chat\')"', false)
+            ->assertSee('data-chat-conversation-id=', false)
+            ->assertSee('data-chat-last-message-role=', false);
     }
 
     public function test_chat_route_with_conversation_id_loads_selected_conversation_messages(): void
@@ -389,6 +391,36 @@ class ChatUiTest extends TestCase
             'role' => 'assistant',
             'content' => 'Jawaban AI setelah conversation terhapus.',
         ]);
+    }
+
+    public function test_send_message_dispatches_ack_and_persisted_events_with_conversation_id_payload(): void
+    {
+        $user = User::factory()->create();
+
+        $this->app->bind(AIService::class, fn () => new class extends AIService
+        {
+            public function sendChat(array $messages, ?array $document_filenames = null, ?string $user_id = null, bool $force_web_search = false, ?string $source_policy = null, bool $allow_auto_realtime_web = true): \Generator
+            {
+                yield 'Jawaban AI untuk payload event.';
+            }
+        });
+
+        $component = Livewire::actingAs($user)
+            ->test(ChatIndex::class)
+            ->set('prompt', 'Halo payload event')
+            ->call('sendMessage', aiService: app(AIService::class));
+
+        $conversationId = (int) $component->get('currentConversationId');
+
+        $component->assertDispatched('user-message-acked', function (string $_event, array $payload) use ($conversationId) {
+            return (int) ($payload['conversationId'] ?? 0) === $conversationId
+                && (int) ($payload['messageId'] ?? 0) > 0;
+        });
+
+        $component->assertDispatched('assistant-message-persisted', function (string $_event, array $payload) use ($conversationId) {
+            return (int) ($payload['conversationId'] ?? 0) === $conversationId
+                && (int) ($payload['messageId'] ?? 0) > 0;
+        });
     }
 
     public function test_save_assistant_message_returns_null_when_create_hits_conversation_fk_race(): void

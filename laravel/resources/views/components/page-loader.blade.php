@@ -87,6 +87,11 @@
     (() => {
         if (!window.__globalPageLoaderHandlers) {
             const showLoader = () => {
+                if (window.__suppressGlobalPageLoaderOnce === true) {
+                    window.__suppressGlobalPageLoaderOnce = false;
+                    return;
+                }
+
                 const loaderEl = document.getElementById('global-page-loader');
                 if (loaderEl) loaderEl.classList.remove('loader-hidden');
             };

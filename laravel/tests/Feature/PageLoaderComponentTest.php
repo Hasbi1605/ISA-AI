@@ -14,5 +14,6 @@ class PageLoaderComponentTest extends TestCase
         $this->assertStringContainsString('window.__globalPageLoaderHandlers', $html);
         $this->assertStringContainsString('if (!window.__globalPageLoaderHandlers)', $html);
         $this->assertStringContainsString('document.addEventListener(\'livewire:navigating\', showLoader);', $html);
+        $this->assertStringContainsString('window.__suppressGlobalPageLoaderOnce === true', $html);
     }
 }

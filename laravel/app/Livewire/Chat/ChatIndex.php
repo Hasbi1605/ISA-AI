@@ -516,7 +516,7 @@ class ChatIndex extends Component
 
         $userMessageArray = $orchestrator->saveUserMessage($conversationIdForRequest, $this->prompt);
         $this->messages[] = $userMessageArray;
-        $this->dispatch('user-message-acked');
+        $this->dispatch('user-message-acked', conversationId: $conversationIdForRequest, messageId: $userMessageArray['id'] ?? null);
         $this->prompt = '';
         $this->sources = [];
 
@@ -585,7 +585,7 @@ class ChatIndex extends Component
             $this->loadConversation($conversationIdForRequest, clearNewMessageId: false);
         }
         $this->loadConversations();
-        $this->dispatch('assistant-message-persisted');
+        $this->dispatch('assistant-message-persisted', conversationId: $conversationIdForRequest, messageId: $assistantMsg?->id);
     }
 
     public function render()

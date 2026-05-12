@@ -1,4 +1,24 @@
 let hasRegisteredChatPageData = false;
+const CHAT_PENDING_STORAGE_KEY = 'ista.chat.pendingResponses.v1';
+
+const loadPendingConversationMarkers = () => {
+    try {
+        const raw = window.localStorage?.getItem(CHAT_PENDING_STORAGE_KEY);
+        if (!raw) return {};
+        const parsed = JSON.parse(raw);
+        return parsed && typeof parsed === 'object' ? parsed : {};
+    } catch (_) {
+        return {};
+    }
+};
+
+const savePendingConversationMarkers = (markers) => {
+    try {
+        window.localStorage?.setItem(CHAT_PENDING_STORAGE_KEY, JSON.stringify(markers || {}));
+    } catch (_) {
+        // ignore storage write errors
+    }
+};
 
 const isDarkThemeEnabled = () => localStorage.getItem('theme') === 'dark';
 
@@ -147,6 +167,53 @@ const registerChatPageData = (Alpine) => {
         chatMutationObserver: null,
         wireListeners: [],
 
+        getConversationMeta() {
+            const metaEl = this.$el.querySelector('[data-chat-conversation-id]');
+            if (!metaEl) return { conversationId: null, lastRole: '', hasPendingUserWithoutAssistant: false };
+            const conversationId = Number(metaEl.dataset.chatConversationId || '');
+            const lastRole = metaEl.dataset.chatLastMessageRole || '';
+            const lastUserId = Number(metaEl.dataset.chatLastUserMessageId || '0');
+            const lastAssistantId = Number(metaEl.dataset.chatLastAssistantMessageId || '0');
+
+            return {
+                conversationId: Number.isFinite(conversationId) ? conversationId : null,
+                lastRole,
+                hasPendingUserWithoutAssistant: lastUserId > 0 && (lastAssistantId === 0 || lastAssistantId < lastUserId),
+            };
+        },
+
+        markConversationPending(conversationId, loadingContext = 'general') {
+            const id = Number(conversationId);
+            if (!Number.isFinite(id)) return;
+            const markers = loadPendingConversationMarkers();
+            markers[id] = { loadingContext, ts: Date.now() };
+            savePendingConversationMarkers(markers);
+        },
+
+        clearConversationPending(conversationId) {
+            const id = Number(conversationId);
+            if (!Number.isFinite(id)) return;
+            const markers = loadPendingConversationMarkers();
+            if (Object.prototype.hasOwnProperty.call(markers, id)) {
+                delete markers[id];
+                savePendingConversationMarkers(markers);
+            }
+        },
+
+        maybeRestorePendingPlaceholder() {
+            const { conversationId, hasPendingUserWithoutAssistant } = this.getConversationMeta();
+            if (!conversationId || !hasPendingUserWithoutAssistant) {
+                return;
+            }
+
+            const markers = loadPendingConversationMarkers();
+            const marker = markers[conversationId];
+            if (!marker) return;
+
+            this.startStreamingPlaceholder(marker.loadingContext || 'general');
+            this.scrollToBottom();
+        },
+
         init() {
             this.$el.dataset.chatMessagesReady = 'true';
             this.scrollToBottom();
@@ -184,10 +251,19 @@ const registerChatPageData = (Alpine) => {
                 this.sources = data[0] || [];
             });
             this.registerWireListener('assistant-message-persisted', () => this.resetStreamingState());
+            this.registerWireListener('assistant-message-persisted', (data) => {
+                const payload = data?.[0] || {};
+                const ackConversationId = Number(payload.conversationId || 0);
+                const { conversationId } = this.getConversationMeta();
+                const targetConversationId = ackConversationId > 0 ? ackConversationId : conversationId;
+                if (targetConversationId) this.clearConversationPending(targetConversationId);
+            });
             this.registerWireListener('user-message-acked', () => {
                 this.optimisticUserMessage = '';
                 this.scrollToBottom();
             });
+
+            this.$nextTick(() => this.maybeRestorePendingPlaceholder());
         },
 
         registerWireListener(event, callback) {
@@ -300,6 +376,11 @@ const registerChatPageData = (Alpine) => {
 
             if (stopStreaming) {
                 this.streaming = false;
+            }
+
+            const { conversationId, hasPendingUserWithoutAssistant } = this.getConversationMeta();
+            if (conversationId && !hasPendingUserWithoutAssistant) {
+                this.clearConversationPending(conversationId);
             }
         },
 
@@ -418,6 +499,7 @@ const registerChatPageData = (Alpine) => {
             this.loadingConversationId = conversationId;
             this.isNavigating = true;
             this.$dispatch('conversation-loading');
+            window.__suppressGlobalPageLoaderOnce = true;
             window.location.assign(event.currentTarget.href);
         },
 
@@ -432,6 +514,7 @@ const registerChatPageData = (Alpine) => {
             this.isNavigating = true;
             this.$dispatch('chat-new-optimistic');
             this.$dispatch('conversation-loading');
+            window.__suppressGlobalPageLoaderOnce = true;
             window.location.assign(event.currentTarget.href);
         },
 
@@ -788,15 +871,26 @@ const registerChatPageData = (Alpine) => {
         isSendingMessage: false,
         sendError: '',
         messageAcked: false,
+        _pendingLoadingContext: 'general',
 
         init() {
             if (this.promptDraft) {
                 this.schedulePendingPromptSubmission();
             }
 
-            this.$wire.on('user-message-acked', () => {
+            this.$wire.on('user-message-acked', (data) => {
                 this.messageAcked = true;
                 this.stabilizeChatScroll();
+
+                const payload = data?.[0] || {};
+                const ackConversationId = Number(payload.conversationId || this.$wire.currentConversationId || 0);
+                if (ackConversationId > 0) {
+                    const chatMessagesEl = document.querySelector('[data-chat-box]');
+                    const chatMessagesData = chatMessagesEl && chatMessagesEl.__x ? chatMessagesEl.__x.$data : null;
+                    if (chatMessagesData && typeof chatMessagesData.markConversationPending === 'function') {
+                        chatMessagesData.markConversationPending(ackConversationId, this._pendingLoadingContext || 'general');
+                    }
+                }
             });
         },
 
@@ -913,6 +1007,7 @@ const registerChatPageData = (Alpine) => {
             this.$dispatch('message-send', { text, loadingContext });
             this.scrollChatToBottom(true);
             this.stabilizeChatScroll();
+            this._pendingLoadingContext = loadingContext;
 
             this.promptDraft = '';
             this.autoResizeTextarea(this.$refs.chatInput);
