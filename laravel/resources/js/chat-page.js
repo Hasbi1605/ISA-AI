@@ -166,6 +166,7 @@ const registerChatPageData = (Alpine) => {
         _messageCompleteHandler: null,
         chatMutationObserver: null,
         wireListeners: [],
+        windowListeners: [],
 
         getConversationMeta() {
             const metaEl = this.$el.querySelector('[data-chat-conversation-id]');
@@ -184,7 +185,7 @@ const registerChatPageData = (Alpine) => {
 
         markConversationPending(conversationId, loadingContext = 'general') {
             const id = Number(conversationId);
-            if (!Number.isFinite(id)) return;
+            if (!Number.isFinite(id) || id <= 0) return;
             const markers = loadPendingConversationMarkers();
             markers[id] = { loadingContext, ts: Date.now() };
             savePendingConversationMarkers(markers);
@@ -192,7 +193,7 @@ const registerChatPageData = (Alpine) => {
 
         clearConversationPending(conversationId) {
             const id = Number(conversationId);
-            if (!Number.isFinite(id)) return;
+            if (!Number.isFinite(id) || id <= 0) return;
             const markers = loadPendingConversationMarkers();
             if (Object.prototype.hasOwnProperty.call(markers, id)) {
                 delete markers[id];
@@ -227,6 +228,10 @@ const registerChatPageData = (Alpine) => {
 
             this._messageCompleteHandler = () => this.resetStreamingState();
             window.addEventListener('message-complete', this._messageCompleteHandler);
+            this.registerWindowListener('chat-mark-pending', (event) => {
+                const detail = event?.detail || {};
+                this.markConversationPending(detail.conversationId, detail.loadingContext || 'general');
+            });
             this.registerWireListener('assistant-output', (data) => {
                 this.streamingText += data[0] || '';
                 this.streaming = true;
@@ -273,6 +278,11 @@ const registerChatPageData = (Alpine) => {
             }
         },
 
+        registerWindowListener(event, callback) {
+            window.addEventListener(event, callback);
+            this.windowListeners.push(() => window.removeEventListener(event, callback));
+        },
+
         destroy() {
             this.clearLoadingPhaseTimeout();
             this.clearPhase2Timeout();
@@ -295,6 +305,18 @@ const registerChatPageData = (Alpine) => {
                     }
                 });
                 this.wireListeners = [];
+            }
+            if (this.windowListeners && this.windowListeners.length > 0) {
+                this.windowListeners.forEach((cleanup) => {
+                    if (typeof cleanup === 'function') {
+                        try {
+                            cleanup();
+                        } catch (e) {
+                            // Defensive: ignore cleanup errors
+                        }
+                    }
+                });
+                this.windowListeners = [];
             }
         },
 
@@ -885,11 +907,12 @@ const registerChatPageData = (Alpine) => {
                 const payload = data?.[0] || {};
                 const ackConversationId = Number(payload.conversationId || this.$wire.currentConversationId || 0);
                 if (ackConversationId > 0) {
-                    const chatMessagesEl = document.querySelector('[data-chat-box]');
-                    const chatMessagesData = chatMessagesEl && chatMessagesEl.__x ? chatMessagesEl.__x.$data : null;
-                    if (chatMessagesData && typeof chatMessagesData.markConversationPending === 'function') {
-                        chatMessagesData.markConversationPending(ackConversationId, this._pendingLoadingContext || 'general');
-                    }
+                    window.dispatchEvent(new CustomEvent('chat-mark-pending', {
+                        detail: {
+                            conversationId: ackConversationId,
+                            loadingContext: this._pendingLoadingContext || 'general',
+                        },
+                    }));
                 }
             });
         },
