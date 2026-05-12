@@ -226,7 +226,8 @@ class ChatUiTest extends TestCase
             ->assertSee('x-on:conversation-activated.window="setActiveConversation($event.detail.id)"', false)
             ->assertDontSee(':disabled="isNavigating"', false)
             ->assertSee('data-chat-history-id=', false)
-            ->assertSee('isLoading(', false)
+            ->assertSee('navigateToConversation($event,', false)
+            ->assertSee('navigateToNewChat($event)', false)
             ->assertSee('chat-history-item', false)
             ->assertSee('wire:key="chat-history-visible-', false)
             ->assertSee('openGoogleDrivePicker()', false)
@@ -237,6 +238,43 @@ class ChatUiTest extends TestCase
             ->assertSee('chat-tab-switch', false)
             ->assertSee('activeTab === \'chat\'', false)
             ->assertDontSee('wire:click="$set(\'tab\', \'chat\')"', false);
+    }
+
+    public function test_chat_route_with_conversation_id_loads_selected_conversation_messages(): void
+    {
+        $user = User::factory()->create();
+        $conversation = Conversation::create([
+            'user_id' => $user->id,
+            'title' => 'Conversation terpilih via URL',
+        ]);
+
+        Message::create([
+            'conversation_id' => $conversation->id,
+            'role' => 'user',
+            'content' => 'Halo dari history URL',
+        ]);
+
+        $response = $this->actingAs($user)->get(route('chat', ['id' => $conversation->id]));
+
+        $response
+            ->assertOk()
+            ->assertSee('Halo dari history URL', false)
+            ->assertSee('data-chat-history-id="'.$conversation->id.'"', false);
+    }
+
+    public function test_chat_route_with_foreign_conversation_id_returns_404(): void
+    {
+        $owner = User::factory()->create();
+        $otherUser = User::factory()->create();
+
+        $conversation = Conversation::create([
+            'user_id' => $owner->id,
+            'title' => 'Conversation user lain',
+        ]);
+
+        $this->actingAs($otherUser)
+            ->get(route('chat', ['id' => $conversation->id]))
+            ->assertNotFound();
     }
 
     public function test_send_message_saves_assistant_message_to_original_conversation_when_active_changes_mid_request(): void

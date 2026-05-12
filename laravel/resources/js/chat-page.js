@@ -344,6 +344,7 @@ const registerChatPageData = (Alpine) => {
         init() {
             this.$nextTick(() => this.syncActiveHistoryItem());
             this.$watch('activeConversationId', () => this.syncActiveHistoryItem());
+            window.chatHistoryNavigateToNewChat = (event) => this.navigateToNewChat(event);
         },
 
         isActive(id) {
@@ -401,6 +402,39 @@ const registerChatPageData = (Alpine) => {
                 });
         },
 
+        navigateToConversation(event, id) {
+            if (!event?.currentTarget?.href) {
+                return;
+            }
+
+            event.preventDefault();
+
+            const conversationId = Number(id);
+            if (!Number.isFinite(conversationId)) {
+                window.location.assign(event.currentTarget.href);
+                return;
+            }
+
+            this.loadingConversationId = conversationId;
+            this.isNavigating = true;
+            this.$dispatch('conversation-loading');
+            window.location.assign(event.currentTarget.href);
+        },
+
+        navigateToNewChat(event) {
+            if (!event?.currentTarget?.href) {
+                return;
+            }
+
+            event.preventDefault();
+            this.setActiveConversation(null);
+            this.loadingConversationId = null;
+            this.isNavigating = true;
+            this.$dispatch('chat-new-optimistic');
+            this.$dispatch('conversation-loading');
+            window.location.assign(event.currentTarget.href);
+        },
+
         startNewChat() {
             this.setActiveConversation(null);
             this.loadingConversationId = null;
@@ -413,6 +447,12 @@ const registerChatPageData = (Alpine) => {
                     this.isNavigating = false;
                     this.$dispatch('conversation-loaded');
                 });
+        },
+
+        destroy() {
+            if (window.chatHistoryNavigateToNewChat) {
+                delete window.chatHistoryNavigateToNewChat;
+            }
         },
     }));
 
