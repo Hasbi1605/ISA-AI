@@ -28,3 +28,13 @@
 
 ## Risiko
 - Fallback berbasis waktu bisa menampilkan bubble loading pada pesan user yang gagal diproses jika masih sangat baru. TTL dibuat terbatas agar tidak menampilkan loading lama secara permanen.
+
+## Follow-up 2: Blink Saat Pindah History
+
+### Masalah
+Setelah global loader besar ditekan, pindah antar history chat tetap terasa blink karena klik history selalu memakai full page navigation. Sebelum PR ini, perpindahan history saat idle memakai action Livewire sehingga tidak reload satu halaman penuh.
+
+### Rencana
+- Kembalikan jalur idle ke `loadConversation()` / `startNewChat()` agar perpindahan history tidak membuat layar blink.
+- Simpan fallback full navigation hanya ketika ada request chat aktif (`message-send` belum `message-complete`), karena jalur itu diperlukan agar navigasi tidak tertahan request streaming.
+- Tambahkan assertion UI agar perilaku hybrid ini tidak hilang.

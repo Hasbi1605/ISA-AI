@@ -475,11 +475,22 @@ const registerChatPageData = (Alpine) => {
         showOlderChats: config.showOlderChats || false,
         loadingConversationId: null,
         isNavigating: false,
+        hasActiveChatRequest: false,
+        _messageSendHandler: null,
+        _messageCompleteHandler: null,
 
         init() {
             this.$nextTick(() => this.syncActiveHistoryItem());
             this.$watch('activeConversationId', () => this.syncActiveHistoryItem());
             window.chatHistoryNavigateToNewChat = (event) => this.navigateToNewChat(event);
+            this._messageSendHandler = () => {
+                this.hasActiveChatRequest = true;
+            };
+            this._messageCompleteHandler = () => {
+                this.hasActiveChatRequest = false;
+            };
+            window.addEventListener('message-send', this._messageSendHandler);
+            window.addEventListener('message-complete', this._messageCompleteHandler);
         },
 
         isActive(id) {
@@ -542,19 +553,26 @@ const registerChatPageData = (Alpine) => {
                 return;
             }
 
+            const targetHref = event.currentTarget.href;
             event.preventDefault();
 
             const conversationId = Number(id);
             if (!Number.isFinite(conversationId)) {
-                window.location.assign(event.currentTarget.href);
+                window.location.assign(targetHref);
                 return;
             }
 
-            this.loadingConversationId = conversationId;
-            this.isNavigating = true;
-            this.$dispatch('conversation-loading');
-            suppressGlobalPageLoaderOnce();
-            window.location.assign(event.currentTarget.href);
+            if (this.hasActiveChatRequest) {
+                this.loadingConversationId = conversationId;
+                this.isNavigating = true;
+                this.$dispatch('conversation-loading');
+                suppressGlobalPageLoaderOnce();
+                window.location.assign(targetHref);
+                return;
+            }
+
+            this.loadConversation(conversationId)
+                .then(() => window.history.pushState({}, '', targetHref));
         },
 
         navigateToNewChat(event) {
@@ -562,14 +580,22 @@ const registerChatPageData = (Alpine) => {
                 return;
             }
 
+            const targetHref = event.currentTarget.href;
             event.preventDefault();
-            this.setActiveConversation(null);
-            this.loadingConversationId = null;
-            this.isNavigating = true;
-            this.$dispatch('chat-new-optimistic');
-            this.$dispatch('conversation-loading');
-            suppressGlobalPageLoaderOnce();
-            window.location.assign(event.currentTarget.href);
+
+            if (this.hasActiveChatRequest) {
+                this.setActiveConversation(null);
+                this.loadingConversationId = null;
+                this.isNavigating = true;
+                this.$dispatch('chat-new-optimistic');
+                this.$dispatch('conversation-loading');
+                suppressGlobalPageLoaderOnce();
+                window.location.assign(targetHref);
+                return;
+            }
+
+            this.startNewChat()
+                .then(() => window.history.pushState({}, '', targetHref));
         },
 
         startNewChat() {
@@ -589,6 +615,14 @@ const registerChatPageData = (Alpine) => {
         destroy() {
             if (window.chatHistoryNavigateToNewChat) {
                 delete window.chatHistoryNavigateToNewChat;
+            }
+            if (this._messageSendHandler) {
+                window.removeEventListener('message-send', this._messageSendHandler);
+                this._messageSendHandler = null;
+            }
+            if (this._messageCompleteHandler) {
+                window.removeEventListener('message-complete', this._messageCompleteHandler);
+                this._messageCompleteHandler = null;
             }
         },
     }));

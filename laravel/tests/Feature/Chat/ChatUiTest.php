@@ -214,6 +214,10 @@ class ChatUiTest extends TestCase
         ]);
 
         $response = $this->actingAs($user)->get('/chat');
+        $chatPageJs = file_get_contents(resource_path('js/chat-page.js'));
+        $this->assertIsString($chatPageJs);
+        $this->assertStringContainsString('hasActiveChatRequest', $chatPageJs);
+        $this->assertStringContainsString('window.history.pushState', $chatPageJs);
 
         $response
             ->assertOk()
