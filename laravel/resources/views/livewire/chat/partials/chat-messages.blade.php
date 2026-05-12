@@ -4,8 +4,8 @@
      data-chat-box
      x-on:message-streamed.window="scrollToBottom()"
      x-on:message-send.window="optimisticUserMessage = $event.detail.text; isSwitchingConversation = false; startStreamingPlaceholder($event.detail.loadingContext || 'general'); scrollToBottom(true)"
-     x-on:conversation-loading.window="isSwitchingConversation = true; optimisticUserMessage = ''"
-     x-on:conversation-loaded.window="isSwitchingConversation = false; resetStreamingState(); scrollToBottom()">
+     x-on:conversation-loading.window="isSwitchingConversation = true; optimisticUserMessage = ''; resetStreamingState()"
+     x-on:conversation-loaded.window="isSwitchingConversation = false; resetStreamingState(); $nextTick(() => { maybeRestorePendingPlaceholder(); scrollToBottom(); })">
     <div class="hidden"
          data-chat-conversation-id="{{ $currentConversationId ?? '' }}"
          data-chat-last-message-role="{{ !empty($messages) ? ($messages[array_key_last($messages)]['role'] ?? '') : '' }}"

@@ -29,6 +29,10 @@
 
     {{-- ===== CHAT TAB CONTENT ===== --}}
     <div x-show="activeTab === 'chat'" class="flex w-full h-full overflow-hidden">
+        @if(! empty($pendingConversationIds))
+            <div wire:poll.3s="refreshPendingChatState" class="hidden" aria-hidden="true"></div>
+        @endif
+
         <!-- LEFT SIDEBAR: Chat History -->
         @include('livewire.chat.partials.chat-left-sidebar')
 

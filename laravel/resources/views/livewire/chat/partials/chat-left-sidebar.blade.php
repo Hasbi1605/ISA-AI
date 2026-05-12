@@ -1,5 +1,5 @@
 <aside
-    x-data="chatHistory({ activeConversationId: @js($currentConversationId ? (int) $currentConversationId : null), showOlderChats: $wire.entangle('showOlderChats') })"
+    x-data="chatHistory({ activeConversationId: @js($currentConversationId ? (int) $currentConversationId : null), showOlderChats: $wire.entangle('showOlderChats'), pendingConversationIds: @js($pendingConversationIds ?? []) })"
     :class="[
         showLeftSidebar ? 'opacity-100 translate-x-0' : 'opacity-0 -translate-x-full pointer-events-none',
         isMobile ? 'fixed left-0 top-0 h-full w-[288px] shadow-2xl border-r border-stone-200/60 dark:border-[#1E293B]' : (showLeftSidebar ? 'relative w-[288px] border-r border-stone-200/60 dark:border-[#1E293B]' : 'relative w-0 border-r border-transparent')
@@ -50,7 +50,7 @@
                             <img src="{{ $uiIcons['historyLight'] }}" alt="" class="h-4 w-4 mr-2.5 flex-shrink-0 dark:hidden" />
                             <img src="{{ $uiIcons['historyDark'] }}" alt="" class="h-4 w-4 mr-2.5 flex-shrink-0 hidden dark:block" />
                             <span class="truncate text-[13.2px]" title="{{ $conversation->title }}">{{ $conversation->title }}</span>
-                            <span x-show="isLoading({{ $conversation->id }})" class="ml-auto h-3 w-3 rounded-full border border-current border-t-transparent animate-spin" style="display: none;"></span>
+                            <span x-show="isLoading({{ $conversation->id }}) || isPending({{ $conversation->id }})" class="ml-auto h-3 w-3 rounded-full border border-current border-t-transparent animate-spin" style="display: none;"></span>
                         </a>
                         <button type="button" wire:click="deleteConversation({{ $conversation->id }})"
                                 wire:confirm="Delete this chat?"
@@ -87,7 +87,7 @@
                                 <img src="{{ $uiIcons['historyLight'] }}" alt="" class="h-4 w-4 mr-2.5 flex-shrink-0 dark:hidden" />
                                 <img src="{{ $uiIcons['historyDark'] }}" alt="" class="h-4 w-4 mr-2.5 flex-shrink-0 hidden dark:block" />
                                 <span class="truncate text-[13.2px]" title="{{ $conversation->title }}">{{ $conversation->title }}</span>
-                                <span x-show="isLoading({{ $conversation->id }})" class="ml-auto h-3 w-3 rounded-full border border-current border-t-transparent animate-spin" style="display: none;"></span>
+                                <span x-show="isLoading({{ $conversation->id }}) || isPending({{ $conversation->id }})" class="ml-auto h-3 w-3 rounded-full border border-current border-t-transparent animate-spin" style="display: none;"></span>
                             </a>
                             <button type="button" wire:click="deleteConversation({{ $conversation->id }})"
                                     wire:confirm="Delete this chat?"

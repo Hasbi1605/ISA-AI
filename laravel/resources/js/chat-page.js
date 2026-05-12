@@ -2,7 +2,6 @@ let hasRegisteredChatPageData = false;
 const CHAT_PENDING_STORAGE_KEY = 'ista.chat.pendingResponses.v1';
 const CHAT_PENDING_MARKER_TTL_MS = 10 * 60 * 1000;
 const CHAT_PENDING_RECENT_TTL_MS = 3 * 60 * 1000;
-const GLOBAL_PAGE_LOADER_SUPPRESS_STORAGE_KEY = 'ista.globalPageLoader.suppressOnce';
 
 const loadPendingConversationMarkers = () => {
     try {
@@ -18,16 +17,6 @@ const loadPendingConversationMarkers = () => {
 const savePendingConversationMarkers = (markers) => {
     try {
         window.localStorage?.setItem(CHAT_PENDING_STORAGE_KEY, JSON.stringify(markers || {}));
-    } catch (_) {
-        // ignore storage write errors
-    }
-};
-
-const suppressGlobalPageLoaderOnce = () => {
-    window.__suppressGlobalPageLoaderOnce = true;
-
-    try {
-        window.sessionStorage?.setItem(GLOBAL_PAGE_LOADER_SUPPRESS_STORAGE_KEY, '1');
     } catch (_) {
         // ignore storage write errors
     }
@@ -473,24 +462,30 @@ const registerChatPageData = (Alpine) => {
     Alpine.data('chatHistory', (config = {}) => ({
         activeConversationId: config.activeConversationId ? Number(config.activeConversationId) : null,
         showOlderChats: config.showOlderChats || false,
+        pendingConversationIds: (config.pendingConversationIds || []).map((id) => Number(id)).filter(Boolean),
         loadingConversationId: null,
         isNavigating: false,
-        hasActiveChatRequest: false,
-        _messageSendHandler: null,
-        _messageCompleteHandler: null,
+        _chatMarkPendingHandler: null,
+        _assistantPersistedCleanup: null,
 
         init() {
             this.$nextTick(() => this.syncActiveHistoryItem());
             this.$watch('activeConversationId', () => this.syncActiveHistoryItem());
             window.chatHistoryNavigateToNewChat = (event) => this.navigateToNewChat(event);
-            this._messageSendHandler = () => {
-                this.hasActiveChatRequest = true;
+            this._chatMarkPendingHandler = (event) => {
+                const id = Number(event?.detail?.conversationId || 0);
+                if (id > 0 && !this.pendingConversationIds.includes(id)) {
+                    this.pendingConversationIds.push(id);
+                }
             };
-            this._messageCompleteHandler = () => {
-                this.hasActiveChatRequest = false;
-            };
-            window.addEventListener('message-send', this._messageSendHandler);
-            window.addEventListener('message-complete', this._messageCompleteHandler);
+            window.addEventListener('chat-mark-pending', this._chatMarkPendingHandler);
+            this._assistantPersistedCleanup = this.$wire.on('assistant-message-persisted', (data) => {
+                const payload = data?.[0] || {};
+                const id = Number(payload.conversationId || 0);
+                if (id > 0) {
+                    this.pendingConversationIds = this.pendingConversationIds.filter((pendingId) => pendingId !== id);
+                }
+            });
         },
 
         isActive(id) {
@@ -499,6 +494,10 @@ const registerChatPageData = (Alpine) => {
 
         isLoading(id) {
             return this.loadingConversationId === Number(id);
+        },
+
+        isPending(id) {
+            return this.pendingConversationIds.includes(Number(id));
         },
 
         setActiveConversation(id) {
@@ -562,15 +561,6 @@ const registerChatPageData = (Alpine) => {
                 return;
             }
 
-            if (this.hasActiveChatRequest) {
-                this.loadingConversationId = conversationId;
-                this.isNavigating = true;
-                this.$dispatch('conversation-loading');
-                suppressGlobalPageLoaderOnce();
-                window.location.assign(targetHref);
-                return;
-            }
-
             this.loadConversation(conversationId)
                 .then(() => window.history.pushState({}, '', targetHref));
         },
@@ -582,17 +572,6 @@ const registerChatPageData = (Alpine) => {
 
             const targetHref = event.currentTarget.href;
             event.preventDefault();
-
-            if (this.hasActiveChatRequest) {
-                this.setActiveConversation(null);
-                this.loadingConversationId = null;
-                this.isNavigating = true;
-                this.$dispatch('chat-new-optimistic');
-                this.$dispatch('conversation-loading');
-                suppressGlobalPageLoaderOnce();
-                window.location.assign(targetHref);
-                return;
-            }
 
             this.startNewChat()
                 .then(() => window.history.pushState({}, '', targetHref));
@@ -616,13 +595,13 @@ const registerChatPageData = (Alpine) => {
             if (window.chatHistoryNavigateToNewChat) {
                 delete window.chatHistoryNavigateToNewChat;
             }
-            if (this._messageSendHandler) {
-                window.removeEventListener('message-send', this._messageSendHandler);
-                this._messageSendHandler = null;
+            if (this._chatMarkPendingHandler) {
+                window.removeEventListener('chat-mark-pending', this._chatMarkPendingHandler);
+                this._chatMarkPendingHandler = null;
             }
-            if (this._messageCompleteHandler) {
-                window.removeEventListener('message-complete', this._messageCompleteHandler);
-                this._messageCompleteHandler = null;
+            if (typeof this._assistantPersistedCleanup === 'function') {
+                this._assistantPersistedCleanup();
+                this._assistantPersistedCleanup = null;
             }
         },
     }));
@@ -1118,6 +1097,12 @@ const registerChatPageData = (Alpine) => {
             this.$wire.conversationDocuments = normalizedDocs;
 
             this.$wire.sendMessage(text)
+                .then((response) => {
+                    const conversationId = Number(response?.conversationId || this.$wire.currentConversationId || 0);
+                    if (conversationId > 0) {
+                        this.markPendingConversation(conversationId, loadingContext);
+                    }
+                })
                 .catch(() => {
                     this.$dispatch('user-message-acked');
 
@@ -1131,10 +1116,11 @@ const registerChatPageData = (Alpine) => {
                     setTimeout(() => {
                         this.sendError = '';
                     }, 6000);
+
+                    this.$dispatch('message-complete');
                 })
                 .finally(() => {
                     this.isSendingMessage = false;
-                    this.$dispatch('message-complete');
                 });
         },
 

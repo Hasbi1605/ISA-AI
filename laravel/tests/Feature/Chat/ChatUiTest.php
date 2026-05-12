@@ -2,6 +2,7 @@
 
 namespace Tests\Feature\Chat;
 
+use App\Jobs\GenerateChatResponse;
 use App\Livewire\Chat\ChatIndex;
 use App\Models\Conversation;
 use App\Models\Document;
@@ -14,6 +15,7 @@ use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Database\QueryException;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\Facades\RateLimiter;
 use Livewire\Livewire;
 use Tests\TestCase;
@@ -62,7 +64,7 @@ class ChatUiTest extends TestCase
             'title' => 'Owned by A',
         ]);
 
-        $service = new ChatOrchestrationService();
+        $service = new ChatOrchestrationService;
 
         $this->actingAs($userB);
         $this->expectException(AuthorizationException::class);
@@ -106,7 +108,7 @@ class ChatUiTest extends TestCase
             'status' => 'ready',
         ]);
 
-        $service = new ChatOrchestrationService();
+        $service = new ChatOrchestrationService;
 
         $this->actingAs($user);
 
@@ -212,11 +214,20 @@ class ChatUiTest extends TestCase
             'user_id' => $user->id,
             'title' => 'History test',
         ]);
+        $pendingConversation = Conversation::create([
+            'user_id' => $user->id,
+            'title' => 'Pending history test',
+        ]);
+        Message::create([
+            'conversation_id' => $pendingConversation->id,
+            'role' => 'user',
+            'content' => 'Prompt yang masih menunggu jawaban',
+        ]);
 
         $response = $this->actingAs($user)->get('/chat');
         $chatPageJs = file_get_contents(resource_path('js/chat-page.js'));
         $this->assertIsString($chatPageJs);
-        $this->assertStringContainsString('hasActiveChatRequest', $chatPageJs);
+        $this->assertStringContainsString('pendingConversationIds', $chatPageJs);
         $this->assertStringContainsString('window.history.pushState', $chatPageJs);
 
         $response
@@ -230,6 +241,9 @@ class ChatUiTest extends TestCase
             ->assertSee('x-on:conversation-activated.window="setActiveConversation($event.detail.id)"', false)
             ->assertDontSee(':disabled="isNavigating"', false)
             ->assertSee('data-chat-history-id=', false)
+            ->assertSee('pendingConversationIds:', false)
+            ->assertSee('isPending(', false)
+            ->assertSee('wire:poll.3s="refreshPendingChatState"', false)
             ->assertSee('navigateToConversation($event,', false)
             ->assertSee('navigateToNewChat($event)', false)
             ->assertSee('chat-history-item', false)
@@ -285,68 +299,53 @@ class ChatUiTest extends TestCase
             ->assertNotFound();
     }
 
-    public function test_send_message_saves_assistant_message_to_original_conversation_when_active_changes_mid_request(): void
+    public function test_send_message_queues_response_and_allows_loading_another_conversation_without_waiting(): void
     {
-        $user = User::factory()->create();
+        Queue::fake();
 
-        $conversationA = Conversation::create([
-            'user_id' => $user->id,
-            'title' => 'Conversation A',
-        ]);
+        $user = User::factory()->create();
 
         $conversationB = Conversation::create([
             'user_id' => $user->id,
             'title' => 'Conversation B',
         ]);
 
-        $this->app->bind(AIService::class, fn () => new class($conversationB->id) extends AIService
-        {
-            public function __construct(private readonly int $switchConversationId) {}
-
-            public function sendChat(array $messages, ?array $document_filenames = null, ?string $user_id = null, bool $force_web_search = false, ?string $source_policy = null, bool $allow_auto_realtime_web = true): \Generator
-            {
-                app()->instance('chat_test_switch_target', $this->switchConversationId);
-
-                yield 'Jawaban AI tetap masuk ke conversation asal.';
-            }
-        });
-
         $component = Livewire::actingAs($user)
-            ->test(ChatIndex::class)
-            ->set('currentConversationId', $conversationA->id);
-
-        /** @var ChatIndex $componentInstance */
-        $componentInstance = $component->instance();
+            ->test(ChatIndex::class);
 
         $component
             ->set('prompt', 'Pesan pengguna awal')
-            ->call('sendMessage', aiService: app(AIService::class), orchestrator: new class($componentInstance, $conversationB->id) extends ChatOrchestrationService
-            {
-                public function __construct(private readonly ChatIndex $component, private readonly int $targetConversationId) {}
+            ->call('sendMessage', aiService: app(AIService::class));
 
-                public function extractStreamMetadata(string $chunk, string $buffer = ''): array
-                {
-                    $this->component->startNewChat();
-                    $this->component->loadConversation($this->targetConversationId);
+        $conversationA = Conversation::query()
+            ->where('user_id', $user->id)
+            ->where('title', 'like', 'Pesan pengguna awal%')
+            ->firstOrFail();
 
-                    return parent::extractStreamMetadata($chunk, $buffer);
-                }
-            });
+        $component
+            ->assertSet('currentConversationId', $conversationA->id)
+            ->assertSet('pendingConversationIds', [$conversationA->id])
+            ->assertDispatched('user-message-acked')
+            ->assertDispatched('conversation-activated', id: $conversationA->id);
+
+        Queue::assertPushed(GenerateChatResponse::class, function (GenerateChatResponse $job) use ($conversationA, $user) {
+            return $job->conversationId === (int) $conversationA->id
+                && $job->userId === (int) $user->id
+                && $job->history[count($job->history) - 1]['content'] === 'Pesan pengguna awal';
+        });
+
+        $component
+            ->call('loadConversation', $conversationB->id)
+            ->assertSet('currentConversationId', $conversationB->id);
 
         $this->assertDatabaseHas('messages', [
             'conversation_id' => $conversationA->id,
-            'role' => 'assistant',
-            'content' => 'Jawaban AI tetap masuk ke conversation asal.',
-        ]);
-
-        $this->assertDatabaseMissing('messages', [
-            'conversation_id' => $conversationB->id,
-            'role' => 'assistant',
-            'content' => 'Jawaban AI tetap masuk ke conversation asal.',
+            'role' => 'user',
+            'content' => 'Pesan pengguna awal',
         ]);
     }
 
-    public function test_send_message_gracefully_skips_assistant_persistence_when_origin_conversation_deleted_mid_request(): void
+    public function test_generate_chat_response_skips_assistant_persistence_when_origin_conversation_deleted_before_job_runs(): void
     {
         $user = User::factory()->create();
 
@@ -359,34 +358,17 @@ class ChatUiTest extends TestCase
         {
             public function sendChat(array $messages, ?array $document_filenames = null, ?string $user_id = null, bool $force_web_search = false, ?string $source_policy = null, bool $allow_auto_realtime_web = true): \Generator
             {
-                yield 'Jawaban AI setelah conversation terhapus.';
+                throw new \RuntimeException('AIService should not be called for deleted conversation.');
             }
         });
 
-        $component = Livewire::actingAs($user)
-            ->test(ChatIndex::class)
-            ->set('currentConversationId', $conversation->id)
-            ->set('prompt', 'Pesan user sebelum hapus conversation');
-
-        /** @var ChatIndex $componentInstance */
-        $componentInstance = $component->instance();
-
-        $component->call('sendMessage', aiService: app(AIService::class), orchestrator: new class($componentInstance, $conversation->id) extends ChatOrchestrationService
-        {
-            private bool $deleted = false;
-
-            public function __construct(private readonly ChatIndex $component, private readonly int $conversationIdToDelete) {}
-
-            public function extractStreamMetadata(string $chunk, string $buffer = ''): array
-            {
-                if (! $this->deleted) {
-                    $this->deleted = true;
-                    $this->component->deleteConversation($this->conversationIdToDelete);
-                }
-
-                return parent::extractStreamMetadata($chunk, $buffer);
-            }
-        });
+        $conversation->delete();
+        $job = new GenerateChatResponse(
+            conversationId: (int) $conversation->id,
+            userId: (int) $user->id,
+            history: [['role' => 'user', 'content' => 'Pesan user sebelum hapus conversation']],
+        );
+        $job->handle(app(AIService::class), new ChatOrchestrationService);
 
         $this->assertDatabaseMissing('conversations', [
             'id' => $conversation->id,
@@ -395,12 +377,46 @@ class ChatUiTest extends TestCase
         $this->assertDatabaseMissing('messages', [
             'conversation_id' => $conversation->id,
             'role' => 'assistant',
-            'content' => 'Jawaban AI setelah conversation terhapus.',
+            'content' => 'Maaf, jawaban gagal diproses. Silakan coba kirim ulang.',
         ]);
     }
 
-    public function test_send_message_dispatches_ack_and_persisted_events_with_conversation_id_payload(): void
+    public function test_generate_chat_response_persists_assistant_message_to_origin_conversation(): void
     {
+        $user = User::factory()->create();
+
+        $conversation = Conversation::create([
+            'user_id' => $user->id,
+            'title' => 'Conversation job asal',
+        ]);
+
+        $this->app->bind(AIService::class, fn () => new class extends AIService
+        {
+            public function sendChat(array $messages, ?array $document_filenames = null, ?string $user_id = null, bool $force_web_search = false, ?string $source_policy = null, bool $allow_auto_realtime_web = true): \Generator
+            {
+                yield 'Jawaban AI dari background job.';
+            }
+        });
+
+        $job = new GenerateChatResponse(
+            conversationId: (int) $conversation->id,
+            userId: (int) $user->id,
+            history: [['role' => 'user', 'content' => 'Pesan user untuk job']],
+        );
+
+        $job->handle(app(AIService::class), new ChatOrchestrationService);
+
+        $this->assertDatabaseHas('messages', [
+            'conversation_id' => $conversation->id,
+            'role' => 'assistant',
+            'content' => 'Jawaban AI dari background job.',
+        ]);
+    }
+
+    public function test_send_message_dispatches_ack_and_queues_response_with_conversation_id_payload(): void
+    {
+        Queue::fake();
+
         $user = User::factory()->create();
 
         $this->app->bind(AIService::class, fn () => new class extends AIService
@@ -423,9 +439,9 @@ class ChatUiTest extends TestCase
                 && (int) ($payload['messageId'] ?? 0) > 0;
         });
 
-        $component->assertDispatched('assistant-message-persisted', function (string $_event, array $payload) use ($conversationId) {
-            return (int) ($payload['conversationId'] ?? 0) === $conversationId
-                && (int) ($payload['messageId'] ?? 0) > 0;
+        Queue::assertPushed(GenerateChatResponse::class, function (GenerateChatResponse $job) use ($conversationId, $user) {
+            return $job->conversationId === $conversationId
+                && $job->userId === (int) $user->id;
         });
     }
 
@@ -469,7 +485,7 @@ class ChatUiTest extends TestCase
 
         $this->actingAs($otherUser);
 
-        $service = new ChatOrchestrationService();
+        $service = new ChatOrchestrationService;
 
         $result = $service->saveAssistantMessage($conversation->id, 'Assistant response should be blocked');
 
@@ -651,6 +667,42 @@ class ChatUiTest extends TestCase
             ->call('loadConversation', $conversation->id, false)
             ->assertSet('newMessageId', $message->id)
             ->assertSee('wire:key="msg-typing-'.$message->id.'"', false);
+    }
+
+    public function test_refresh_pending_chat_state_loads_completed_active_conversation(): void
+    {
+        $user = User::factory()->create();
+        $conversation = Conversation::create([
+            'user_id' => $user->id,
+            'title' => 'Pending refresh test',
+        ]);
+
+        Message::create([
+            'conversation_id' => $conversation->id,
+            'role' => 'user',
+            'content' => 'Tolong jawab setelah job selesai.',
+        ]);
+
+        $component = Livewire::actingAs($user)
+            ->test(ChatIndex::class, ['id' => $conversation->id])
+            ->assertSet('pendingConversationIds', [$conversation->id]);
+
+        $assistant = Message::create([
+            'conversation_id' => $conversation->id,
+            'role' => 'assistant',
+            'content' => 'Jawaban background sudah selesai.',
+        ]);
+        $conversation->touch();
+
+        $component
+            ->call('refreshPendingChatState')
+            ->assertSet('pendingConversationIds', [])
+            ->assertSet('newMessageId', $assistant->id)
+            ->assertSee('Jawaban background sudah selesai.', false)
+            ->assertDispatched('assistant-message-persisted', function (string $_event, array $payload) use ($conversation, $assistant) {
+                return (int) ($payload['conversationId'] ?? 0) === (int) $conversation->id
+                    && (int) ($payload['messageId'] ?? 0) === (int) $assistant->id;
+            });
     }
 
     public function test_chat_history_groups_today_by_jakarta_date(): void
