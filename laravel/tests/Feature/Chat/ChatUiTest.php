@@ -228,6 +228,8 @@ class ChatUiTest extends TestCase
         $chatPageJs = file_get_contents(resource_path('js/chat-page.js'));
         $this->assertIsString($chatPageJs);
         $this->assertStringContainsString('pendingConversationIds', $chatPageJs);
+        $this->assertStringContainsString('completedConversationIds', $chatPageJs);
+        $this->assertStringContainsString('normalizeWirePayload', $chatPageJs);
         $this->assertStringContainsString('window.history.pushState', $chatPageJs);
 
         $response
@@ -243,6 +245,11 @@ class ChatUiTest extends TestCase
             ->assertSee('data-chat-history-id=', false)
             ->assertSee('pendingConversationIds:', false)
             ->assertSee('isPending(', false)
+            ->assertSee('isCompleteUnread(', false)
+            ->assertSee('Jawaban baru tersedia', false)
+            ->assertSee('h-3 w-3 shrink-0 rounded-full border', false)
+            ->assertSee('min-w-0 flex-1 truncate', false)
+            ->assertSee('bg-sky-500', false)
             ->assertSee('wire:poll.3s="refreshPendingChatState"', false)
             ->assertSee('navigateToConversation($event,', false)
             ->assertSee('navigateToNewChat($event)', false)

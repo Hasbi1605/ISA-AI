@@ -1,7 +1,10 @@
 let hasRegisteredChatPageData = false;
 const CHAT_PENDING_STORAGE_KEY = 'ista.chat.pendingResponses.v1';
+const CHAT_COMPLETED_STORAGE_KEY = 'ista.chat.completedResponses.v1';
 const CHAT_PENDING_MARKER_TTL_MS = 10 * 60 * 1000;
 const CHAT_PENDING_RECENT_TTL_MS = 3 * 60 * 1000;
+
+const normalizeWirePayload = (data) => (Array.isArray(data) ? (data[0] || {}) : (data || {}));
 
 const loadPendingConversationMarkers = () => {
     try {
@@ -17,6 +20,28 @@ const loadPendingConversationMarkers = () => {
 const savePendingConversationMarkers = (markers) => {
     try {
         window.localStorage?.setItem(CHAT_PENDING_STORAGE_KEY, JSON.stringify(markers || {}));
+    } catch (_) {
+        // ignore storage write errors
+    }
+};
+
+const loadStoredConversationIds = (storageKey) => {
+    try {
+        const raw = window.localStorage?.getItem(storageKey);
+        if (!raw) return [];
+        const parsed = JSON.parse(raw);
+        if (!Array.isArray(parsed)) return [];
+
+        return parsed.map((id) => Number(id)).filter((id) => Number.isFinite(id) && id > 0);
+    } catch (_) {
+        return [];
+    }
+};
+
+const saveStoredConversationIds = (storageKey, ids) => {
+    try {
+        const normalizedIds = [...new Set((ids || []).map((id) => Number(id)).filter((id) => Number.isFinite(id) && id > 0))];
+        window.localStorage?.setItem(storageKey, JSON.stringify(normalizedIds));
     } catch (_) {
         // ignore storage write errors
     }
@@ -278,7 +303,7 @@ const registerChatPageData = (Alpine) => {
             });
             this.registerWireListener('assistant-message-persisted', () => this.resetStreamingState());
             this.registerWireListener('assistant-message-persisted', (data) => {
-                const payload = data?.[0] || {};
+                const payload = normalizeWirePayload(data);
                 const ackConversationId = Number(payload.conversationId || 0);
                 const { conversationId } = this.getConversationMeta();
                 const targetConversationId = ackConversationId > 0 ? ackConversationId : conversationId;
@@ -463,9 +488,11 @@ const registerChatPageData = (Alpine) => {
         activeConversationId: config.activeConversationId ? Number(config.activeConversationId) : null,
         showOlderChats: config.showOlderChats || false,
         pendingConversationIds: (config.pendingConversationIds || []).map((id) => Number(id)).filter(Boolean),
+        completedConversationIds: loadStoredConversationIds(CHAT_COMPLETED_STORAGE_KEY),
         loadingConversationId: null,
         isNavigating: false,
         _chatMarkPendingHandler: null,
+        _assistantPersistedWindowHandler: null,
         _assistantPersistedCleanup: null,
 
         init() {
@@ -474,17 +501,18 @@ const registerChatPageData = (Alpine) => {
             window.chatHistoryNavigateToNewChat = (event) => this.navigateToNewChat(event);
             this._chatMarkPendingHandler = (event) => {
                 const id = Number(event?.detail?.conversationId || 0);
-                if (id > 0 && !this.pendingConversationIds.includes(id)) {
-                    this.pendingConversationIds.push(id);
-                }
+                this.markConversationPending(id);
             };
             window.addEventListener('chat-mark-pending', this._chatMarkPendingHandler);
+            this._assistantPersistedWindowHandler = (event) => {
+                const id = Number(event?.detail?.conversationId || 0);
+                this.markConversationComplete(id);
+            };
+            window.addEventListener('assistant-message-persisted', this._assistantPersistedWindowHandler);
             this._assistantPersistedCleanup = this.$wire.on('assistant-message-persisted', (data) => {
-                const payload = data?.[0] || {};
+                const payload = normalizeWirePayload(data);
                 const id = Number(payload.conversationId || 0);
-                if (id > 0) {
-                    this.pendingConversationIds = this.pendingConversationIds.filter((pendingId) => pendingId !== id);
-                }
+                this.markConversationComplete(id);
             });
         },
 
@@ -498,6 +526,53 @@ const registerChatPageData = (Alpine) => {
 
         isPending(id) {
             return this.pendingConversationIds.includes(Number(id));
+        },
+
+        isCompleteUnread(id) {
+            const conversationId = Number(id);
+
+            return !this.isPending(conversationId) && this.completedConversationIds.includes(conversationId);
+        },
+
+        markConversationPending(id) {
+            const conversationId = Number(id);
+            if (!Number.isFinite(conversationId) || conversationId <= 0) {
+                return;
+            }
+
+            if (!this.pendingConversationIds.includes(conversationId)) {
+                this.pendingConversationIds.push(conversationId);
+            }
+
+            this.completedConversationIds = this.completedConversationIds.filter((completedId) => completedId !== conversationId);
+            saveStoredConversationIds(CHAT_COMPLETED_STORAGE_KEY, this.completedConversationIds);
+        },
+
+        markConversationComplete(id) {
+            const conversationId = Number(id);
+            if (!Number.isFinite(conversationId) || conversationId <= 0) {
+                return;
+            }
+
+            this.pendingConversationIds = this.pendingConversationIds.filter((pendingId) => pendingId !== conversationId);
+
+            if (!this.completedConversationIds.includes(conversationId)) {
+                this.completedConversationIds.push(conversationId);
+                saveStoredConversationIds(CHAT_COMPLETED_STORAGE_KEY, this.completedConversationIds);
+            }
+        },
+
+        markConversationRead(id) {
+            const conversationId = Number(id);
+            if (!Number.isFinite(conversationId) || conversationId <= 0) {
+                return;
+            }
+
+            const nextIds = this.completedConversationIds.filter((completedId) => completedId !== conversationId);
+            if (nextIds.length !== this.completedConversationIds.length) {
+                this.completedConversationIds = nextIds;
+                saveStoredConversationIds(CHAT_COMPLETED_STORAGE_KEY, this.completedConversationIds);
+            }
         },
 
         setActiveConversation(id) {
@@ -562,7 +637,10 @@ const registerChatPageData = (Alpine) => {
             }
 
             this.loadConversation(conversationId)
-                .then(() => window.history.pushState({}, '', targetHref));
+                .then(() => {
+                    this.markConversationRead(conversationId);
+                    window.history.pushState({}, '', targetHref);
+                });
         },
 
         navigateToNewChat(event) {
@@ -598,6 +676,10 @@ const registerChatPageData = (Alpine) => {
             if (this._chatMarkPendingHandler) {
                 window.removeEventListener('chat-mark-pending', this._chatMarkPendingHandler);
                 this._chatMarkPendingHandler = null;
+            }
+            if (this._assistantPersistedWindowHandler) {
+                window.removeEventListener('assistant-message-persisted', this._assistantPersistedWindowHandler);
+                this._assistantPersistedWindowHandler = null;
             }
             if (typeof this._assistantPersistedCleanup === 'function') {
                 this._assistantPersistedCleanup();
@@ -949,7 +1031,7 @@ const registerChatPageData = (Alpine) => {
                 this.messageAcked = true;
                 this.stabilizeChatScroll();
 
-                const payload = data?.[0] || {};
+                const payload = normalizeWirePayload(data);
                 const ackConversationId = Number(payload.conversationId || this.$wire.currentConversationId || 0);
                 if (ackConversationId > 0) {
                     this.markPendingConversation(ackConversationId, this._pendingLoadingContext || 'general');

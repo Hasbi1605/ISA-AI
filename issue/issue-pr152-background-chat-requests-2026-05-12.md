@@ -56,3 +56,8 @@ Saat user mengirim pesan lalu berpindah ke history chat lain atau New Chat, tamp
 - New Chat langsung muncul di history saat prompt dikirim.
 - Conversation pending menampilkan loading bubble saat dibuka.
 - Verifikasi relevan berhasil.
+
+## Follow-up: Completion Indicator Sidebar
+- Spinner pending di sidebar harus berhenti ketika jawaban background sudah tersimpan.
+- Conversation yang selesai diproses diberi titik biru sampai user membuka history tersebut.
+- Spinner sidebar harus berukuran bulat konsisten walaupun judul history panjang.

@@ -49,8 +49,9 @@
                            class="chat-history-item {{ (int) $currentConversationId === (int) $conversation->id ? 'is-active' : '' }}">
                             <img src="{{ $uiIcons['historyLight'] }}" alt="" class="h-4 w-4 mr-2.5 flex-shrink-0 dark:hidden" />
                             <img src="{{ $uiIcons['historyDark'] }}" alt="" class="h-4 w-4 mr-2.5 flex-shrink-0 hidden dark:block" />
-                            <span class="truncate text-[13.2px]" title="{{ $conversation->title }}">{{ $conversation->title }}</span>
-                            <span x-show="isLoading({{ $conversation->id }}) || isPending({{ $conversation->id }})" class="ml-auto h-3 w-3 rounded-full border border-current border-t-transparent animate-spin" style="display: none;"></span>
+                            <span class="min-w-0 flex-1 truncate text-[13.2px]" title="{{ $conversation->title }}">{{ $conversation->title }}</span>
+                            <span x-show="isLoading({{ $conversation->id }}) || isPending({{ $conversation->id }})" class="ml-auto h-3 w-3 shrink-0 rounded-full border border-current border-t-transparent animate-spin" style="display: none;"></span>
+                            <span x-show="isCompleteUnread({{ $conversation->id }})" class="ml-auto h-2.5 w-2.5 shrink-0 rounded-full bg-sky-500 shadow-[0_0_0_3px_rgba(14,165,233,0.12)]" style="display: none;" aria-label="Jawaban baru tersedia"></span>
                         </a>
                         <button type="button" wire:click="deleteConversation({{ $conversation->id }})"
                                 wire:confirm="Delete this chat?"
@@ -86,8 +87,9 @@
                                class="chat-history-item {{ (int) $currentConversationId === (int) $conversation->id ? 'is-active' : '' }}">
                                 <img src="{{ $uiIcons['historyLight'] }}" alt="" class="h-4 w-4 mr-2.5 flex-shrink-0 dark:hidden" />
                                 <img src="{{ $uiIcons['historyDark'] }}" alt="" class="h-4 w-4 mr-2.5 flex-shrink-0 hidden dark:block" />
-                                <span class="truncate text-[13.2px]" title="{{ $conversation->title }}">{{ $conversation->title }}</span>
-                                <span x-show="isLoading({{ $conversation->id }}) || isPending({{ $conversation->id }})" class="ml-auto h-3 w-3 rounded-full border border-current border-t-transparent animate-spin" style="display: none;"></span>
+                                <span class="min-w-0 flex-1 truncate text-[13.2px]" title="{{ $conversation->title }}">{{ $conversation->title }}</span>
+                                <span x-show="isLoading({{ $conversation->id }}) || isPending({{ $conversation->id }})" class="ml-auto h-3 w-3 shrink-0 rounded-full border border-current border-t-transparent animate-spin" style="display: none;"></span>
+                                <span x-show="isCompleteUnread({{ $conversation->id }})" class="ml-auto h-2.5 w-2.5 shrink-0 rounded-full bg-sky-500 shadow-[0_0_0_3px_rgba(14,165,233,0.12)]" style="display: none;" aria-label="Jawaban baru tersedia"></span>
                             </a>
                             <button type="button" wire:click="deleteConversation({{ $conversation->id }})"
                                     wire:confirm="Delete this chat?"
