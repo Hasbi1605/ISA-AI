@@ -1552,7 +1552,7 @@ const registerChatPageData = (Alpine) => {
         },
 
         deleteSelectedDocuments() {
-            if (!window.confirm('Hapus dokumen terpilih dari daftar dokumen Anda? Dokumen yang dihapus tidak bisa dipakai sebagai konteks chat.')) {
+            if (!window.confirm('Hapus permanen dokumen terpilih? File, embedding, dan preview akan dihapus sepenuhnya dan tidak bisa dipulihkan.')) {
                 return Promise.resolve();
             }
 

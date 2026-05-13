@@ -41,7 +41,7 @@ class DocumentPreviewCleanupTest extends TestCase
 
         app(DocumentLifecycleService::class)->deleteDocument($document);
 
-        $this->assertSoftDeleted($document);
+        $this->assertDatabaseMissing('documents', ['id' => $document->id]);
         Storage::disk('local')->assertMissing($filePath);
         Storage::disk('local')->assertMissing($previewPath);
     }
@@ -69,6 +69,6 @@ class DocumentPreviewCleanupTest extends TestCase
 
         app(DocumentLifecycleService::class)->deleteDocument($document);
 
-        $this->assertSoftDeleted($document);
+        $this->assertDatabaseMissing('documents', ['id' => $document->id]);
     }
 }

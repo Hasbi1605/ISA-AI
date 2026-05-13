@@ -23,8 +23,6 @@ class DocumentLifecycleService
 
     public const MAX_DOCUMENT_SIZE_BYTES = self::MAX_DOCUMENT_SIZE_KILOBYTES * 1024;
 
-    public const SOFT_DELETE_RETENTION_DAYS = 7;
-
     /**
      * Upload and initiate document processing
      *
@@ -192,7 +190,8 @@ class DocumentLifecycleService
     }
 
     /**
-     * Delete document and perform cleanup (Vector DB, Storage, Database)
+     * Delete document and perform cleanup (Vector DB, Storage, Database).
+     * Hard delete — no soft-delete recycle bin (Opsi B, issue #159).
      *
      * @throws \Exception
      */
@@ -200,7 +199,6 @@ class DocumentLifecycleService
     {
         $this->cleanupDocumentArtifacts($document);
 
-        // 3. Delete database record (Soft Delete)
         return $document->delete();
     }
 
@@ -214,26 +212,6 @@ class DocumentLifecycleService
         foreach ($documents as $document) {
             $this->deleteDocument($document);
         }
-    }
-
-    public function purgeSoftDeletedDocuments(int $retentionDays = self::SOFT_DELETE_RETENTION_DAYS): int
-    {
-        $purgedDocuments = 0;
-        $cutoff = now()->subDays($retentionDays);
-
-        foreach (
-            Document::onlyTrashed()
-                ->where('deleted_at', '<=', $cutoff)
-                ->lazyById(100) as $document
-        ) {
-            $this->cleanupDocumentArtifacts($document);
-
-            if ($document->forceDelete()) {
-                $purgedDocuments++;
-            }
-        }
-
-        return $purgedDocuments;
     }
 
     /**
