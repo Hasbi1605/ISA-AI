@@ -89,7 +89,7 @@ class GenerateChatResponse implements ShouldQueue
             $cleanContent = 'Maaf, ISTA AI belum menerima jawaban yang bisa ditampilkan. Silakan coba lagi.';
         }
 
-        if ($orchestrator->saveAssistantMessage($this->conversationId, $cleanContent) !== null) {
+        if ($orchestrator->saveAssistantMessage($this->conversationId, $cleanContent, $this->userId) !== null) {
             Conversation::query()
                 ->whereKey($this->conversationId)
                 ->where('user_id', $this->userId)
