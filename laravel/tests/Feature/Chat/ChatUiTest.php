@@ -304,6 +304,13 @@ class ChatUiTest extends TestCase
         $this->assertStringContainsString('openHistorySections', $chatPageJs);
         $this->assertStringContainsString('historySearch', $chatPageJs);
         $this->assertStringContainsString('toggleAllHistory', $chatPageJs);
+        $this->assertStringContainsString('CHAT_HISTORY_SECTIONS_STORAGE_KEY', $chatPageJs);
+        $this->assertStringContainsString('allHistorySectionsOpen', $chatPageJs);
+        $this->assertStringContainsString('navigationToken', $chatPageJs);
+        $this->assertStringContainsString('queueNavigationUntilMessageAck', $chatPageJs);
+        $this->assertStringContainsString('syncPendingConversations', $chatPageJs);
+        $this->assertStringContainsString('chat-pending-state-updated', $chatPageJs);
+        $this->assertStringNotContainsString('showAllHistory', $chatPageJs);
         $this->assertStringContainsString('sectionHasActivity', $chatPageJs);
 
         $response
@@ -331,6 +338,8 @@ class ChatUiTest extends TestCase
             ->assertSee('wire:key="chat-history-visible-', false)
             ->assertSee('Cari riwayat...', false)
             ->assertSee('Lihat semua', false)
+            ->assertSee('historySectionKeys:', false)
+            ->assertSee('x-text="allHistorySectionsOpen() ? \'Ringkas\' : \'Lihat semua\'"', false)
             ->assertSee('data-chat-history-section=', false)
             ->assertSee('x-show="isHistorySectionOpen(', false)
             ->assertSee('sectionHasActivity(', false)
@@ -412,7 +421,8 @@ class ChatUiTest extends TestCase
             ->assertSet('currentConversationId', $conversationA->id)
             ->assertSet('pendingConversationIds', [$conversationA->id])
             ->assertDispatched('user-message-acked')
-            ->assertDispatched('conversation-activated', id: $conversationA->id);
+            ->assertDispatched('conversation-activated', id: $conversationA->id)
+            ->assertDispatched('chat-pending-state-updated', pendingConversationIds: [$conversationA->id]);
 
         Queue::assertPushed(GenerateChatResponse::class, function (GenerateChatResponse $job) use ($conversationA, $user) {
             return $job->conversationId === (int) $conversationA->id
@@ -785,6 +795,7 @@ class ChatUiTest extends TestCase
             ->assertSet('pendingConversationIds', [])
             ->assertSet('newMessageId', $assistant->id)
             ->assertSee('Jawaban background sudah selesai.', false)
+            ->assertDispatched('chat-pending-state-updated', pendingConversationIds: [])
             ->assertDispatched('assistant-message-persisted', function (string $_event, array $payload) use ($conversation, $assistant) {
                 return (int) ($payload['conversationId'] ?? 0) === (int) $conversation->id
                     && (int) ($payload['messageId'] ?? 0) === (int) $assistant->id;
@@ -837,16 +848,21 @@ class ChatUiTest extends TestCase
 
             $response
                 ->assertOk()
-                ->assertSee('Hari Ini · 1', false)
+                ->assertSee('Hari Ini', false)
+                ->assertDontSee('Hari Ini ·', false)
                 ->assertSee('Percakapan hari ini', false)
-                ->assertSee('7 Hari Terakhir · 1', false)
+                ->assertSee('7 Hari Terakhir', false)
+                ->assertDontSee('7 Hari Terakhir ·', false)
                 ->assertSee('Percakapan kemarin', false)
-                ->assertSee('30 Hari Terakhir · 1', false)
+                ->assertSee('30 Hari Terakhir', false)
+                ->assertDontSee('30 Hari Terakhir ·', false)
                 ->assertSee('Percakapan sepuluh hari lalu', false)
-                ->assertSee('Lebih Lama · 1', false)
+                ->assertSee('Lebih Lama', false)
+                ->assertDontSee('Lebih Lama ·', false)
                 ->assertSee('Percakapan empat puluh hari lalu', false)
                 ->assertSee('Cari riwayat...', false)
                 ->assertSee('Lihat semua', false)
+                ->assertSee('historySectionKeys:', false)
                 ->assertSee('id="chat-history-section-seven"', false)
                 ->assertSee('id="chat-history-section-thirty"', false)
                 ->assertSee('id="chat-history-section-older"', false)

@@ -105,6 +105,7 @@ class ChatIndex extends Component
         if (! $user) {
             $this->conversations = collect();
             $this->pendingConversationIds = [];
+            $this->dispatchPendingConversationState();
 
             return;
         }
@@ -119,6 +120,7 @@ class ChatIndex extends Component
             ->map(fn ($id) => (int) $id)
             ->values()
             ->all();
+        $this->dispatchPendingConversationState();
     }
 
     protected function chatDocumentStateService(): ChatDocumentStateService
@@ -656,6 +658,14 @@ class ChatIndex extends Component
         $createdAt = $latestMessage->created_at;
 
         return $createdAt === null || $createdAt->greaterThan(now()->subMinutes(30));
+    }
+
+    private function dispatchPendingConversationState(): void
+    {
+        $this->dispatch('chat-pending-state-updated', pendingConversationIds: array_values(array_map(
+            fn ($id) => (int) $id,
+            $this->pendingConversationIds,
+        )));
     }
 
     private function normalizeDriveExportFormat(string $targetFormat): ?string

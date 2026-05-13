@@ -43,11 +43,15 @@
     $hasFoldedHistory = collect($historyGroups)
         ->filter(fn (array $group) => $group['collapsible'] && $group['conversations']->isNotEmpty())
         ->isNotEmpty();
+    $foldedHistorySectionKeys = collect($historyGroups)
+        ->filter(fn (array $group) => $group['collapsible'] && $group['conversations']->isNotEmpty())
+        ->pluck('key')
+        ->values();
     $historyTitles = $conversations->pluck('title')->map(fn ($title) => (string) $title)->values();
 @endphp
 
 <aside
-    x-data="chatHistory({ activeConversationId: @js($activeConversationId), openHistorySections: @js($openHistorySections), historyTitles: @js($historyTitles), pendingConversationIds: @js($pendingConversationIds ?? []) })"
+    x-data="chatHistory({ activeConversationId: @js($activeConversationId), openHistorySections: @js($openHistorySections), historySectionKeys: @js($foldedHistorySectionKeys), historyTitles: @js($historyTitles), pendingConversationIds: @js($pendingConversationIds ?? []) })"
     :class="[
         showLeftSidebar ? 'opacity-100 translate-x-0' : 'opacity-0 -translate-x-full pointer-events-none',
         isMobile ? 'fixed left-0 top-0 h-full w-[288px] shadow-2xl border-r border-stone-200/60 dark:border-[#1E293B]' : (showLeftSidebar ? 'relative w-[288px] border-r border-stone-200/60 dark:border-[#1E293B]' : 'relative w-0 border-r border-transparent')
@@ -103,7 +107,7 @@
         @if ($hasFoldedHistory)
             <div class="mt-2 flex items-center justify-between px-1">
                 <span class="text-[10.5px] font-semibold uppercase tracking-wider text-[#94A3B8] dark:text-[#64748B]">Riwayat</span>
-                <button type="button" @click="toggleAllHistory()" class="rounded-md px-2 py-1 text-[11px] font-semibold text-ista-primary transition-colors hover:bg-ista-primary/10 dark:text-amber-200 dark:hover:bg-amber-300/10" x-text="showAllHistory ? 'Ringkas' : 'Lihat semua'">Lihat semua</button>
+                <button type="button" @click="toggleAllHistory()" class="rounded-md px-2 py-1 text-[11px] font-semibold text-ista-primary transition-colors hover:bg-ista-primary/10 dark:text-amber-200 dark:hover:bg-amber-300/10" x-text="allHistorySectionsOpen() ? 'Ringkas' : 'Lihat semua'">Lihat semua</button>
             </div>
         @endif
     </div>
@@ -124,7 +128,7 @@
                 @if ($isCollapsible)
                     <button type="button" @click="toggleHistorySection('{{ $groupKey }}')" :aria-expanded="isHistorySectionOpen('{{ $groupKey }}') ? 'true' : 'false'" aria-controls="chat-history-section-{{ $groupKey }}" class="flex w-full items-center justify-between text-left">
                         <span class="inline-flex min-w-0 items-center gap-1.5">
-                            <span class="truncate text-[11.3px] font-bold uppercase tracking-wider text-[#64748B] dark:text-[#94A3B8]">{{ $groupLabel }} · {{ $groupChats->count() }}</span>
+                            <span class="truncate text-[11.3px] font-bold uppercase tracking-wider text-[#64748B] dark:text-[#94A3B8]">{{ $groupLabel }}</span>
                             <span x-show="sectionHasActivity(@js($groupConversationIds))" class="h-1.5 w-1.5 shrink-0 rounded-full bg-sky-500 shadow-[0_0_0_3px_rgba(14,165,233,0.12)]" aria-label="Ada jawaban baru" style="display: none;"></span>
                         </span>
                         <svg xmlns="http://www.w3.org/2000/svg" :class="isHistorySectionOpen('{{ $groupKey }}') ? 'rotate-180' : ''" class="h-3 w-3 text-[#64748B] dark:text-[#94A3B8] transition-transform duration-200" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -133,7 +137,7 @@
                     </button>
                     <ul id="chat-history-section-{{ $groupKey }}" x-show="isHistorySectionOpen('{{ $groupKey }}')" class="mt-2 space-y-1" style="{{ ($openHistorySections[$groupKey] ?? false) ? '' : 'display: none;' }}">
                 @else
-                    <h3 class="text-[11.6px] font-bold text-[#64748B] dark:text-[#94A3B8] uppercase tracking-wider mb-2">{{ $groupLabel }} · {{ $groupChats->count() }}</h3>
+                    <h3 class="text-[11.6px] font-bold text-[#64748B] dark:text-[#94A3B8] uppercase tracking-wider mb-2">{{ $groupLabel }}</h3>
                     <ul id="chat-history-section-{{ $groupKey }}" class="space-y-1">
                 @endif
                 @forelse($groupChats as $conversation)
