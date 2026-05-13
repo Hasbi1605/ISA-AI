@@ -87,6 +87,33 @@ class ChatUiTest extends TestCase
         Queue::assertPushed(ProcessDocument::class);
     }
 
+    public function test_composer_and_document_toolbar_keep_persistent_copy_compact(): void
+    {
+        $user = User::factory()->create();
+
+        Document::create([
+            'user_id' => $user->id,
+            'filename' => 'briefing.pdf',
+            'original_name' => 'briefing.pdf',
+            'file_path' => 'documents/'.$user->id.'/briefing.pdf',
+            'mime_type' => 'application/pdf',
+            'file_size_bytes' => 100,
+            'status' => 'ready',
+            'preview_status' => Document::PREVIEW_STATUS_READY,
+        ]);
+
+        Livewire::actingAs($user)
+            ->test(ChatIndex::class)
+            ->assertDontSee('Lampiran: PDF, DOCX, XLSX, atau CSV', false)
+            ->assertDontSee('ISTA AI dapat keliru', false)
+            ->assertDontSee('Memuat chat...', false)
+            ->assertDontSee('Tambahkan ke chat', false)
+            ->assertDontSee('Batal pilih semua', false)
+            ->assertSee('Pakai', false)
+            ->assertSee('Semua', false)
+            ->assertSee('aria-label="Tambahkan dokumen terpilih ke chat"', false);
+    }
+
     public function test_create_conversation_if_needed_throws_for_unowned_conversation(): void
     {
         $userA = User::factory()->create();

@@ -76,6 +76,7 @@ class MemoWorkspace extends Component
     public function loadMemo(int $memoId): void
     {
         $this->rememberCurrentThread();
+        $this->memoStatusMessage = null;
 
         $memo = Memo::with(['currentVersion', 'versions'])
             ->where('id', $memoId)
@@ -95,7 +96,6 @@ class MemoWorkspace extends Component
         $this->applyMemoConfiguration($this->activeMemoConfiguration($memo));
         $this->showMemoConfiguration = false;
         $this->memoPrompt = '';
-        $this->memoStatusMessage = "Memo \"{$memo->title}\" dimuat.";
 
         $threadKey = $this->threadKey($memo->id);
 
@@ -113,9 +113,7 @@ class MemoWorkspace extends Component
             return;
         }
 
-        $this->memoChatMessages = [
-            $this->makeSystemMessage("Memo \"{$memo->title}\" dimuat. Anda bisa meminta revisi atau generate ulang."),
-        ];
+        $this->memoChatMessages = [];
         $this->rememberCurrentThread();
     }
 
@@ -1251,8 +1249,20 @@ class MemoWorkspace extends Component
                 'timestamp' => (string) ($message['timestamp'] ?? now()->format('H:i')),
             ])
             ->filter(fn (array $message) => trim($message['content']) !== '')
+            ->reject(fn (array $message) => $this->isPassiveMemoLoadMessage($message))
             ->values()
             ->all();
+    }
+
+    protected function isPassiveMemoLoadMessage(array $message): bool
+    {
+        if (($message['role'] ?? null) !== 'assistant') {
+            return false;
+        }
+
+        $content = trim((string) ($message['content'] ?? ''));
+
+        return (bool) preg_match('/^Memo\s+"[^"]+"\s+(?:berhasil\s+)?dimuat\.?(?:\s+Anda bisa meminta revisi atau generate ulang\.)?$/iu', $content);
     }
 
     protected function mergeMemoChatThreads(array $primaryThread, array $secondaryThread): array

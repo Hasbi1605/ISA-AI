@@ -331,15 +331,14 @@
                         x-ref="memoInput"
                         @keydown.enter="if(!$event.shiftKey) { $event.preventDefault(); submitMemoRevision($wire, $refs.memoInput); }"
                         placeholder="Tulis revisi untuk memo ini..."
-                        aria-describedby="memo-composer-hint"
+                        aria-label="Tulis revisi untuk memo ini"
                         rows="1"
                         class="chat-input w-full max-h-[120px] min-h-[44px] bg-transparent border-none focus:ring-0 focus:outline-none focus:border-transparent focus-visible:ring-0 focus-visible:outline-none resize-none text-[14px] text-stone-800 dark:text-[#F8FAFC] placeholder-[#94A3B8] dark:placeholder-[#64748B] px-2 py-[10px] hover:bg-transparent focus:bg-transparent"
                         style="outline: none !important; box-shadow: none !important;"
                         x-on:input="$el.style.height = 'auto'; $el.style.height = Math.min($el.scrollHeight, 120) + 'px'"
                     ></textarea>
 
-                    <div class="mt-2 flex items-center justify-between gap-3">
-                        <p id="memo-composer-hint" class="text-[11px] text-[#94A3B8] dark:text-[#64748B]">Enter untuk kirim, Shift+Enter untuk baris baru.</p>
+                    <div class="mt-2 flex items-center justify-end">
                         <button type="submit"
                                 wire:loading.attr="disabled"
                                 wire:target="sendMemoChat,generateRevisionFromChat"
@@ -353,8 +352,5 @@
                 </div>
             </form>
         @endif
-        <div class="text-center mt-3 text-[11px] text-[#94A3B8] dark:text-[#64748B]">
-            ISTA AI dapat keliru. Mohon verifikasi kembali informasi yang penting.
-        </div>
     </div>
 </div>

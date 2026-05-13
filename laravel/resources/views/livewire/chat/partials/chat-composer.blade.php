@@ -137,13 +137,4 @@
         </div>
     </form>
     <p x-show="dropError" x-transition.opacity class="max-w-3xl mx-auto mt-2 text-xs text-red-500 dark:text-red-400" x-text="dropError"></p>
-    <p class="max-w-3xl mx-auto mt-2 text-[11px] text-[#64748B] dark:text-[#94A3B8]">
-        Lampiran: PDF, DOCX, XLSX, atau CSV, maksimal 1 file per unggahan.
-    </p>
-    <p class="max-w-3xl mx-auto mt-1 text-[11px] text-[#64748B] dark:text-[#94A3B8]">
-        Gunakan dokumen yang ukurannya masih aman untuk diunggah. Jika gagal, periksa format dan coba lagi.
-    </p>
-    <div class="text-center mt-3 text-[11px] text-[#94A3B8] dark:text-[#64748B]">
-        ISTA AI dapat keliru. Mohon verifikasi kembali informasi yang penting.
-    </div>
 </div>

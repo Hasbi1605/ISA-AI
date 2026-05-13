@@ -78,7 +78,7 @@ class MemoWorkspaceTest extends TestCase
             ->assertSee('title="Buat memo baru"', false)
             ->assertSee('bg-transparent overflow-hidden', false)
             ->assertSee('h-[61px] flex-shrink-0 grid grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center gap-2 px-3 sm:px-6 z-20', false)
-            ->assertSee('ISTA AI dapat keliru', false)
+            ->assertDontSee('ISTA AI dapat keliru', false)
             ->assertDontSee('min-h-[61px] flex-shrink-0 flex items-center justify-between gap-2 px-3 sm:px-5 border-b border-stone-200/60 dark:border-[#1E293B]/70 bg-white/85 dark:bg-gray-800/85', false)
             ->assertDontSee('dark:bg-gray-950/85', false)
             ->assertDontSee('Dokumen resmi', false)
@@ -908,6 +908,35 @@ class MemoWorkspaceTest extends TestCase
         $this->assertContains('Thread cache stale.', $contents);
         $this->assertContains($revisionInstruction, $contents);
         $this->assertContains($revisionInstruction, $storedContents);
+    }
+
+    public function test_loading_memo_stays_quiet_for_passive_loaded_notice(): void
+    {
+        $user = User::factory()->create(['email_verified_at' => now()]);
+        $memo = Memo::create([
+            'user_id' => $user->id,
+            'title' => 'Memo Ringkas',
+            'memo_type' => 'memo_internal',
+            'status' => Memo::STATUS_GENERATED,
+            'chat_messages' => [
+                ['role' => 'assistant', 'content' => 'Memo "Memo Ringkas" dimuat. Anda bisa meminta revisi atau generate ulang.', 'timestamp' => '09:00'],
+            ],
+            'configuration' => [
+                'number' => 'EVAL-10/IST/YK/05/2026',
+                'recipient' => 'Kepala Unit Layanan',
+                'sender' => 'Kepala Istana Kepresidenan Yogyakarta',
+                'subject' => 'Memo Ringkas',
+                'date' => '7 Mei 2026',
+                'content' => 'Isi memo.',
+            ],
+        ]);
+
+        Livewire::actingAs($user)
+            ->test(MemoWorkspace::class)
+            ->call('loadMemo', $memo->id)
+            ->assertSet('memoStatusMessage', null)
+            ->assertSee('Memo aktif', false)
+            ->assertDontSee('Memo "Memo Ringkas" dimuat', false);
     }
 
     public function test_edit_configuration_hides_active_memo_chat_history(): void

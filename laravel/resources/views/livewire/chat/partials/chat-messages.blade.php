@@ -298,14 +298,12 @@
     @endforeach
     @endif
 
-    <div x-show="isSwitchingConversation" x-transition.opacity class="space-y-3" role="status" aria-live="polite" style="display: none;">
-        <div class="inline-flex items-center gap-2 rounded-full border border-stone-200 bg-white px-4 py-2 text-[12px] font-semibold text-stone-600 shadow-sm dark:border-gray-800 dark:bg-gray-900 dark:text-gray-300">
-            <span class="h-3.5 w-3.5 rounded-full border-2 border-current border-t-transparent animate-spin" aria-hidden="true"></span>
-            Memuat chat...
-        </div>
-        <div class="grid gap-3">
-            <div class="h-20 animate-pulse rounded-2xl border border-stone-200/70 bg-white/70 dark:border-gray-800 dark:bg-gray-800/70"></div>
-            <div class="ml-auto h-16 w-[75%] animate-pulse rounded-2xl border border-stone-200/70 bg-white/70 dark:border-gray-800 dark:bg-gray-800/70"></div>
+    <div x-show="isSwitchingConversation" x-transition.opacity class="px-2 sm:px-8" role="status" aria-live="polite" style="display: none;">
+        <span class="sr-only">Memuat chat.</span>
+        <div class="inline-flex items-center gap-1.5 rounded-full border border-stone-200/70 bg-white/75 px-3 py-2 text-stone-400 shadow-sm backdrop-blur-sm dark:border-gray-800 dark:bg-gray-900/75 dark:text-gray-500" aria-hidden="true">
+            <span class="h-1.5 w-1.5 animate-bounce rounded-full bg-current [animation-delay:-0.2s]"></span>
+            <span class="h-1.5 w-1.5 animate-bounce rounded-full bg-current [animation-delay:-0.1s]"></span>
+            <span class="h-1.5 w-1.5 animate-bounce rounded-full bg-current"></span>
         </div>
     </div>
 
