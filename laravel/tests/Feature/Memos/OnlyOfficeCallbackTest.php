@@ -428,6 +428,207 @@ class OnlyOfficeCallbackTest extends TestCase
         $this->assertSame('current-docx', Storage::disk('local')->get($memo->file_path));
     }
 
+    // -------------------------------------------------------------------------
+    // Bug #155: searchable_text harus diperbarui dari konten DOCX setelah edit
+    // -------------------------------------------------------------------------
+
+    public function test_callback_status_2_updates_searchable_text_from_docx(): void
+    {
+        config([
+            'services.onlyoffice.jwt_secret' => 'callback-secret',
+            'services.onlyoffice.internal_url' => 'https://onlyoffice.test',
+        ]);
+        Storage::fake('local');
+
+        $docxContent = file_get_contents(base_path('tests/Fixtures/edited-memo.docx'));
+        Http::fake([
+            'https://onlyoffice.test/edited.docx' => Http::response($docxContent, 200),
+        ]);
+
+        $user = User::factory()->create(['email_verified_at' => now()]);
+        $memo = $this->createMemo($user);
+        $originalSearchableText = $memo->currentVersion->searchable_text;
+
+        $key = $this->callbackKey($memo);
+        $url = 'https://onlyoffice.test/edited.docx';
+        $token = (new JwtSigner('callback-secret'))->sign([
+            'status' => 2,
+            'key' => $key,
+            'url' => $url,
+            'exp' => time() + 60,
+        ]);
+
+        $this->postJson(route('onlyoffice.callback', $memo), [
+            'status' => 2,
+            'key' => $key,
+            'url' => $url,
+            'token' => $token,
+        ])->assertOk()->assertJson(['error' => 0]);
+
+        $memo->refresh();
+        $version = $memo->currentVersion;
+
+        // searchable_text harus berubah dari nilai awal
+        $this->assertNotSame($originalSearchableText, $memo->searchable_text);
+        $this->assertNotSame($originalSearchableText, $version?->searchable_text);
+
+        // harus mengandung teks dari DOCX yang baru
+        $this->assertStringContainsString('diedit manual', $memo->searchable_text);
+        $this->assertStringContainsString('diedit manual', $version?->searchable_text ?? '');
+    }
+
+    public function test_callback_status_6_updates_searchable_text_from_docx(): void
+    {
+        config([
+            'services.onlyoffice.jwt_secret' => 'callback-secret',
+            'services.onlyoffice.internal_url' => 'https://onlyoffice.test',
+        ]);
+        Storage::fake('local');
+
+        $docxContent = file_get_contents(base_path('tests/Fixtures/edited-memo.docx'));
+        Http::fake([
+            'https://onlyoffice.test/force-saved.docx' => Http::response($docxContent, 200),
+        ]);
+
+        $user = User::factory()->create(['email_verified_at' => now()]);
+        $memo = $this->createMemo($user);
+        $originalSearchableText = $memo->currentVersion->searchable_text;
+
+        $key = $this->callbackKey($memo);
+        $url = 'https://onlyoffice.test/force-saved.docx';
+        $token = (new JwtSigner('callback-secret'))->sign([
+            'status' => 6,
+            'key' => $key,
+            'url' => $url,
+            'exp' => time() + 60,
+        ]);
+
+        $this->postJson(route('onlyoffice.callback', $memo), [
+            'status' => 6,
+            'key' => $key,
+            'url' => $url,
+            'token' => $token,
+        ])->assertOk()->assertJson(['error' => 0]);
+
+        $memo->refresh();
+        $version = $memo->currentVersion;
+
+        $this->assertNotSame($originalSearchableText, $memo->searchable_text);
+        $this->assertStringContainsString('diedit manual', $memo->searchable_text);
+        $this->assertStringContainsString('diedit manual', $version?->searchable_text ?? '');
+    }
+
+    public function test_callback_still_succeeds_if_docx_extraction_fails(): void
+    {
+        config([
+            'services.onlyoffice.jwt_secret' => 'callback-secret',
+            'services.onlyoffice.internal_url' => 'https://onlyoffice.test',
+        ]);
+        Storage::fake('local');
+
+        // Kirim konten bukan DOCX valid (corrupt/binary acak) — extractor harus
+        // return '' dan callback tetap return {"error": 0}
+        Http::fake([
+            'https://onlyoffice.test/corrupt.docx' => Http::response('NOT-A-VALID-DOCX-CONTENT', 200),
+        ]);
+
+        $user = User::factory()->create(['email_verified_at' => now()]);
+        $memo = $this->createMemo($user);
+        $originalSearchableText = $memo->searchable_text;
+        $originalVersionText = $memo->currentVersion->searchable_text;
+
+        $key = $this->callbackKey($memo);
+        $url = 'https://onlyoffice.test/corrupt.docx';
+        $token = (new JwtSigner('callback-secret'))->sign([
+            'status' => 2,
+            'key' => $key,
+            'url' => $url,
+            'exp' => time() + 60,
+        ]);
+
+        // Callback harus tetap sukses meski ekstraksi gagal
+        $this->postJson(route('onlyoffice.callback', $memo), [
+            'status' => 2,
+            'key' => $key,
+            'url' => $url,
+            'token' => $token,
+        ])->assertOk()->assertJson(['error' => 0]);
+
+        $memo->refresh();
+
+        // searchable_text tidak boleh kosong — fallback ke nilai lama atau title
+        $this->assertNotEmpty($memo->searchable_text);
+        $this->assertNotEmpty($memo->currentVersion?->searchable_text);
+
+        // Jika nilai awal ada, harus dipertahankan; jika null, fallback ke title
+        $expectedMemo = $originalSearchableText ?: $memo->title;
+        $expectedVersion = $originalVersionText ?: $memo->title;
+        $this->assertSame($expectedMemo, $memo->searchable_text);
+        $this->assertSame($expectedVersion, $memo->currentVersion?->searchable_text);
+    }
+
+    public function test_callback_status_2_updates_searchable_text_for_non_current_version(): void
+    {
+        config([
+            'services.onlyoffice.jwt_secret' => 'callback-secret',
+            'services.onlyoffice.internal_url' => 'https://onlyoffice.test',
+        ]);
+        Storage::fake('local');
+
+        $docxContent = file_get_contents(base_path('tests/Fixtures/edited-memo.docx'));
+        Http::fake([
+            'https://onlyoffice.test/version-edited.docx' => Http::response($docxContent, 200),
+        ]);
+
+        $user = User::factory()->create(['email_verified_at' => now()]);
+        $memo = $this->createMemo($user);
+        $versionOne = $memo->versions()->where('version_number', 1)->firstOrFail();
+
+        // Buat versi 2 sebagai current version
+        $versionTwo = $memo->versions()->create([
+            'version_number' => 2,
+            'label' => 'Versi 2',
+            'file_path' => 'memos/'.$user->id.'/memo-v2.docx',
+            'status' => Memo::STATUS_GENERATED,
+            'configuration' => [],
+            'searchable_text' => 'Teks versi dua asli',
+        ]);
+        Storage::disk('local')->put($versionOne->file_path, 'original-v1');
+        Storage::disk('local')->put($versionTwo->file_path, 'original-v2');
+        $memo->forceFill([
+            'file_path' => $versionTwo->file_path,
+            'current_version_id' => $versionTwo->id,
+            'searchable_text' => 'Teks versi dua asli',
+        ])->save();
+
+        // Edit versi 1 (bukan current)
+        $key = $this->callbackKey($memo, $versionOne);
+        $url = 'https://onlyoffice.test/version-edited.docx';
+        $token = (new JwtSigner('callback-secret'))->sign([
+            'status' => 2,
+            'key' => $key,
+            'url' => $url,
+            'exp' => time() + 60,
+        ]);
+
+        $this->postJson(route('onlyoffice.callback', [
+            'memo' => $memo,
+            'version_id' => $versionOne->id,
+        ]), [
+            'status' => 2,
+            'key' => $key,
+            'url' => $url,
+            'token' => $token,
+        ])->assertOk()->assertJson(['error' => 0]);
+
+        // Versi 1 searchable_text harus diperbarui dari DOCX baru
+        $this->assertStringContainsString('diedit manual', $versionOne->refresh()->searchable_text);
+
+        // Versi 2 (current) tidak boleh terpengaruh
+        $this->assertSame('Teks versi dua asli', $versionTwo->refresh()->searchable_text);
+        $this->assertSame('Teks versi dua asli', $memo->refresh()->searchable_text);
+    }
+
     protected function callbackKey(Memo $memo, ?MemoVersion $version = null): string
     {
         return app(MemoDocumentKey::class)->forEditor($memo->refresh(), $version?->refresh());
