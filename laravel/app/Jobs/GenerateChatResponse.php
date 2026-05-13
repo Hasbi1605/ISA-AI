@@ -79,6 +79,23 @@ class GenerateChatResponse implements ShouldQueue
             }
         }
 
+        // Detect sentinel prefix injected by AIService on network/service errors.
+        // Store these as is_error=true so the UI can show a distinct error bubble
+        // instead of treating the fallback message as a normal AI answer.
+        if (str_starts_with($fullResponse, AIService::ERROR_SENTINEL)) {
+            $errorContent = substr($fullResponse, strlen(AIService::ERROR_SENTINEL));
+            $errorContent = trim($errorContent) !== '' ? trim($errorContent) : 'Maaf, ISTA AI gagal merespon. Silakan coba lagi.';
+
+            if ($orchestrator->saveErrorMessage($this->conversationId, $errorContent, $this->userId) !== null) {
+                Conversation::query()
+                    ->whereKey($this->conversationId)
+                    ->where('user_id', $this->userId)
+                    ->touch();
+            }
+
+            return;
+        }
+
         $cleanContent = $orchestrator->cleanResponseContent($fullResponse);
 
         if (! empty($sources)) {

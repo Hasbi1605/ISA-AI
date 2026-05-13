@@ -11,6 +11,13 @@ class Message extends Model
 
     protected $fillable = ['conversation_id', 'role', 'content', 'is_error'];
 
+    protected function casts(): array
+    {
+        return [
+            'is_error' => 'boolean',
+        ];
+    }
+
     public function conversation()
     {
         return $this->belongsTo(Conversation::class);

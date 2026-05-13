@@ -8,6 +8,13 @@ use Illuminate\Support\Facades\Log;
 
 class AIService
 {
+    /**
+     * Sentinel prefix prepended to error chunks yielded by sendChat().
+     * GenerateChatResponse detects this prefix to store the message with
+     * is_error = true instead of treating it as a normal AI answer.
+     */
+    public const ERROR_SENTINEL = '[ISTA_AI_ERROR]';
+
     protected $client;
     protected $baseUrl;
     protected $documentBaseUrl;
@@ -109,7 +116,7 @@ class AIService
                         'message' => $e->getMessage(),
                         'response_excerpt' => $responseBody ? mb_substr($responseBody, 0, 500) : null,
                     ]);
-                    yield "❌ Kesalahan sistem saat menghubungi otak AI. Silakan coba lagi nanti.";
+                    yield self::ERROR_SENTINEL."❌ Kesalahan sistem saat menghubungi otak AI. Silakan coba lagi nanti.";
                     return;
                 }
 
@@ -120,7 +127,7 @@ class AIService
                 Log::error('Unexpected AI Service Error', [
                     'message' => $e->getMessage(),
                 ]);
-                yield "❌ Kesalahan sistem saat menghubungi otak AI. Silakan coba lagi nanti.";
+                yield self::ERROR_SENTINEL."❌ Kesalahan sistem saat menghubungi otak AI. Silakan coba lagi nanti.";
                 return;
             }
         }
