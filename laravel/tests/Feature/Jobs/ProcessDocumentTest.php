@@ -213,4 +213,69 @@ class ProcessDocumentTest extends TestCase
             return $job->document->id === $document->id;
         });
     }
+
+    public function test_job_skips_silently_when_document_is_soft_deleted_before_processing(): void
+    {
+        Storage::fake('local');
+        Http::fake();
+
+        $user = User::factory()->create();
+        $filePath = 'documents/'.$user->id.'/race.pdf';
+        Storage::disk('local')->put($filePath, 'dummy content');
+
+        $document = Document::create([
+            'user_id' => $user->id,
+            'filename' => 'race.pdf',
+            'original_name' => 'race.pdf',
+            'file_path' => $filePath,
+            'mime_type' => 'application/pdf',
+            'file_size_bytes' => 123,
+            'status' => 'pending',
+        ]);
+
+        // Simulate user deleting the document before worker starts
+        $document->delete();
+
+        $job = new ProcessDocument($document);
+        $job->handle();
+
+        // Status should NOT be changed to 'error' — row is trashed, skip silently
+        $this->assertSoftDeleted($document);
+        $this->assertSame('pending', Document::withTrashed()->find($document->id)->status);
+
+        // Python service should not be called
+        Http::assertNothingSent();
+    }
+
+    public function test_job_skips_silently_when_document_is_hard_deleted_before_processing(): void
+    {
+        Storage::fake('local');
+        Http::fake();
+
+        $user = User::factory()->create();
+        $filePath = 'documents/'.$user->id.'/race-hard.pdf';
+        Storage::disk('local')->put($filePath, 'dummy content');
+
+        $document = Document::create([
+            'user_id' => $user->id,
+            'filename' => 'race-hard.pdf',
+            'original_name' => 'race-hard.pdf',
+            'file_path' => $filePath,
+            'mime_type' => 'application/pdf',
+            'file_size_bytes' => 123,
+            'status' => 'pending',
+        ]);
+
+        $documentId = $document->id;
+
+        // Hard delete before worker starts
+        $document->forceDelete();
+
+        $job = new ProcessDocument($document);
+        $job->handle();
+
+        // Row is gone — no error written, no HTTP call
+        $this->assertDatabaseMissing('documents', ['id' => $documentId]);
+        Http::assertNothingSent();
+    }
 }

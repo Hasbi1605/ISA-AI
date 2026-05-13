@@ -39,6 +39,20 @@ class ProcessDocument implements ShouldQueue
      */
     public function handle(): void
     {
+        // Fresh-check the document to detect race with user deletion.
+        // If the document was soft-deleted (or hard-deleted) before the worker
+        // started, skip silently instead of logging a spurious "file not found"
+        // error and writing status='error' on a trashed row.
+        $fresh = $this->document->fresh();
+
+        if ($fresh === null || $fresh->trashed()) {
+            logger()->info("ProcessDocument skipped: document {$this->document->id} was deleted before processing started.");
+
+            return;
+        }
+
+        $this->document = $fresh;
+
         // 1. Update status to processing
         $this->document->update(['status' => 'processing']);
 
