@@ -53,8 +53,23 @@ class ChatOrchestrationService
         return $userMessage->toArray();
     }
 
+    /**
+     * Build the message history payload for the AI service.
+     *
+     * Applies a sliding window to prevent context-window overflow and
+     * unbounded token costs on long conversations. The window size is
+     * configurable via services.ai_service.max_history_messages (default 20).
+     * Only the most recent N messages are sent; older messages are dropped.
+     */
     public function buildHistory(array $messages): array
     {
+        $maxMessages = $this->maxHistoryMessages();
+
+        // Keep only the most recent N messages (sliding window)
+        if (count($messages) > $maxMessages) {
+            $messages = array_slice($messages, -$maxMessages);
+        }
+
         return array_map(
             fn (array $msg) => [
                 'role' => (string) ($msg['role'] ?? ''),
@@ -62,6 +77,15 @@ class ChatOrchestrationService
             ],
             $messages
         );
+    }
+
+    protected function maxHistoryMessages(): int
+    {
+        try {
+            return max(1, (int) config('services.ai_service.max_history_messages', 20));
+        } catch (\Throwable) {
+            return 20;
+        }
     }
 
     public function getDocumentFilenames(array $conversationDocuments): ?array

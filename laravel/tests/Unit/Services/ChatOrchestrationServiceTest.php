@@ -49,6 +49,45 @@ class ChatOrchestrationServiceTest extends TestCase
         ], $history);
     }
 
+    public function test_build_history_truncates_to_max_messages_keeping_most_recent(): void
+    {
+        // Use anonymous subclass to override maxHistoryMessages() without config()
+        $service = new class extends ChatOrchestrationService {
+            protected function maxHistoryMessages(): int { return 4; }
+        };
+
+        $messages = [];
+        for ($i = 1; $i <= 10; $i++) {
+            $messages[] = ['role' => $i % 2 === 0 ? 'assistant' : 'user', 'content' => "Pesan ke-{$i}"];
+        }
+
+        $history = $service->buildHistory($messages);
+
+        // Only last 4 messages should be returned
+        $this->assertCount(4, $history);
+        $this->assertSame('Pesan ke-7', $history[0]['content']);
+        $this->assertSame('Pesan ke-8', $history[1]['content']);
+        $this->assertSame('Pesan ke-9', $history[2]['content']);
+        $this->assertSame('Pesan ke-10', $history[3]['content']);
+    }
+
+    public function test_build_history_does_not_truncate_when_within_limit(): void
+    {
+        $service = new class extends ChatOrchestrationService {
+            protected function maxHistoryMessages(): int { return 20; }
+        };
+
+        $messages = [
+            ['role' => 'user', 'content' => 'Pesan 1'],
+            ['role' => 'assistant', 'content' => 'Jawaban 1'],
+            ['role' => 'user', 'content' => 'Pesan 2'],
+        ];
+
+        $history = $service->buildHistory($messages);
+
+        $this->assertCount(3, $history);
+    }
+
     public function test_single_document_source_uses_compact_reference_footer(): void
     {
         $service = new ChatOrchestrationService();
