@@ -105,7 +105,7 @@ class ChatUiTest extends TestCase
         Livewire::actingAs($user)
             ->test(ChatIndex::class)
             ->assertDontSee('Lampiran: PDF, DOCX, XLSX, atau CSV', false)
-            ->assertDontSee('ISTA AI dapat keliru', false)
+            ->assertSee('ISTA AI dapat keliru', false)
             ->assertDontSee('Memuat chat...', false)
             ->assertDontSee('Tambahkan ke chat', false)
             ->assertDontSee('Batal pilih semua', false)

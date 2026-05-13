@@ -352,5 +352,8 @@
                 </div>
             </form>
         @endif
+        <div class="text-center mt-3 text-[11px] text-[#94A3B8] dark:text-[#64748B]">
+            ISTA AI dapat keliru. Mohon verifikasi kembali informasi yang penting.
+        </div>
     </div>
 </div>
