@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Models\Memo;
 use App\Models\MemoVersion;
+use App\Services\OnlyOffice\DocxTextExtractor;
 use App\Services\OnlyOffice\JwtSigner;
 use App\Services\OnlyOffice\MemoDocumentKey;
 use Illuminate\Http\JsonResponse;
@@ -46,25 +47,39 @@ class OnlyOfficeCallbackController extends Controller
             $path = $version?->file_path ?: ($memo->file_path ?: 'memos/'.$memo->user_id.'/'.$memo->id.'.docx');
             Storage::disk('local')->put($path, $response->body());
 
+            // Extract fresh searchable text from the newly saved DOCX so that
+            // subsequent AI revisions read the user's manual edits, not the
+            // stale AI-generated text stored before the edit session.
+            $absolutePath = Storage::disk('local')->path($path);
+            $freshText = app(DocxTextExtractor::class)->extract($absolutePath);
+
             if ($version) {
+                $newSearchableText = $freshText !== ''
+                    ? $freshText
+                    : ($version->searchable_text ?: $memo->searchable_text ?: $memo->title);
+
                 $version->forceFill([
                     'file_path' => $path,
                     'status' => Memo::STATUS_EDITED,
-                    'searchable_text' => $version->searchable_text ?: $memo->searchable_text ?: $memo->title,
+                    'searchable_text' => $newSearchableText,
                 ])->save();
 
                 if ((int) $memo->current_version_id === (int) $version->id || $memo->current_version_id === null) {
                     $memo->forceFill([
                         'file_path' => $path,
                         'status' => Memo::STATUS_EDITED,
-                        'searchable_text' => $version->searchable_text ?: $memo->searchable_text ?: $memo->title,
+                        'searchable_text' => $newSearchableText,
                     ])->save();
                 }
             } else {
+                $newSearchableText = $freshText !== ''
+                    ? $freshText
+                    : ($memo->searchable_text ?: $memo->title);
+
                 $memo->forceFill([
                     'file_path' => $path,
                     'status' => Memo::STATUS_EDITED,
-                    'searchable_text' => $memo->searchable_text ?: $memo->title,
+                    'searchable_text' => $newSearchableText,
                 ])->save();
 
                 $currentVersion = $memo->currentVersion()->first();
@@ -73,7 +88,7 @@ class OnlyOfficeCallbackController extends Controller
                     $currentVersion->forceFill([
                         'file_path' => $path,
                         'status' => Memo::STATUS_EDITED,
-                        'searchable_text' => $memo->searchable_text ?: $memo->title,
+                        'searchable_text' => $newSearchableText,
                     ])->save();
                 }
             }
