@@ -27,6 +27,17 @@ class ProcessDocument implements ShouldQueue
     public $timeout = 900; // 15 minutes timeout
 
     /**
+     * If the Document model is hard-deleted before the worker picks up the
+     * job, Laravel will fail to unserialize it. Setting this to true tells
+     * the queue to silently discard the job instead of throwing an exception.
+     *
+     * Soft-deleted documents are handled inside handle() via fresh()->trashed().
+     *
+     * @var bool
+     */
+    public bool $deleteWhenMissingModels = true;
+
+    /**
      * Create a new job instance.
      */
     public function __construct(public Document $document)

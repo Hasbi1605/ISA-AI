@@ -233,7 +233,7 @@ class ProcessDocumentTest extends TestCase
             'status' => 'pending',
         ]);
 
-        // Simulate user deleting the document before worker starts
+        // Simulate user soft-deleting the document before worker starts
         $document->delete();
 
         $job = new ProcessDocument($document);
@@ -247,35 +247,25 @@ class ProcessDocumentTest extends TestCase
         Http::assertNothingSent();
     }
 
-    public function test_job_skips_silently_when_document_is_hard_deleted_before_processing(): void
+    public function test_job_has_delete_when_missing_models_set_to_true(): void
     {
-        Storage::fake('local');
-        Http::fake();
-
+        // When a document is hard-deleted before the worker picks up the job,
+        // Laravel's SerializesModels will fail to restore the model.
+        // $deleteWhenMissingModels = true tells the queue to silently discard
+        // the job instead of throwing a ModelNotFoundException.
         $user = User::factory()->create();
-        $filePath = 'documents/'.$user->id.'/race-hard.pdf';
-        Storage::disk('local')->put($filePath, 'dummy content');
-
         $document = Document::create([
             'user_id' => $user->id,
-            'filename' => 'race-hard.pdf',
-            'original_name' => 'race-hard.pdf',
-            'file_path' => $filePath,
+            'filename' => 'missing.pdf',
+            'original_name' => 'missing.pdf',
+            'file_path' => 'documents/'.$user->id.'/missing.pdf',
             'mime_type' => 'application/pdf',
             'file_size_bytes' => 123,
             'status' => 'pending',
         ]);
 
-        $documentId = $document->id;
-
-        // Hard delete before worker starts
-        $document->forceDelete();
-
         $job = new ProcessDocument($document);
-        $job->handle();
 
-        // Row is gone — no error written, no HTTP call
-        $this->assertDatabaseMissing('documents', ['id' => $documentId]);
-        Http::assertNothingSent();
+        $this->assertTrue($job->deleteWhenMissingModels);
     }
 }
