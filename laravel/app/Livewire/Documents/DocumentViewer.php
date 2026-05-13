@@ -7,6 +7,7 @@ use App\Models\Document;
 use App\Services\CloudStorage\GoogleDriveService;
 use App\Services\DocumentExportService;
 use App\Services\Documents\DocumentPreviewRenderer;
+use App\Support\UserFacingError;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
@@ -102,7 +103,8 @@ class DocumentViewer extends Component
                 Storage::disk('local')->delete($tempRelativePath);
             }
         } catch (\Throwable $e) {
-            $this->driveUploadError = $e->getMessage();
+            report($e);
+            $this->driveUploadError = UserFacingError::message($e, 'Upload ke Google Drive gagal. Coba lagi atau hubungi admin bila berulang.');
             $this->driveUploadResult = null;
         }
     }
@@ -114,6 +116,7 @@ class DocumentViewer extends Component
         $previewStatus = null;
         $streamUrl = null;
         $htmlUrl = null;
+        $pdfPreviewAvailable = false;
 
         if ($document !== null) {
             $renderer = app(DocumentPreviewRenderer::class);
@@ -129,6 +132,7 @@ class DocumentViewer extends Component
 
             if ($kind === 'pdf') {
                 $streamUrl = route('documents.preview.stream', $document);
+                $pdfPreviewAvailable = $this->resolveSourcePath($document) !== null;
             } elseif (in_array($kind, ['docx', 'xlsx', 'csv'], true)) {
                 $htmlUrl = route('documents.preview.html', $document);
             }
@@ -140,8 +144,25 @@ class DocumentViewer extends Component
             'previewStatus' => $previewStatus,
             'streamUrl' => $streamUrl,
             'htmlUrl' => $htmlUrl,
+            'pdfPreviewAvailable' => $pdfPreviewAvailable,
             'googleDriveUploadAvailable' => app(GoogleDriveService::class)->canUploadWithConfiguredAccount(),
         ]);
+    }
+
+    protected function resolveSourcePath(Document $document): ?string
+    {
+        foreach ([$document->file_path, 'private/'.$document->file_path] as $candidate) {
+            if (! $candidate) {
+                continue;
+            }
+
+            $absolute = Storage::disk(DocumentPreviewRenderer::DISK)->path($candidate);
+            if (is_file($absolute)) {
+                return $absolute;
+            }
+        }
+
+        return null;
     }
 
     private function resolveDocument(): ?Document

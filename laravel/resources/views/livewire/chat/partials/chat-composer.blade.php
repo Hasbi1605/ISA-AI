@@ -29,7 +29,7 @@
             <div x-show="sendError" x-transition class="absolute -top-14 left-0 right-0 z-30">
                 <div class="rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-[12px] text-rose-800 shadow-sm flex items-center justify-between gap-2">
                     <span x-text="sendError"></span>
-                    <button type="button" @click="sendError = ''" class="text-rose-400 hover:text-rose-600">
+                    <button type="button" @click="sendError = ''" class="text-rose-400 hover:text-rose-600" aria-label="Tutup pesan error">
                         <svg class="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
                     </button>
                 </div>
@@ -62,7 +62,7 @@
                             </svg>
                         </template>
                         <span class="max-w-[180px] truncate" x-text="doc.name"></span>
-                        <button type="button" @click="removeConversationDocument(doc.id)" class="text-[#7C8DA8] hover:text-[#314158] dark:text-gray-300 dark:hover:text-white" title="Lepas dokumen">
+                        <button type="button" @click="removeConversationDocument(doc.id)" class="text-[#7C8DA8] hover:text-[#314158] dark:text-gray-300 dark:hover:text-white" title="Lepas dokumen" :aria-label="`Lepas dokumen ${doc.name}`">
                             <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
                             </svg>
@@ -105,20 +105,22 @@
                     </button>
 
                     <div class="flex items-center gap-1.5">
-                        <button type="button" @click="openGoogleDrivePicker()" class="h-[34px] w-[34px] rounded-full transition-colors flex items-center justify-center bg-transparent hover:bg-[#F1F5F9] dark:hover:bg-gray-800" title="Ambil file dari Google Drive Kantor" aria-label="Ambil file dari Google Drive Kantor">
+                        <button type="button" @click="openGoogleDrivePicker()" class="h-[34px] w-[34px] rounded-full transition-colors flex items-center justify-center bg-transparent hover:bg-[#F1F5F9] dark:hover:bg-gray-800" title="Ambil dokumen dari Google Drive Kantor" aria-label="Ambil dokumen dari Google Drive Kantor">
                             <img src="{{ $uiIcons['googleDrive'] }}" alt="" class="h-[18px] w-[18px] object-contain" />
                         </button>
 
-                        <button type="button" @click="openAttachmentPicker()" wire:loading.attr="disabled" wire:target="chatAttachment" class="h-[34px] w-[34px] rounded-full transition-colors flex items-center justify-center bg-transparent hover:bg-[#F1F5F9] dark:hover:bg-gray-800 disabled:opacity-60" title="Lampirkan file">
+                        <button type="button" @click="openAttachmentPicker()" wire:loading.attr="disabled" wire:target="chatAttachment" class="h-[34px] w-[34px] rounded-full transition-colors flex items-center justify-center bg-transparent hover:bg-[#F1F5F9] dark:hover:bg-gray-800 disabled:opacity-60" title="Lampirkan file" aria-label="Lampirkan file PDF, DOCX, XLSX, atau CSV">
                             <img src="{{ $uiIcons['uploadLight'] }}" alt="" class="h-[18px] w-[18px] dark:hidden" />
                             <img src="{{ $uiIcons['uploadDark'] }}" alt="" class="h-[18px] w-[18px] hidden dark:block" />
                         </button>
 
                         <button type="submit"
                                 :disabled="isSendingMessage"
-                                class="bg-ista-primary hover:bg-ista-dark dark:bg-ista-primary dark:hover:bg-ista-dark disabled:opacity-50 rounded-full transition-all duration-300 h-[32px] w-[32px] flex items-center justify-center group">
-                            <img src="{{ $uiIcons['sendLight'] }}" alt="" class="h-[17px] w-[17px] dark:hidden brightness-0 invert" />
-                            <img src="{{ $uiIcons['sendDark'] }}" alt="" class="h-[17px] w-[17px] hidden dark:block brightness-0 invert" />
+                                class="bg-ista-primary hover:bg-ista-dark dark:bg-ista-primary dark:hover:bg-ista-dark disabled:opacity-50 rounded-full transition-all duration-300 h-[32px] w-[32px] flex items-center justify-center group"
+                                :aria-label="isSendingMessage ? 'Mengirim pesan' : 'Kirim pesan'">
+                            <span x-show="isSendingMessage" class="h-[17px] w-[17px] rounded-full border-2 border-white/70 border-t-transparent animate-spin" aria-hidden="true"></span>
+                            <img x-show="!isSendingMessage" src="{{ $uiIcons['sendLight'] }}" alt="" class="h-[17px] w-[17px] dark:hidden brightness-0 invert" />
+                            <img x-show="!isSendingMessage" src="{{ $uiIcons['sendDark'] }}" alt="" class="h-[17px] w-[17px] hidden dark:block brightness-0 invert" />
                         </button>
                     </div>
                 </div>

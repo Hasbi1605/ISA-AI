@@ -7,6 +7,7 @@ use App\Models\MemoVersion;
 use App\Services\Memo\MemoGenerationService;
 use App\Services\OnlyOffice\JwtSigner;
 use App\Services\OnlyOffice\MemoDocumentKey;
+use App\Support\UserFacingError;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\RateLimiter;
 use Illuminate\Support\Facades\URL;
@@ -57,17 +58,25 @@ class MemoWorkspace extends Component
 
     public bool $showMemoConfiguration = true;
 
+    public ?string $memoStatusMessage = null;
+
     private bool $skipRateLimitForNestedGeneration = false;
 
     public function mount(): void
     {
         $this->resetMemoConfiguration();
         $this->addSystemMessage('Lengkapi konfigurasi memo terlebih dahulu. Setelah draft dibuat, kolom revisi akan aktif di panel yang sama.');
+
+        $memoId = request()->integer('memo');
+        if ($memoId > 0) {
+            $this->loadMemo($memoId);
+        }
     }
 
     public function loadMemo(int $memoId): void
     {
         $this->rememberCurrentThread();
+        $this->memoStatusMessage = null;
 
         $memo = Memo::with(['currentVersion', 'versions'])
             ->where('id', $memoId)
@@ -75,6 +84,8 @@ class MemoWorkspace extends Component
             ->first();
 
         if (! $memo) {
+            $this->memoStatusMessage = 'Memo tidak ditemukan atau Anda tidak memiliki akses.';
+            $this->addSystemMessage('Memo tidak ditemukan atau Anda tidak memiliki akses. Pilih memo lain dari riwayat atau buat memo baru.');
             return;
         }
 
@@ -102,9 +113,7 @@ class MemoWorkspace extends Component
             return;
         }
 
-        $this->memoChatMessages = [
-            $this->makeSystemMessage("Memo \"{$memo->title}\" dimuat. Anda bisa meminta revisi atau generate ulang."),
-        ];
+        $this->memoChatMessages = [];
         $this->rememberCurrentThread();
     }
 
@@ -226,7 +235,8 @@ class MemoWorkspace extends Component
             $this->addSystemMessage("Revisi memo \"{$memo->title}\" berhasil disimpan sebagai Versi {$version->version_number}. Cek panel Dokumen untuk memastikan hasilnya sudah sesuai.");
             $this->dispatch('memo-document-ready', memoId: $memo->id);
         } catch (\Throwable $e) {
-            $this->addSystemMessage('Maaf, terjadi kesalahan saat revisi memo: '.$e->getMessage());
+            report($e);
+            $this->addSystemMessage(UserFacingError::message($e, 'Maaf, revisi memo gagal diproses. Silakan coba lagi.'));
         } finally {
             $this->isGenerating = false;
         }
@@ -274,7 +284,8 @@ class MemoWorkspace extends Component
             $this->addSystemMessage("Memo \"{$memo->title}\" berhasil digenerate ulang dari konfigurasi sebagai Versi {$version->version_number}. History tetap berada pada memo yang sama.");
             $this->dispatch('memo-document-ready', memoId: $memo->id);
         } catch (\Throwable $e) {
-            $this->addSystemMessage('Maaf, terjadi kesalahan saat generate ulang memo dari konfigurasi: '.$e->getMessage());
+            report($e);
+            $this->addSystemMessage(UserFacingError::message($e, 'Maaf, generate ulang memo gagal diproses. Silakan coba lagi.'));
         } finally {
             $this->isGenerating = false;
         }
@@ -317,7 +328,8 @@ class MemoWorkspace extends Component
             $this->addSystemMessage($message);
             $this->dispatch('memo-document-ready', memoId: $memo->id);
         } catch (\Throwable $e) {
-            $this->addSystemMessage('Maaf, terjadi kesalahan saat generate memo: '.$e->getMessage());
+            report($e);
+            $this->addSystemMessage(UserFacingError::message($e, 'Maaf, generate memo gagal diproses. Silakan coba lagi.'));
         } finally {
             $this->isGenerating = false;
         }
@@ -357,6 +369,7 @@ class MemoWorkspace extends Component
             ->first();
 
         if (! $memo) {
+            $this->addSystemMessage('Memo aktif tidak ditemukan. Pilih memo lain dari riwayat atau buat memo baru.');
             return;
         }
 
@@ -365,6 +378,7 @@ class MemoWorkspace extends Component
             ->first();
 
         if (! $version) {
+            $this->addSystemMessage('Versi memo tidak ditemukan. Pilih versi lain dari riwayat versi.');
             return;
         }
 
@@ -383,6 +397,8 @@ class MemoWorkspace extends Component
             ->first();
 
         if (! $memo) {
+            $this->memoStatusMessage = 'Memo tidak ditemukan atau sudah dihapus.';
+            $this->addSystemMessage('Memo tidak ditemukan atau sudah dihapus.');
             return;
         }
 
@@ -392,6 +408,8 @@ class MemoWorkspace extends Component
         $memo->delete();
 
         if (! $wasActiveMemo) {
+            $this->memoStatusMessage = "Memo \"{$memo->title}\" berhasil dihapus.";
+            $this->addSystemMessage('Memo berhasil dihapus dari history.');
             return;
         }
 
@@ -402,6 +420,7 @@ class MemoWorkspace extends Component
         $this->isGenerating = false;
         $this->resetMemoConfiguration();
         $this->showMemoConfiguration = true;
+        $this->memoStatusMessage = "Memo \"{$memo->title}\" berhasil dihapus. Anda bisa membuat memo baru.";
         $this->addSystemMessage('Memo berhasil dihapus dari history. Lengkapi konfigurasi untuk membuat memo baru.');
     }
 
@@ -1230,8 +1249,20 @@ class MemoWorkspace extends Component
                 'timestamp' => (string) ($message['timestamp'] ?? now()->format('H:i')),
             ])
             ->filter(fn (array $message) => trim($message['content']) !== '')
+            ->reject(fn (array $message) => $this->isPassiveMemoLoadMessage($message))
             ->values()
             ->all();
+    }
+
+    protected function isPassiveMemoLoadMessage(array $message): bool
+    {
+        if (($message['role'] ?? null) !== 'assistant') {
+            return false;
+        }
+
+        $content = trim((string) ($message['content'] ?? ''));
+
+        return (bool) preg_match('/^Memo\s+"[^"]+"\s+(?:berhasil\s+)?dimuat\.?(?:\s+Anda bisa meminta revisi atau generate ulang\.)?$/iu', $content);
     }
 
     protected function mergeMemoChatThreads(array $primaryThread, array $secondaryThread): array

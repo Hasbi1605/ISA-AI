@@ -1,10 +1,95 @@
 let hasRegisteredChatPageData = false;
 const CHAT_PENDING_STORAGE_KEY = 'ista.chat.pendingResponses.v1';
 const CHAT_COMPLETED_STORAGE_KEY = 'ista.chat.completedResponses.v1';
+const CHAT_HISTORY_SECTIONS_STORAGE_KEY = 'ista.chat.historySections.v1';
+const MEMO_HISTORY_SECTIONS_STORAGE_KEY = 'ista.memo.historySections.v1';
+const CHAT_HISTORY_SECTION_KEYS = ['seven', 'thirty', 'older'];
+const MEMO_HISTORY_SECTION_KEYS = ['seven', 'thirty', 'older'];
 const CHAT_PENDING_MARKER_TTL_MS = 10 * 60 * 1000;
 const CHAT_PENDING_RECENT_TTL_MS = 3 * 60 * 1000;
+const CHAT_PENDING_STALE_WARNING_MS = 45 * 1000;
 
 const normalizeWirePayload = (data) => (Array.isArray(data) ? (data[0] || {}) : (data || {}));
+
+const normalizeConversationIds = (ids = []) => [...new Set((ids || [])
+    .map((id) => Number(id))
+    .filter((id) => Number.isFinite(id) && id > 0))];
+
+const normalizeHistorySectionState = (sections = {}) => CHAT_HISTORY_SECTION_KEYS.reduce((state, section) => ({
+    ...state,
+    [section]: Boolean(sections?.[section]),
+}), {});
+
+const normalizeMemoHistorySectionState = (sections = {}) => MEMO_HISTORY_SECTION_KEYS.reduce((state, section) => ({
+    ...state,
+    [section]: Boolean(sections?.[section]),
+}), {});
+
+const loadHistorySectionState = () => {
+    try {
+        const raw = window.localStorage?.getItem(CHAT_HISTORY_SECTIONS_STORAGE_KEY);
+        if (!raw) return {};
+        const parsed = JSON.parse(raw);
+
+        return parsed && typeof parsed === 'object' ? normalizeHistorySectionState(parsed) : {};
+    } catch (_) {
+        return {};
+    }
+};
+
+const loadMemoHistorySectionState = () => {
+    try {
+        const raw = window.localStorage?.getItem(MEMO_HISTORY_SECTIONS_STORAGE_KEY);
+        if (!raw) return {};
+        const parsed = JSON.parse(raw);
+
+        return parsed && typeof parsed === 'object' ? normalizeMemoHistorySectionState(parsed) : {};
+    } catch (_) {
+        return {};
+    }
+};
+
+const saveHistorySectionState = (sections) => {
+    try {
+        window.localStorage?.setItem(
+            CHAT_HISTORY_SECTIONS_STORAGE_KEY,
+            JSON.stringify(normalizeHistorySectionState(sections)),
+        );
+    } catch (_) {
+        // ignore storage write errors
+    }
+};
+
+const saveMemoHistorySectionState = (sections) => {
+    try {
+        window.localStorage?.setItem(
+            MEMO_HISTORY_SECTIONS_STORAGE_KEY,
+            JSON.stringify(normalizeMemoHistorySectionState(sections)),
+        );
+    } catch (_) {
+        // ignore storage write errors
+    }
+};
+
+const initialHistorySectionState = (config = {}) => {
+    const storedSections = loadHistorySectionState();
+    const serverSections = normalizeHistorySectionState(config.openHistorySections || {});
+
+    return CHAT_HISTORY_SECTION_KEYS.reduce((state, section) => ({
+        ...state,
+        [section]: Boolean(storedSections[section] || serverSections[section] || (section === 'seven' && config.showOlderChats)),
+    }), {});
+};
+
+const initialMemoHistorySectionState = (config = {}) => {
+    const storedSections = loadMemoHistorySectionState();
+    const serverSections = normalizeMemoHistorySectionState(config.openHistorySections || {});
+
+    return MEMO_HISTORY_SECTION_KEYS.reduce((state, section) => ({
+        ...state,
+        [section]: Boolean(storedSections[section] || serverSections[section]),
+    }), {});
+};
 
 const loadPendingConversationMarkers = () => {
     try {
@@ -25,6 +110,36 @@ const savePendingConversationMarkers = (markers) => {
     }
 };
 
+const loadFreshPendingConversationMarkerIds = () => {
+    const markers = loadPendingConversationMarkers();
+    const now = Date.now();
+    let changed = false;
+    const freshIds = [];
+
+    Object.entries(markers).forEach(([id, marker]) => {
+        const conversationId = Number(id);
+        const markerAgeMs = marker?.ts ? now - Number(marker.ts) : Number.POSITIVE_INFINITY;
+        const isFresh = Number.isFinite(conversationId)
+            && conversationId > 0
+            && markerAgeMs >= 0
+            && markerAgeMs <= CHAT_PENDING_MARKER_TTL_MS;
+
+        if (isFresh) {
+            freshIds.push(conversationId);
+            return;
+        }
+
+        delete markers[id];
+        changed = true;
+    });
+
+    if (changed) {
+        savePendingConversationMarkers(markers);
+    }
+
+    return normalizeConversationIds(freshIds);
+};
+
 const loadStoredConversationIds = (storageKey) => {
     try {
         const raw = window.localStorage?.getItem(storageKey);
@@ -32,7 +147,7 @@ const loadStoredConversationIds = (storageKey) => {
         const parsed = JSON.parse(raw);
         if (!Array.isArray(parsed)) return [];
 
-        return parsed.map((id) => Number(id)).filter((id) => Number.isFinite(id) && id > 0);
+        return normalizeConversationIds(parsed);
     } catch (_) {
         return [];
     }
@@ -40,8 +155,7 @@ const loadStoredConversationIds = (storageKey) => {
 
 const saveStoredConversationIds = (storageKey, ids) => {
     try {
-        const normalizedIds = [...new Set((ids || []).map((id) => Number(id)).filter((id) => Number.isFinite(id) && id > 0))];
-        window.localStorage?.setItem(storageKey, JSON.stringify(normalizedIds));
+        window.localStorage?.setItem(storageKey, JSON.stringify(normalizeConversationIds(ids)));
     } catch (_) {
         // ignore storage write errors
     }
@@ -186,6 +300,8 @@ const registerChatPageData = (Alpine) => {
         loadingPhaseKey: 0,
         loadingPhaseTimeout: null,
         phase2Timeout: null,
+        pendingStaleTimeout: null,
+        stalePendingWarning: '',
         hasFirstAssistantChunk: false,
         phase1Done: false,
         phase2Done: false,
@@ -249,10 +365,15 @@ const registerChatPageData = (Alpine) => {
             if (marker && !hasFreshMarker) {
                 delete markers[conversationId];
                 savePendingConversationMarkers(markers);
+                this.stalePendingWarning = 'Jawaban sebelumnya belum selesai atau koneksi terputus. Coba kirim ulang pertanyaan bila jawaban tidak muncul.';
             }
 
             if (!hasFreshMarker && !hasRecentPendingUser) {
                 return;
+            }
+
+            if (pendingAgeMs !== null && pendingAgeMs > CHAT_PENDING_STALE_WARNING_MS) {
+                this.stalePendingWarning = 'Jawaban AI masih belum selesai. Anda bisa menunggu sebentar atau kirim ulang pertanyaan bila diperlukan.';
             }
 
             const loadingContext = hasFreshMarker ? (marker.loadingContext || 'general') : 'general';
@@ -332,6 +453,7 @@ const registerChatPageData = (Alpine) => {
         destroy() {
             this.clearLoadingPhaseTimeout();
             this.clearPhase2Timeout();
+            this.clearPendingStaleTimeout();
             if (this._messageCompleteHandler) {
                 window.removeEventListener('message-complete', this._messageCompleteHandler);
                 this._messageCompleteHandler = null;
@@ -380,6 +502,13 @@ const registerChatPageData = (Alpine) => {
             }
         },
 
+        clearPendingStaleTimeout() {
+            if (this.pendingStaleTimeout) {
+                window.clearTimeout(this.pendingStaleTimeout);
+                this.pendingStaleTimeout = null;
+            }
+        },
+
         // Dipanggil setelah fase 2 selesai. Kalau chunk sudah ada, langsung
         // tampilkan "Menampilkan jawaban". Kalau belum, tunggu chunk datang
         // (assistant-output handler akan cek phase2Done).
@@ -399,8 +528,15 @@ const registerChatPageData = (Alpine) => {
             this.loadingPhaseKey++;
             this.loadingPhase = this.loadingPhaseLabels()[0];
             this.shimmerActive = true;
+            this.stalePendingWarning = '';
             this.phase1Done = false;
             this.phase2Done = false;
+            this.clearPendingStaleTimeout();
+            this.pendingStaleTimeout = window.setTimeout(() => {
+                if (this.streaming && !this.hasFirstAssistantChunk) {
+                    this.stalePendingWarning = 'Jawaban memakan waktu lebih lama dari biasanya. Tetap tunggu atau kirim ulang pertanyaan jika tidak ada perubahan.';
+                }
+            }, CHAT_PENDING_MARKER_TTL_MS);
 
             const labels = this.loadingPhaseLabels();
 
@@ -438,6 +574,7 @@ const registerChatPageData = (Alpine) => {
             this.loadingContext = 'general';
             this.loadingPhase = 'AI sedang berpikir';
             this.shimmerActive = false;
+            this.stalePendingWarning = '';
             this.streamingText = '';
             this.modelName = '';
             this.sources = [];
@@ -486,20 +623,43 @@ const registerChatPageData = (Alpine) => {
 
     Alpine.data('chatHistory', (config = {}) => ({
         activeConversationId: config.activeConversationId ? Number(config.activeConversationId) : null,
-        showOlderChats: config.showOlderChats || false,
-        pendingConversationIds: (config.pendingConversationIds || []).map((id) => Number(id)).filter(Boolean),
+        openHistorySections: initialHistorySectionState(config),
+        historySectionKeys: (config.historySectionKeys || CHAT_HISTORY_SECTION_KEYS).map((section) => String(section)),
+        historySearch: '',
+        historyTitles: (config.historyTitles || []).map((title) => String(title || '')),
+        pendingConversationIds: normalizeConversationIds([
+            ...(config.pendingConversationIds || []),
+            ...loadFreshPendingConversationMarkerIds(),
+        ]),
         completedConversationIds: loadStoredConversationIds(CHAT_COMPLETED_STORAGE_KEY),
         loadingConversationId: null,
         isNavigating: false,
+        navigationToken: 0,
+        pendingNavigation: null,
+        awaitingMessageAck: false,
+        flashMessage: '',
         _chatMarkPendingHandler: null,
+        _messageSendHandler: null,
+        _messageCompleteHandler: null,
         _assistantPersistedWindowHandler: null,
         _assistantPersistedCleanup: null,
+        _pendingStateCleanup: null,
+        _userMessageAckedCleanup: null,
 
         init() {
             this.$nextTick(() => this.syncActiveHistoryItem());
             this.$watch('activeConversationId', () => this.syncActiveHistoryItem());
             this.markConversationRead(this.activeConversationId);
             window.chatHistoryNavigateToNewChat = (event) => this.navigateToNewChat(event);
+            this._messageSendHandler = () => {
+                this.awaitingMessageAck = true;
+            };
+            this._messageCompleteHandler = () => {
+                this.awaitingMessageAck = false;
+                this.flushPendingNavigation();
+            };
+            window.addEventListener('message-send', this._messageSendHandler);
+            window.addEventListener('message-complete', this._messageCompleteHandler);
             this._chatMarkPendingHandler = (event) => {
                 const id = Number(event?.detail?.conversationId || 0);
                 this.markConversationPending(id);
@@ -514,6 +674,23 @@ const registerChatPageData = (Alpine) => {
                 const payload = normalizeWirePayload(data);
                 const id = Number(payload.conversationId || 0);
                 this.markConversationComplete(id);
+            });
+            this._pendingStateCleanup = this.$wire.on('chat-pending-state-updated', (data) => {
+                const payload = normalizeWirePayload(data);
+                this.syncPendingConversations(payload.pendingConversationIds || []);
+            });
+            this._userMessageAckedCleanup = this.$wire.on('user-message-acked', () => {
+                this.awaitingMessageAck = false;
+                this.flushPendingNavigation();
+            });
+            window.addEventListener('chat-success-toast', (event) => {
+                this.flashMessage = event?.detail?.message || '';
+                if (!this.flashMessage) return;
+                window.setTimeout(() => {
+                    if (this.flashMessage === (event?.detail?.message || '')) {
+                        this.flashMessage = '';
+                    }
+                }, 5000);
             });
         },
 
@@ -533,6 +710,106 @@ const registerChatPageData = (Alpine) => {
             const conversationId = Number(id);
 
             return !this.isPending(conversationId) && this.completedConversationIds.includes(conversationId);
+        },
+
+        normalizedHistorySearch() {
+            return String(this.historySearch || '').trim().toLowerCase();
+        },
+
+        isSearchingHistory() {
+            return this.normalizedHistorySearch().length > 0;
+        },
+
+        isHistoryVisible(title) {
+            const search = this.normalizedHistorySearch();
+            if (!search) {
+                return true;
+            }
+
+            return String(title || '').toLowerCase().includes(search);
+        },
+
+        hasHistorySearchResults() {
+            const search = this.normalizedHistorySearch();
+            if (!search) {
+                return true;
+            }
+
+            return this.historyTitles.some((title) => String(title || '').toLowerCase().includes(search));
+        },
+
+        clearHistorySearch() {
+            this.historySearch = '';
+        },
+
+        availableHistorySectionKeys() {
+            return (this.historySectionKeys || [])
+                .map((section) => String(section))
+                .filter((section) => CHAT_HISTORY_SECTION_KEYS.includes(section));
+        },
+
+        allHistorySectionsOpen() {
+            const sections = this.availableHistorySectionKeys();
+
+            return sections.length > 0 && sections.every((section) => Boolean(this.openHistorySections?.[section]));
+        },
+
+        persistOpenHistorySections() {
+            saveHistorySectionState(this.openHistorySections);
+        },
+
+        isHistorySectionOpen(section) {
+            return this.isSearchingHistory() || Boolean(this.openHistorySections?.[section]);
+        },
+
+        toggleHistorySection(section) {
+            if (!section) {
+                return;
+            }
+
+            this.openHistorySections = {
+                ...this.openHistorySections,
+                [section]: !this.openHistorySections?.[section],
+            };
+            this.persistOpenHistorySections();
+        },
+
+        toggleAllHistory() {
+            const shouldOpen = !this.allHistorySectionsOpen();
+            const nextSections = { ...this.openHistorySections };
+
+            this.availableHistorySectionKeys().forEach((section) => {
+                nextSections[section] = shouldOpen;
+            });
+
+            this.openHistorySections = nextSections;
+            this.persistOpenHistorySections();
+        },
+
+        sectionHasActivity(ids) {
+            const sectionIds = (ids || []).map((id) => Number(id)).filter(Boolean);
+
+            return sectionIds.some((id) => this.isPending(id) || this.isCompleteUnread(id));
+        },
+
+        syncPendingConversations(ids) {
+            const pendingIds = normalizeConversationIds(ids);
+            const pendingSet = new Set(pendingIds);
+            const markers = loadPendingConversationMarkers();
+            let changed = false;
+
+            Object.keys(markers).forEach((id) => {
+                if (!pendingSet.has(Number(id))) {
+                    delete markers[id];
+                    changed = true;
+                }
+            });
+
+            if (changed) {
+                savePendingConversationMarkers(markers);
+            }
+
+            this.pendingConversationIds = pendingIds;
         },
 
         markConversationPending(id) {
@@ -598,34 +875,130 @@ const registerChatPageData = (Alpine) => {
                 const isActive = Number(button.dataset.chatHistoryId) === this.activeConversationId;
                 button.classList.toggle('is-active', isActive);
                 button.setAttribute('aria-current', isActive ? 'page' : 'false');
+
+                if (isActive) {
+                    const section = button.closest('[data-chat-history-section]')?.dataset?.chatHistorySection;
+                    if (section && CHAT_HISTORY_SECTION_KEYS.includes(section) && !this.openHistorySections?.[section]) {
+                        this.openHistorySections = {
+                            ...this.openHistorySections,
+                            [section]: true,
+                        };
+                        this.persistOpenHistorySections();
+                    }
+                }
             });
+        },
+
+        queueNavigationUntilMessageAck(navigation) {
+            this.pendingNavigation = navigation;
+            this.navigationToken += 1;
+            this.loadingConversationId = navigation?.type === 'conversation' ? Number(navigation.id) : null;
+            this.isNavigating = true;
+
+            if (navigation?.type === 'new') {
+                this.setActiveConversation(null);
+                this.$dispatch('chat-new-optimistic');
+            }
+
+            this.$dispatch('conversation-loading');
+        },
+
+        flushPendingNavigation() {
+            if (this.awaitingMessageAck || !this.pendingNavigation) {
+                return;
+            }
+
+            const navigation = this.pendingNavigation;
+            this.pendingNavigation = null;
+            this.isNavigating = false;
+
+            if (navigation.type === 'conversation') {
+                this.navigateToConversationUrl(navigation.href, navigation.id, { allowWhileNavigating: true });
+                return;
+            }
+
+            if (navigation.type === 'new') {
+                this.navigateToNewChatUrl(navigation.href, { allowWhileNavigating: true });
+            }
         },
 
         loadConversation(id) {
             const conversationId = Number(id);
             const previousConversationId = this.activeConversationId;
 
-            this.setActiveConversation(conversationId);
-
             if (previousConversationId === conversationId) {
-                return Promise.resolve();
+                return Promise.resolve({ stale: false });
             }
 
+            const navigationToken = this.navigationToken + 1;
+            this.navigationToken = navigationToken;
             this.loadingConversationId = conversationId;
             this.isNavigating = true;
             this.$dispatch('conversation-loading');
 
             return this.$wire.loadConversation(conversationId)
-                .catch(() => {
-                    this.setActiveConversation(previousConversationId);
+                .then(() => {
+                    if (this.navigationToken !== navigationToken) {
+                        return { stale: true };
+                    }
+
+                    this.setActiveConversation(conversationId);
+
+                    return { stale: false };
+                })
+                .catch((error) => {
+                    if (this.navigationToken === navigationToken) {
+                        this.setActiveConversation(previousConversationId);
+                    }
+
+                    throw error;
                 })
                 .finally(() => {
+                    if (this.navigationToken !== navigationToken) {
+                        return;
+                    }
+
                     if (this.loadingConversationId === conversationId) {
                         this.loadingConversationId = null;
                     }
 
                     this.isNavigating = false;
                     this.$dispatch('conversation-loaded');
+                });
+        },
+
+        navigateToConversationUrl(targetHref, id, options = {}) {
+            const conversationId = Number(id);
+            if (!Number.isFinite(conversationId)) {
+                window.location.assign(targetHref);
+                return;
+            }
+
+            if (this.awaitingMessageAck && !options.skipAckWait) {
+                this.queueNavigationUntilMessageAck({
+                    type: 'conversation',
+                    id: conversationId,
+                    href: targetHref,
+                });
+                return;
+            }
+
+            if (this.isNavigating && !options.allowWhileNavigating) {
+                window.location.assign(targetHref);
+                return;
+            }
+
+            this.loadConversation(conversationId)
+                .then((result) => {
+                    if (result?.stale) {
+                        return;
+                    }
+
+                    this.markConversationRead(conversationId);
+                    window.history.pushState({}, '', targetHref);
+                })
+                .catch(() => {
+                    window.location.assign(targetHref);
                 });
         },
 
@@ -636,17 +1009,33 @@ const registerChatPageData = (Alpine) => {
 
             const targetHref = event.currentTarget.href;
             event.preventDefault();
+            this.navigateToConversationUrl(targetHref, id);
+        },
 
-            const conversationId = Number(id);
-            if (!Number.isFinite(conversationId)) {
+        navigateToNewChatUrl(targetHref, options = {}) {
+            if (this.awaitingMessageAck && !options.skipAckWait) {
+                this.queueNavigationUntilMessageAck({
+                    type: 'new',
+                    href: targetHref,
+                });
+                return;
+            }
+
+            if (this.isNavigating && !options.allowWhileNavigating) {
                 window.location.assign(targetHref);
                 return;
             }
 
-            this.loadConversation(conversationId)
-                .then(() => {
-                    this.markConversationRead(conversationId);
+            this.startNewChat()
+                .then((result) => {
+                    if (result?.stale) {
+                        return;
+                    }
+
                     window.history.pushState({}, '', targetHref);
+                })
+                .catch(() => {
+                    window.location.assign(targetHref);
                 });
         },
 
@@ -657,12 +1046,12 @@ const registerChatPageData = (Alpine) => {
 
             const targetHref = event.currentTarget.href;
             event.preventDefault();
-
-            this.startNewChat()
-                .then(() => window.history.pushState({}, '', targetHref));
+            this.navigateToNewChatUrl(targetHref);
         },
 
         startNewChat() {
+            const navigationToken = this.navigationToken + 1;
+            this.navigationToken = navigationToken;
             this.setActiveConversation(null);
             this.loadingConversationId = null;
             this.isNavigating = true;
@@ -670,7 +1059,18 @@ const registerChatPageData = (Alpine) => {
             this.$dispatch('conversation-loading');
 
             return this.$wire.startNewChat()
+                .then(() => {
+                    if (this.navigationToken !== navigationToken) {
+                        return { stale: true };
+                    }
+
+                    return { stale: false };
+                })
                 .finally(() => {
+                    if (this.navigationToken !== navigationToken) {
+                        return;
+                    }
+
                     this.isNavigating = false;
                     this.$dispatch('conversation-loaded');
                 });
@@ -684,6 +1084,14 @@ const registerChatPageData = (Alpine) => {
                 window.removeEventListener('chat-mark-pending', this._chatMarkPendingHandler);
                 this._chatMarkPendingHandler = null;
             }
+            if (this._messageSendHandler) {
+                window.removeEventListener('message-send', this._messageSendHandler);
+                this._messageSendHandler = null;
+            }
+            if (this._messageCompleteHandler) {
+                window.removeEventListener('message-complete', this._messageCompleteHandler);
+                this._messageCompleteHandler = null;
+            }
             if (this._assistantPersistedWindowHandler) {
                 window.removeEventListener('assistant-message-persisted', this._assistantPersistedWindowHandler);
                 this._assistantPersistedWindowHandler = null;
@@ -692,6 +1100,135 @@ const registerChatPageData = (Alpine) => {
                 this._assistantPersistedCleanup();
                 this._assistantPersistedCleanup = null;
             }
+            if (typeof this._pendingStateCleanup === 'function') {
+                this._pendingStateCleanup();
+                this._pendingStateCleanup = null;
+            }
+            if (typeof this._userMessageAckedCleanup === 'function') {
+                this._userMessageAckedCleanup();
+                this._userMessageAckedCleanup = null;
+            }
+        },
+    }));
+
+    Alpine.data('memoHistory', (config = {}) => ({
+        activeMemoId: config.activeMemoId ? Number(config.activeMemoId) : null,
+        openMemoSections: initialMemoHistorySectionState(config),
+        memoSectionKeys: (config.memoSectionKeys || MEMO_HISTORY_SECTION_KEYS).map((section) => String(section)),
+        memoSearch: '',
+        memoTitles: (config.memoTitles || []).map((title) => String(title || '')),
+
+        init() {
+            this.$nextTick(() => this.syncActiveMemoItem());
+        },
+
+        setActiveMemo(id) {
+            const memoId = id ? Number(id) : null;
+            const nextMemoId = Number.isFinite(memoId) ? memoId : null;
+
+            if (this.activeMemoId === nextMemoId) {
+                this.syncActiveMemoItem();
+                return;
+            }
+
+            this.activeMemoId = nextMemoId;
+            this.$nextTick(() => this.syncActiveMemoItem());
+        },
+
+        normalizedMemoSearch() {
+            return String(this.memoSearch || '').trim().toLowerCase();
+        },
+
+        isSearchingMemoHistory() {
+            return this.normalizedMemoSearch().length > 0;
+        },
+
+        isMemoVisible(title) {
+            const search = this.normalizedMemoSearch();
+            if (!search) {
+                return true;
+            }
+
+            return String(title || '').toLowerCase().includes(search);
+        },
+
+        hasMemoSearchResults() {
+            const search = this.normalizedMemoSearch();
+            if (!search) {
+                return true;
+            }
+
+            return this.memoTitles.some((title) => String(title || '').toLowerCase().includes(search));
+        },
+
+        availableMemoSectionKeys() {
+            return (this.memoSectionKeys || [])
+                .map((section) => String(section))
+                .filter((section) => MEMO_HISTORY_SECTION_KEYS.includes(section));
+        },
+
+        allMemoSectionsOpen() {
+            const sections = this.availableMemoSectionKeys();
+
+            return sections.length > 0 && sections.every((section) => Boolean(this.openMemoSections?.[section]));
+        },
+
+        persistOpenMemoSections() {
+            saveMemoHistorySectionState(this.openMemoSections);
+        },
+
+        isMemoSectionOpen(section) {
+            return this.isSearchingMemoHistory() || Boolean(this.openMemoSections?.[section]);
+        },
+
+        toggleMemoSection(section) {
+            if (!section) {
+                return;
+            }
+
+            this.openMemoSections = {
+                ...this.openMemoSections,
+                [section]: !this.openMemoSections?.[section],
+            };
+            this.persistOpenMemoSections();
+        },
+
+        toggleAllMemoHistory() {
+            const shouldOpen = !this.allMemoSectionsOpen();
+            const nextSections = { ...this.openMemoSections };
+
+            this.availableMemoSectionKeys().forEach((section) => {
+                nextSections[section] = shouldOpen;
+            });
+
+            this.openMemoSections = nextSections;
+            this.persistOpenMemoSections();
+        },
+
+        syncActiveMemoItem(id = this.activeMemoId) {
+            const memoId = id ? Number(id) : null;
+            this.activeMemoId = Number.isFinite(memoId) ? memoId : null;
+
+            if (!this.$root) {
+                return;
+            }
+
+            this.$root.querySelectorAll('[data-memo-history-id]').forEach((button) => {
+                const isActive = Number(button.dataset.memoHistoryId) === this.activeMemoId;
+                button.classList.toggle('is-active', isActive);
+                button.setAttribute('aria-current', isActive ? 'page' : 'false');
+
+                if (isActive) {
+                    const section = button.closest('[data-memo-history-section]')?.dataset?.memoHistorySection;
+                    if (section && MEMO_HISTORY_SECTION_KEYS.includes(section) && !this.openMemoSections?.[section]) {
+                        this.openMemoSections = {
+                            ...this.openMemoSections,
+                            [section]: true,
+                        };
+                        this.persistOpenMemoSections();
+                    }
+                }
+            });
         },
     }));
 
@@ -788,7 +1325,7 @@ const registerChatPageData = (Alpine) => {
 
         driveButtonLabel() {
             if (!this.driveUploadAvailable) {
-                return 'Upload Drive perlu koneksi akun pusat';
+                return 'Google Drive belum tersedia untuk jawaban ini.';
             }
 
             return this.driveLoading ? 'Mengupload ke Google Drive' : 'Upload ke Google Drive';
@@ -805,6 +1342,7 @@ const registerChatPageData = (Alpine) => {
 
         toggleDriveMenu() {
             if (this.driveLoading || !this.driveUploadAvailable) {
+                this.driveError = 'Simpan ke Google Drive belum tersedia untuk jawaban ini.';
                 return;
             }
 
@@ -958,6 +1496,16 @@ const registerChatPageData = (Alpine) => {
             status: document.status,
         })),
 
+        init() {
+            this.$watch('readyDocumentIds', () => this.syncSelectedDocuments());
+            this.$watch('availableDocuments', () => {
+                this.readyDocumentIds = this.availableDocuments
+                    .filter((document) => document.status === 'ready')
+                    .map((document) => Number(document.id));
+                this.syncSelectedDocuments();
+            });
+        },
+
         normalizedSelectedDocuments() {
             const ready = new Set(this.readyDocumentIds);
 
@@ -1004,7 +1552,7 @@ const registerChatPageData = (Alpine) => {
         },
 
         deleteSelectedDocuments() {
-            if (!window.confirm('Delete selected files from your documents?')) {
+            if (!window.confirm('Hapus dokumen terpilih dari daftar dokumen Anda? Dokumen yang dihapus tidak bisa dipakai sebagai konteks chat.')) {
                 return Promise.resolve();
             }
 
@@ -1479,7 +2027,7 @@ const registerChatPageData = (Alpine) => {
         },
 
         memoLoadingLabels() {
-            return ['Membuat ulang memo', 'AI sedang berpikir', 'Menampilkan jawaban'];
+            return ['Menyiapkan revisi memo', 'AI sedang menyusun memo', 'Menampilkan hasil revisi'];
         },
 
         clearMemoLoadingPhaseTimeout() {
@@ -1525,7 +2073,7 @@ const registerChatPageData = (Alpine) => {
 
             this.memoLoadingPhaseKey = 0;
             this.memoPhase2Done = false;
-            this.memoLoadingPhase = 'Membuat ulang memo';
+            this.memoLoadingPhase = 'Menyiapkan revisi memo';
             this.memoShimmerActive = false;
         },
 
@@ -1587,14 +2135,15 @@ const registerChatPageData = (Alpine) => {
 
         driveButtonLabel() {
             if (!this.driveUploadAvailable) {
-                return 'Upload Drive perlu koneksi akun pusat';
+                return 'Simpan ke Google Drive belum tersedia untuk dokumen ini.';
             }
 
-            return this.isDriveLoading() ? 'Menyiapkan upload ke Google Drive' : 'Upload ke GDrive Kantor';
+            return this.isDriveLoading() ? 'Menyiapkan upload ke Google Drive' : 'Upload ke Google Drive Kantor';
         },
 
         toggleDriveMenu() {
             if (this.isBusy() || !this.driveUploadAvailable) {
+                this.error = 'Simpan ke Google Drive belum tersedia untuk dokumen ini.';
                 return;
             }
 

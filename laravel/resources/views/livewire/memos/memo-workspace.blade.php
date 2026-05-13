@@ -4,6 +4,11 @@
     class="chat-viewport flex w-full h-full overflow-hidden text-stone-800 dark:text-gray-100 font-sans transition-colors duration-300 relative ista-display-sans bg-stone-50/50 dark:bg-gray-900"
     style="background-image: url('{{ asset('images/ista/dashboard-grid.png') }}'); background-size: 8px 8px;"
 >
+    @if ($memoStatusMessage)
+        <div class="fixed left-1/2 top-4 z-[80] w-[calc(100%-2rem)] max-w-xl -translate-x-1/2 rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-semibold text-emerald-800 shadow-xl dark:border-emerald-500/30 dark:bg-emerald-500/10 dark:text-emerald-100" role="status" aria-live="polite">
+            {{ $memoStatusMessage }}
+        </div>
+    @endif
 
     {{-- LEFT SIDEBAR: Memo History --}}
     @include('livewire.memos.partials.memo-history-sidebar')

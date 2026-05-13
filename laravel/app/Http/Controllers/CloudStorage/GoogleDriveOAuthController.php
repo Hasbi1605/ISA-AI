@@ -5,6 +5,7 @@ namespace App\Http\Controllers\CloudStorage;
 use App\Http\Controllers\Controller;
 use App\Models\User;
 use App\Services\CloudStorage\GoogleDriveOAuthService;
+use App\Support\UserFacingError;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
@@ -40,9 +41,10 @@ class GoogleDriveOAuthController extends Controller
                 $user,
             );
         } catch (\Throwable $e) {
+            report($e);
             return redirect()
                 ->route('chat')
-                ->with('error', 'Gagal menghubungkan Google Drive pusat: '.$e->getMessage());
+                ->with('error', UserFacingError::message($e, 'Gagal menghubungkan Google Drive pusat. Coba ulangi koneksi atau minta admin memeriksa konfigurasi.'));
         }
 
         $accountLabel = $connection->account_email ?: 'akun Google pusat';

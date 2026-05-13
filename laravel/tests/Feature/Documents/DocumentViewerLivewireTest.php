@@ -45,7 +45,7 @@ class DocumentViewerLivewireTest extends TestCase
             ->assertSee($document->original_name);
     }
 
-    public function test_pdf_preview_is_rendered_without_sandbox(): void
+    public function test_missing_pdf_source_shows_server_side_fallback(): void
     {
         $user = User::factory()->create();
         $document = Document::create([
@@ -62,7 +62,10 @@ class DocumentViewerLivewireTest extends TestCase
         Livewire::actingAs($user)
             ->test(DocumentViewer::class)
             ->call('open', $document->id)
-            ->assertSeeHtml('<iframe')
+            ->assertSee('Preview PDF gagal dimuat')
+            ->assertSee('File sumber PDF tidak tersedia')
+            ->assertDontSee('Buka PDF di tab baru')
+            ->assertDontSeeHtml('<iframe')
             ->assertDontSeeHtml('sandbox=');
     }
 
@@ -92,10 +95,10 @@ class DocumentViewerLivewireTest extends TestCase
             ->assertSee('data-document-export-format="csv"', false)
             ->assertSee('data-document-export-format="docx"', false)
             ->assertSee('data-document-export-format="pdf"', false)
-            ->assertSee('Upload ke GDrive Kantor', false)
+            ->assertSee('Simpan ke Google Drive', false)
             ->assertSee('images/icons/google-drive.svg', false)
             ->assertSee('Upload ke Drive', false)
-            ->assertDontSee('Simpan ke Google Drive', false)
+            ->assertDontSee('Upload ke GDrive Kantor', false)
             ->assertSee(':aria-label="exportLoadingLabel()"', false)
             ->assertSee('x-show="isExportLoading()"', false)
             ->assertSee('x-show="isDriveLoading()"', false)

@@ -86,17 +86,25 @@
                     apiUrl: @js($onlyOfficeApiUrl),
                     containerId: 'memo-workspace-editor-{{ md5($editorConfig['document']['key'] ?? '') }}',
                     editor: null,
+                    editorFailed: false,
                     load() {
+                        this.editorFailed = false;
                         this.destroy();
                         const boot = () => {
-                            const container = document.getElementById(this.containerId);
-                            if (container) { container.innerHTML = ''; }
-                            this.editor = new DocsAPI.DocEditor(this.containerId, this.config);
+                            try {
+                                const container = document.getElementById(this.containerId);
+                                if (container) { container.innerHTML = ''; }
+                                this.editor = new DocsAPI.DocEditor(this.containerId, this.config);
+                            } catch (error) {
+                                console.error('OnlyOffice editor gagal dimuat', error);
+                                this.editorFailed = true;
+                            }
                         };
                         if (window.DocsAPI) { boot(); return; }
                         const script = document.createElement('script');
                         script.src = this.apiUrl;
                         script.onload = boot;
+                        script.onerror = () => { this.editorFailed = true; };
                         document.head.appendChild(script);
                     },
                     destroy() {
@@ -109,6 +117,13 @@
                 x-init="load()"
             >
                 <div id="memo-workspace-editor-{{ md5($editorConfig['document']['key'] ?? '') }}" class="h-full min-h-[640px] w-full"></div>
+                <div x-show="editorFailed" x-transition class="flex min-h-[640px] items-center justify-center px-6 text-center" style="display:none;">
+                    <div class="max-w-md rounded-2xl border border-amber-200 bg-amber-50 p-5 text-amber-900 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-100">
+                        <p class="font-semibold">Editor dokumen belum bisa dimuat.</p>
+                        <p class="mt-2 text-sm leading-6">Periksa koneksi ke OnlyOffice, lalu coba muat ulang editor. Anda tetap bisa mengunduh DOCX/PDF dari tombol di atas bila dokumen sudah tersedia.</p>
+                        <button type="button" @click="load()" class="mt-4 rounded-lg bg-amber-700 px-4 py-2 text-xs font-semibold text-white hover:bg-amber-800">Coba muat ulang editor</button>
+                    </div>
+                </div>
             </div>
         @else
             <div wire:loading.flex wire:target="generateConfiguredMemo,generateFromChat" class="h-full min-h-[400px] items-center justify-center px-6 text-center">
@@ -133,9 +148,13 @@
                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
                         </svg>
                     </div>
-                    <h3 class="text-[15px] font-semibold text-stone-700 dark:text-gray-300">Dokumen belum tersedia</h3>
+                    <h3 class="text-[15px] font-semibold text-stone-700 dark:text-gray-300">{{ $activeMemoId ? 'Draft dokumen belum tersedia' : 'Belum ada memo aktif' }}</h3>
                     <p class="mt-2 text-[13px] text-stone-500 dark:text-gray-400 leading-relaxed">
-                        Lengkapi konfigurasi memo, lalu generate draft. Dokumen DOCX akan tampil di sini melalui OnlyOffice.
+                        @if ($activeMemoId)
+                            Memo aktif belum memiliki draft yang bisa dibuka. Buat ulang dari konfigurasi atau coba muat memo lain.
+                        @else
+                            Pilih memo dari riwayat atau lengkapi konfigurasi untuk membuat memo pertama. Dokumen DOCX akan tampil di sini melalui OnlyOffice.
+                        @endif
                     </p>
                 </div>
             </div>

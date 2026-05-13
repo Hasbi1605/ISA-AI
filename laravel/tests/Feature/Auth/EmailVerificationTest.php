@@ -24,6 +24,11 @@ class EmailVerificationTest extends TestCase
 
         $response
             ->assertSeeVolt('pages.auth.verify-email')
+            ->assertSee('Kode OTP email')
+            ->assertSee('Kirim ulang OTP')
+            ->assertSee('kode lama otomatis tidak berlaku')
+            ->assertDontSee('Resend Verification Email')
+            ->assertDontSee('Thanks for signing up')
             ->assertStatus(200);
     }
 

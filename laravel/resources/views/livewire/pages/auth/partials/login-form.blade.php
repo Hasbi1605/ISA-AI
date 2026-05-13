@@ -1,13 +1,13 @@
 <form wire:submit="login" class="space-y-6">
     <div class="animate-enter-2 group space-y-2">
-        <label for="email" class="ml-1 cursor-text text-[13px] font-bold text-stone-600 transition-all duration-300 group-focus-within:translate-x-1 group-focus-within:text-rose-900">Identitas akses</label>
+        <label for="email" class="ml-1 cursor-text text-[13px] font-bold text-stone-600 transition-all duration-300 group-focus-within:translate-x-1 group-focus-within:text-rose-900">Email</label>
         <div class="relative transform transition-transform duration-300 group-focus-within:scale-[1.01]">
             <div class="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-5">
                 <svg class="h-5 w-5 text-stone-500 transition-colors duration-300 group-focus-within:text-rose-700" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
                 </svg>
             </div>
-            <input wire:model="form.email" id="email" class="ista-input" type="email" name="email" placeholder="Email atau username" required autofocus autocomplete="username" />
+            <input wire:model="form.email" id="email" class="ista-input" type="email" name="email" placeholder="email@contoh.com" required autofocus autocomplete="email" />
         </div>
         @if ($errors->has('form.email'))
             <p class="ml-1 mt-1 animate-pulse text-[12px] font-bold text-rose-600">{{ $errors->first('form.email') }}</p>
@@ -15,7 +15,7 @@
     </div>
 
     <div class="animate-enter-3 group space-y-2">
-        <label for="password" class="ml-1 cursor-text text-[13px] font-bold text-stone-600 transition-all duration-300 group-focus-within:translate-x-1 group-focus-within:text-rose-900">Kata sandi</label>
+        <label for="password" class="ml-1 cursor-text text-[13px] font-bold text-stone-600 transition-all duration-300 group-focus-within:translate-x-1 group-focus-within:text-rose-900">Kata Sandi</label>
         <div class="relative transform transition-transform duration-300 group-focus-within:scale-[1.01]">
             <div class="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-5">
                 <svg class="h-5 w-5 text-stone-500 transition-colors duration-300 group-focus-within:text-rose-700" fill="none" viewBox="0 0 24 24" stroke="currentColor">

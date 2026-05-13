@@ -100,7 +100,7 @@
                                 >
                                     <span x-show="isDriveLoading()" class="h-3.5 w-3.5 rounded-full border-2 border-current border-t-transparent animate-spin" aria-hidden="true"></span>
                                     <img x-show="!isDriveLoading()" src="{{ asset('images/icons/google-drive.svg') }}" alt="" class="h-[15px] w-[17px]" />
-                                    <span class="hidden sm:inline">Upload ke GDrive Kantor</span>
+                                    <span class="hidden sm:inline">Simpan ke Google Drive</span>
                                 </button>
 
                                 <div
@@ -182,9 +182,21 @@
                             Dokumen tidak ditemukan atau Anda tidak memiliki izin untuk melihatnya.
                         </div>
                     @elseif ($kind === 'pdf')
-                        <iframe src="{{ $streamUrl }}"
-                                class="w-full h-[70vh] bg-white"
-                                title="Preview {{ $document->original_name }}"></iframe>
+                        <div class="relative h-[70vh] bg-white" x-data="{ previewFailed: @js(! $pdfPreviewAvailable) }">
+                            @if ($pdfPreviewAvailable)
+                                <iframe src="{{ $streamUrl }}"
+                                        class="h-full w-full bg-white"
+                                        title="Preview {{ $document->original_name }}"
+                                        x-on:error="previewFailed = true"></iframe>
+                            @endif
+                            <div x-show="previewFailed" x-transition class="absolute inset-0 flex flex-col items-center justify-center gap-3 bg-white p-8 text-center dark:bg-gray-900" style="{{ $pdfPreviewAvailable ? 'display: none;' : '' }}">
+                                <p class="text-sm font-semibold text-rose-600 dark:text-rose-300">Preview PDF gagal dimuat.</p>
+                                <p class="max-w-md text-[12.5px] text-gray-500 dark:text-gray-400">File sumber PDF tidak tersedia atau gagal dimuat. Unggah ulang dokumen bila perlu. Dokumen hanya dipakai sebagai konteks AI jika status prosesnya sudah siap.</p>
+                                @if ($pdfPreviewAvailable)
+                                    <a href="{{ $streamUrl }}" target="_blank" rel="noreferrer" class="rounded-lg bg-ista-primary px-4 py-2 text-xs font-semibold text-white hover:bg-ista-dark">Buka PDF di tab baru</a>
+                                @endif
+                            </div>
+                        </div>
                     @elseif (in_array($kind, ['docx', 'xlsx', 'csv'], true))
                         @if ($previewStatus === \App\Models\Document::PREVIEW_STATUS_READY)
                             <div wire:poll.30s.keep-alive
@@ -201,7 +213,7 @@
                                     Gagal menyiapkan preview untuk dokumen ini.
                                 </p>
                                 <p class="text-[12.5px] text-gray-500 dark:text-gray-400">
-                                    Anda masih bisa menggunakan dokumen ini sebagai konteks AI.
+                                    Preview tidak tersedia. Dokumen hanya bisa dipakai sebagai konteks AI jika status pemrosesannya sudah siap.
                                 </p>
                             </div>
                         @else

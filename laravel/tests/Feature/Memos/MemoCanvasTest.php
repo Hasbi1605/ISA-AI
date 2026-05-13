@@ -91,7 +91,7 @@ class MemoCanvasTest extends TestCase
 
         $this->actingAs($other)
             ->get(route('memos.edit', $memo))
-            ->assertRedirect(route('chat', ['tab' => 'memo']));
+            ->assertRedirect(route('chat', ['tab' => 'memo', 'memo' => $memo->id]));
     }
 
     public function test_editor_token_signs_exact_onlyoffice_config_shape(): void

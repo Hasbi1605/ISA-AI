@@ -3,6 +3,7 @@
 namespace Tests\Feature\Chat;
 
 use App\Jobs\GenerateChatResponse;
+use App\Jobs\ProcessDocument;
 use App\Livewire\Chat\ChatIndex;
 use App\Models\Conversation;
 use App\Models\Document;
@@ -52,6 +53,65 @@ class ChatUiTest extends TestCase
             ->set('prompt', 'Halo')
             ->call('sendMessage')
             ->assertHasErrors(['rate_limit']);
+    }
+
+    public function test_error_document_is_visible_but_not_selectable_and_can_be_reprocessed_by_owner(): void
+    {
+        Queue::fake();
+        $user = User::factory()->create();
+        $document = Document::create([
+            'user_id' => $user->id,
+            'filename' => 'failed.pdf',
+            'original_name' => 'failed.pdf',
+            'file_path' => 'documents/'.$user->id.'/failed.pdf',
+            'mime_type' => 'application/pdf',
+            'file_size_bytes' => 100,
+            'status' => 'error',
+            'preview_status' => Document::PREVIEW_STATUS_FAILED,
+            'preview_html_path' => 'previews/stale.html',
+        ]);
+
+        Livewire::actingAs($user)
+            ->test(ChatIndex::class)
+            ->assertSee('Gagal')
+            ->assertSee('Tidak dipakai sebagai konteks AI sampai berhasil diproses ulang')
+            ->set('selectedDocuments', [$document->id])
+            ->call('addSelectedDocumentsToChat')
+            ->assertSet('conversationDocuments', [])
+            ->call('reprocessDocument', $document->id);
+
+        $document->refresh();
+        $this->assertSame('pending', $document->status);
+        $this->assertSame(Document::PREVIEW_STATUS_PENDING, $document->preview_status);
+        $this->assertNull($document->preview_html_path);
+        Queue::assertPushed(ProcessDocument::class);
+    }
+
+    public function test_composer_and_document_toolbar_keep_persistent_copy_compact(): void
+    {
+        $user = User::factory()->create();
+
+        Document::create([
+            'user_id' => $user->id,
+            'filename' => 'briefing.pdf',
+            'original_name' => 'briefing.pdf',
+            'file_path' => 'documents/'.$user->id.'/briefing.pdf',
+            'mime_type' => 'application/pdf',
+            'file_size_bytes' => 100,
+            'status' => 'ready',
+            'preview_status' => Document::PREVIEW_STATUS_READY,
+        ]);
+
+        Livewire::actingAs($user)
+            ->test(ChatIndex::class)
+            ->assertDontSee('Lampiran: PDF, DOCX, XLSX, atau CSV', false)
+            ->assertSee('ISTA AI dapat keliru', false)
+            ->assertDontSee('Memuat chat...', false)
+            ->assertDontSee('Tambahkan ke chat', false)
+            ->assertDontSee('Batal pilih semua', false)
+            ->assertSee('Pakai', false)
+            ->assertSee('Semua', false)
+            ->assertSee('aria-label="Tambahkan dokumen terpilih ke chat"', false);
     }
 
     public function test_create_conversation_if_needed_throws_for_unowned_conversation(): void
@@ -214,6 +274,14 @@ class ChatUiTest extends TestCase
             'user_id' => $user->id,
             'title' => 'History test',
         ]);
+        $olderConversation = Conversation::create([
+            'user_id' => $user->id,
+            'title' => 'Older history hook test',
+        ]);
+        $olderConversation->forceFill([
+            'created_at' => now('Asia/Jakarta')->subDay(),
+            'updated_at' => now('Asia/Jakarta')->subDay(),
+        ])->save();
         $pendingConversation = Conversation::create([
             'user_id' => $user->id,
             'title' => 'Pending history test',
@@ -233,6 +301,17 @@ class ChatUiTest extends TestCase
         $this->assertStringContainsString('this.activeConversationId === conversationId', $chatPageJs);
         $this->assertStringContainsString('this.markConversationRead(this.activeConversationId)', $chatPageJs);
         $this->assertStringContainsString('window.history.pushState', $chatPageJs);
+        $this->assertStringContainsString('openHistorySections', $chatPageJs);
+        $this->assertStringContainsString('historySearch', $chatPageJs);
+        $this->assertStringContainsString('toggleAllHistory', $chatPageJs);
+        $this->assertStringContainsString('CHAT_HISTORY_SECTIONS_STORAGE_KEY', $chatPageJs);
+        $this->assertStringContainsString('allHistorySectionsOpen', $chatPageJs);
+        $this->assertStringContainsString('navigationToken', $chatPageJs);
+        $this->assertStringContainsString('queueNavigationUntilMessageAck', $chatPageJs);
+        $this->assertStringContainsString('syncPendingConversations', $chatPageJs);
+        $this->assertStringContainsString('chat-pending-state-updated', $chatPageJs);
+        $this->assertStringNotContainsString('showAllHistory', $chatPageJs);
+        $this->assertStringContainsString('sectionHasActivity', $chatPageJs);
 
         $response
             ->assertOk()
@@ -257,9 +336,19 @@ class ChatUiTest extends TestCase
             ->assertSee('navigateToNewChat($event)', false)
             ->assertSee('chat-history-item', false)
             ->assertSee('wire:key="chat-history-visible-', false)
+            ->assertSee('Cari riwayat...', false)
+            ->assertSee('Lihat semua', false)
+            ->assertSee('focus:outline-none', false)
+            ->assertSee('focus:ring-ista-primary/15', false)
+            ->assertDontSee('Bersihkan pencarian riwayat', false)
+            ->assertSee('historySectionKeys:', false)
+            ->assertSee('x-text="allHistorySectionsOpen() ? \'Ringkas\' : \'Lihat semua\'"', false)
+            ->assertSee('data-chat-history-section=', false)
+            ->assertSee('x-show="isHistorySectionOpen(', false)
+            ->assertSee('sectionHasActivity(', false)
             ->assertSee('openGoogleDrivePicker()', false)
             ->assertSee('open-google-drive-picker', false)
-            ->assertSee('Ambil file dari Google Drive Kantor', false)
+            ->assertSee('Ambil dokumen dari Google Drive Kantor', false)
             ->assertSee('images/icons/google-drive.svg', false)
             ->assertSee('Pilih file untuk chat', false)
             ->assertSee('chat-tab-switch', false)
@@ -335,7 +424,8 @@ class ChatUiTest extends TestCase
             ->assertSet('currentConversationId', $conversationA->id)
             ->assertSet('pendingConversationIds', [$conversationA->id])
             ->assertDispatched('user-message-acked')
-            ->assertDispatched('conversation-activated', id: $conversationA->id);
+            ->assertDispatched('conversation-activated', id: $conversationA->id)
+            ->assertDispatched('chat-pending-state-updated', pendingConversationIds: [$conversationA->id]);
 
         Queue::assertPushed(GenerateChatResponse::class, function (GenerateChatResponse $job) use ($conversationA, $user) {
             return $job->conversationId === (int) $conversationA->id
@@ -708,6 +798,7 @@ class ChatUiTest extends TestCase
             ->assertSet('pendingConversationIds', [])
             ->assertSet('newMessageId', $assistant->id)
             ->assertSee('Jawaban background sudah selesai.', false)
+            ->assertDispatched('chat-pending-state-updated', pendingConversationIds: [])
             ->assertDispatched('assistant-message-persisted', function (string $_event, array $payload) use ($conversation, $assistant) {
                 return (int) ($payload['conversationId'] ?? 0) === (int) $conversation->id
                     && (int) ($payload['messageId'] ?? 0) === (int) $assistant->id;
@@ -738,20 +829,54 @@ class ChatUiTest extends TestCase
                 'updated_at' => Carbon::now('Asia/Jakarta')->subDay(),
             ])->save();
 
+            $thirtyDayConversation = Conversation::create([
+                'user_id' => $user->id,
+                'title' => 'Percakapan sepuluh hari lalu',
+            ]);
+            $thirtyDayConversation->forceFill([
+                'created_at' => Carbon::now('Asia/Jakarta')->subDays(10),
+                'updated_at' => Carbon::now('Asia/Jakarta')->subDays(10),
+            ])->save();
+
+            $olderThanThirtyConversation = Conversation::create([
+                'user_id' => $user->id,
+                'title' => 'Percakapan empat puluh hari lalu',
+            ]);
+            $olderThanThirtyConversation->forceFill([
+                'created_at' => Carbon::now('Asia/Jakarta')->subDays(40),
+                'updated_at' => Carbon::now('Asia/Jakarta')->subDays(40),
+            ])->save();
+
             $response = $this->actingAs($user)->get('/chat');
 
             $response
                 ->assertOk()
-                ->assertSee('Today', false)
+                ->assertSee('Hari Ini', false)
+                ->assertDontSee('Hari Ini ·', false)
                 ->assertSee('Percakapan hari ini', false)
-                ->assertSee('Previous 7 Days', false)
-                ->assertSee('Percakapan kemarin', false);
+                ->assertSee('7 Hari Terakhir', false)
+                ->assertDontSee('7 Hari Terakhir ·', false)
+                ->assertSee('Percakapan kemarin', false)
+                ->assertSee('30 Hari Terakhir', false)
+                ->assertDontSee('30 Hari Terakhir ·', false)
+                ->assertSee('Percakapan sepuluh hari lalu', false)
+                ->assertSee('Lebih Lama', false)
+                ->assertDontSee('Lebih Lama ·', false)
+                ->assertSee('Percakapan empat puluh hari lalu', false)
+                ->assertSee('Cari riwayat...', false)
+                ->assertSee('Lihat semua', false)
+                ->assertSee('historySectionKeys:', false)
+                ->assertSee('id="chat-history-section-seven"', false)
+                ->assertSee('id="chat-history-section-thirty"', false)
+                ->assertSee('id="chat-history-section-older"', false)
+                ->assertSee('style="display: none;"', false)
+                ->assertSee('Tidak ada riwayat yang cocok.', false);
         } finally {
             Carbon::setTestNow();
         }
     }
 
-    public function test_google_drive_import_is_added_to_chat_composer_documents(): void
+    public function test_google_drive_import_processing_document_is_not_added_as_ready_context(): void
     {
         $user = User::factory()->create();
         $document = Document::create([
@@ -770,7 +895,7 @@ class ChatUiTest extends TestCase
         Livewire::actingAs($user)
             ->test(ChatIndex::class)
             ->call('refreshDocumentsAfterGoogleDriveImport', $document->id)
-            ->assertSet('conversationDocuments', [$document->id])
+            ->assertSet('conversationDocuments', [])
             ->assertDispatched('conversation-documents-preview');
     }
 }

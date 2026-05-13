@@ -42,7 +42,7 @@ class MemoRouteRedirectTest extends TestCase
 
         $this->actingAs($user)
             ->get(route('memos.edit', $memo))
-            ->assertRedirect(route('chat', ['tab' => 'memo']));
+            ->assertRedirect(route('chat', ['tab' => 'memo', 'memo' => $memo->id]));
     }
 
     public function test_legacy_memo_download_path_redirects_to_chat_memo_tab(): void

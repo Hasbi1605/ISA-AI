@@ -134,5 +134,17 @@ new class extends Component
                 Tersimpan.
             </x-action-message>
         </div>
+        <div
+            x-data="{ shown: false }"
+            x-on:profile-updated.window="shown = true; setTimeout(() => shown = false, 6000)"
+            x-show="shown"
+            x-transition
+            role="status"
+            aria-live="polite"
+            class="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-semibold text-emerald-800 shadow-sm dark:border-emerald-500/30 dark:bg-emerald-500/10 dark:text-emerald-100"
+            style="display: none;"
+        >
+            Profil berhasil disimpan. Nama dan alamat email terbaru sudah diperbarui.
+        </div>
     </form>
 </section>

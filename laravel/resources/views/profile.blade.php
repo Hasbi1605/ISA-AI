@@ -29,13 +29,13 @@
             </div>
 
             <div class="pointer-events-none absolute inset-0 z-0 overflow-hidden">
-                <div class="animate-float-slow absolute left-1/4 top-1/4 h-64 w-64 cursor-pointer rounded-full bg-yellow-400/20 mix-blend-overlay blur-3xl"></div>
-                    <div class="animate-float-reverse absolute bottom-1/4 right-1/4 h-80 w-80 cursor-pointer rounded-full bg-rose-500/10 mix-blend-multiply blur-3xl dark:mix-blend-screen"></div>
+                <div class="animate-float-slow absolute left-1/4 top-1/4 h-64 w-64 rounded-full bg-yellow-400/20 mix-blend-overlay blur-3xl"></div>
+                    <div class="animate-float-reverse absolute bottom-1/4 right-1/4 h-80 w-80 rounded-full bg-rose-500/10 mix-blend-multiply blur-3xl dark:mix-blend-screen"></div>
 
-                <div class="animate-twinkle absolute left-20 top-10 h-2 w-2 cursor-pointer rounded-full bg-yellow-500 blur-[1px]" style="animation-delay: 0s"></div>
-                <div class="animate-twinkle absolute bottom-20 right-10 h-3 w-3 cursor-pointer rounded-full bg-rose-400 blur-[2px]" style="animation-delay: 1s"></div>
-                <div class="animate-twinkle absolute left-10 top-1/2 h-1.5 w-1.5 cursor-pointer rounded-full bg-white blur-[1px]" style="animation-delay: 2s"></div>
-                <div class="animate-twinkle absolute right-1/3 top-20 h-2 w-2 cursor-pointer rounded-full bg-yellow-600/60 blur-[1px]" style="animation-delay: 1.5s"></div>
+                <div class="animate-twinkle absolute left-20 top-10 h-2 w-2 rounded-full bg-yellow-500 blur-[1px]" style="animation-delay: 0s"></div>
+                <div class="animate-twinkle absolute bottom-20 right-10 h-3 w-3 rounded-full bg-rose-400 blur-[2px]" style="animation-delay: 1s"></div>
+                <div class="animate-twinkle absolute left-10 top-1/2 h-1.5 w-1.5 rounded-full bg-white blur-[1px]" style="animation-delay: 2s"></div>
+                <div class="animate-twinkle absolute right-1/3 top-20 h-2 w-2 rounded-full bg-yellow-600/60 blur-[1px]" style="animation-delay: 1.5s"></div>
             </div>
 
             <header class="ista-navbar">
@@ -59,7 +59,7 @@
             </header>
 
             <main class="relative z-10 mx-auto flex min-h-[calc(100vh-136px)] w-full max-w-[640px] flex-col items-center pt-8 pb-20 px-5 sm:px-10 font-sans">
-                <div class="w-full" x-data="{ activeTab: 'profile' }">
+                <div class="w-full" x-data="{ activeTab: 'profile', tabs: ['profile', 'password', 'delete'], selectTab(tab) { this.activeTab = tab; this.$nextTick(() => document.getElementById(`${tab}-tab`)?.focus()); }, moveTab(delta) { const current = this.tabs.indexOf(this.activeTab); const next = (current + delta + this.tabs.length) % this.tabs.length; this.selectTab(this.tabs[next]); } }">
                     <div class="group/card ista-glass-card">
                         <div class="absolute inset-0 z-0 -translate-x-[200%] bg-gradient-to-tr from-white/0 via-white/40 to-white/0 group-hover/card:animate-[shimmer_1s_ease-out]"></div>
 
@@ -71,20 +71,20 @@
                         </div>
 
                         <!-- Tab Navigation -->
-                        <div class="relative z-20 flex border-b border-white/30 px-4 mt-2 dark:border-gray-700/80">
-                            <button @click="activeTab = 'profile'"
+                        <div class="relative z-20 flex border-b border-white/30 px-4 mt-2 dark:border-gray-700/80" role="tablist" aria-label="Pengaturan profil">
+                            <button @click="selectTab('profile')" @keydown.arrow-right.prevent="moveTab(1)" @keydown.arrow-left.prevent="moveTab(-1)" role="tab" id="profile-tab" aria-controls="profile-panel" :aria-selected="activeTab === 'profile' ? 'true' : 'false'" :tabindex="activeTab === 'profile' ? 0 : -1"
                                      :class="{ 'border-ista-primary text-ista-primary': activeTab === 'profile', 'border-transparent text-stone-500 hover:text-stone-700 hover:border-stone-300/50 dark:text-gray-400 dark:hover:text-gray-200 dark:hover:border-gray-600': activeTab !== 'profile' }"
-                                    class="flex-1 border-b-2 px-4 py-3 text-sm font-bold transition-all duration-300 outline-none focus:outline-none focus:ring-0 focus:bg-transparent active:bg-transparent [-webkit-tap-highlight-color:transparent]">
+                                    class="flex-1 border-b-2 px-4 py-3 text-sm font-bold transition-all duration-300 outline-none focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ista-primary focus:bg-transparent active:bg-transparent [-webkit-tap-highlight-color:transparent]">
                                 Informasi Profil
                             </button>
-                            <button @click="activeTab = 'password'"
+                            <button @click="selectTab('password')" @keydown.arrow-right.prevent="moveTab(1)" @keydown.arrow-left.prevent="moveTab(-1)" role="tab" id="password-tab" aria-controls="password-panel" :aria-selected="activeTab === 'password' ? 'true' : 'false'" :tabindex="activeTab === 'password' ? 0 : -1"
                                      :class="{ 'border-ista-primary text-ista-primary': activeTab === 'password', 'border-transparent text-stone-500 hover:text-stone-700 hover:border-stone-300/50 dark:text-gray-400 dark:hover:text-gray-200 dark:hover:border-gray-600': activeTab !== 'password' }"
-                                    class="flex-1 border-b-2 px-4 py-3 text-sm font-bold transition-all duration-300 outline-none focus:outline-none focus:ring-0 focus:bg-transparent active:bg-transparent [-webkit-tap-highlight-color:transparent]">
+                                    class="flex-1 border-b-2 px-4 py-3 text-sm font-bold transition-all duration-300 outline-none focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ista-primary focus:bg-transparent active:bg-transparent [-webkit-tap-highlight-color:transparent]">
                                 Ubah Kata Sandi
                             </button>
-                            <button @click="activeTab = 'delete'"
+                            <button @click="selectTab('delete')" @keydown.arrow-right.prevent="moveTab(1)" @keydown.arrow-left.prevent="moveTab(-1)" role="tab" id="delete-tab" aria-controls="delete-panel" :aria-selected="activeTab === 'delete' ? 'true' : 'false'" :tabindex="activeTab === 'delete' ? 0 : -1"
                                      :class="{ 'border-ista-primary text-ista-primary': activeTab === 'delete', 'border-transparent text-stone-500 hover:text-stone-700 hover:border-stone-300/50 dark:text-gray-400 dark:hover:text-gray-200 dark:hover:border-gray-600': activeTab !== 'delete' }"
-                                    class="flex-1 border-b-2 px-4 py-3 text-sm font-bold transition-all duration-300 outline-none focus:outline-none focus:ring-0 focus:bg-transparent active:bg-transparent [-webkit-tap-highlight-color:transparent]">
+                                    class="flex-1 border-b-2 px-4 py-3 text-sm font-bold transition-all duration-300 outline-none focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ista-primary focus:bg-transparent active:bg-transparent [-webkit-tap-highlight-color:transparent]">
                                 Hapus Akun
                             </button>
                         </div>
@@ -92,7 +92,7 @@
                         <!-- Tab Contents -->
                         <div class="relative z-20 p-6 sm:p-10 min-h-[420px]">
                             <!-- Profile Information Form -->
-                            <div x-show="activeTab === 'profile'"
+                            <div x-show="activeTab === 'profile'" role="tabpanel" id="profile-panel" aria-labelledby="profile-tab"
                                  x-transition:enter="transition ease-out duration-300"
                                  x-transition:enter-start="opacity-0 translate-y-4"
                                  x-transition:enter-end="opacity-100 translate-y-0"
@@ -101,7 +101,7 @@
                             </div>
 
                             <!-- Update Password Form -->
-                            <div x-show="activeTab === 'password'"
+                            <div x-show="activeTab === 'password'" role="tabpanel" id="password-panel" aria-labelledby="password-tab"
                                  x-transition:enter="transition ease-out duration-300"
                                  x-transition:enter-start="opacity-0 translate-y-4"
                                  x-transition:enter-end="opacity-100 translate-y-0"
@@ -110,7 +110,7 @@
                             </div>
 
                             <!-- Delete User Form -->
-                            <div x-show="activeTab === 'delete'"
+                            <div x-show="activeTab === 'delete'" role="tabpanel" id="delete-panel" aria-labelledby="delete-tab"
                                  x-transition:enter="transition ease-out duration-300"
                                  x-transition:enter-start="opacity-0 translate-y-4"
                                  x-transition:enter-end="opacity-100 translate-y-0"

@@ -30,7 +30,7 @@
     </div>
 
     <div class="animate-enter-3 group space-y-2">
-        <label for="register_password" class="ml-1 cursor-text text-[13px] font-bold text-stone-600 transition-all duration-300 group-focus-within:translate-x-1 group-focus-within:text-rose-900">Kata sandi</label>
+        <label for="register_password" class="ml-1 cursor-text text-[13px] font-bold text-stone-600 transition-all duration-300 group-focus-within:translate-x-1 group-focus-within:text-rose-900">Kata Sandi</label>
         <div class="relative transform transition-transform duration-300 group-focus-within:scale-[1.01]">
             <div class="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-5">
                 <svg class="h-5 w-5 text-stone-500 transition-colors duration-300 group-focus-within:text-rose-700" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -45,7 +45,7 @@
     </div>
 
     <div class="animate-enter-4 group space-y-2">
-        <label for="register_password_confirmation" class="ml-1 cursor-text text-[13px] font-bold text-stone-600 transition-all duration-300 group-focus-within:translate-x-1 group-focus-within:text-rose-900">Konfirmasi Kata sandi</label>
+        <label for="register_password_confirmation" class="ml-1 cursor-text text-[13px] font-bold text-stone-600 transition-all duration-300 group-focus-within:translate-x-1 group-focus-within:text-rose-900">Konfirmasi Kata Sandi</label>
         <div class="relative transform transition-transform duration-300 group-focus-within:scale-[1.01]">
             <div class="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-5">
                 <svg class="h-5 w-5 text-stone-500 transition-colors duration-300 group-focus-within:text-rose-700" fill="none" viewBox="0 0 24 24" stroke="currentColor">

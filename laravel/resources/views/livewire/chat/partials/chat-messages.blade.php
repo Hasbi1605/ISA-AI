@@ -5,7 +5,8 @@
      x-on:message-streamed.window="scrollToBottom()"
      x-on:message-send.window="optimisticUserMessage = $event.detail.text; isSwitchingConversation = false; startStreamingPlaceholder($event.detail.loadingContext || 'general'); scrollToBottom(true)"
      x-on:conversation-loading.window="isSwitchingConversation = true; optimisticUserMessage = ''; resetStreamingState()"
-     x-on:conversation-loaded.window="isSwitchingConversation = false; resetStreamingState(); $nextTick(() => { maybeRestorePendingPlaceholder(); scrollToBottom(); })">
+     x-on:conversation-loaded.window="isSwitchingConversation = false; resetStreamingState(); $nextTick(() => { maybeRestorePendingPlaceholder(); scrollToBottom(); })"
+     data-chat-messages-ready="true">
     <div class="hidden"
          data-chat-conversation-id="{{ $currentConversationId ?? '' }}"
          data-chat-last-message-role="{{ !empty($messages) ? ($messages[array_key_last($messages)]['role'] ?? '') : '' }}"
@@ -297,6 +298,15 @@
     @endforeach
     @endif
 
+    <div x-show="isSwitchingConversation" x-transition.opacity class="px-2 sm:px-8" role="status" aria-live="polite" style="display: none;">
+        <span class="sr-only">Memuat chat.</span>
+        <div class="inline-flex items-center gap-1.5 rounded-full border border-stone-200/70 bg-white/75 px-3 py-2 text-stone-400 shadow-sm backdrop-blur-sm dark:border-gray-800 dark:bg-gray-900/75 dark:text-gray-500" aria-hidden="true">
+            <span class="h-1.5 w-1.5 animate-bounce rounded-full bg-current [animation-delay:-0.2s]"></span>
+            <span class="h-1.5 w-1.5 animate-bounce rounded-full bg-current [animation-delay:-0.1s]"></span>
+            <span class="h-1.5 w-1.5 animate-bounce rounded-full bg-current"></span>
+        </div>
+    </div>
+
     <template x-if="optimisticUserMessage">
         <div class="flex justify-end">
             <div class="w-full sm:max-w-3xl flex items-start gap-4 px-2 sm:px-8 flex-row-reverse">
@@ -356,6 +366,7 @@
                         </div>
                     <p x-show="streamingText !== ''" class="whitespace-pre-wrap break-words [overflow-wrap:anywhere]" x-text="streamingText"></p>
                   </div>
+                  <p x-show="stalePendingWarning" x-transition.opacity class="mt-2 max-w-[656px] rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-[12px] font-medium text-amber-800 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-100" role="status" aria-live="polite" x-text="stalePendingWarning"></p>
 
                   <template x-if="sources && Array.isArray(sources) && sources.length > 0">
                      <div class="mt-2.5 w-full text-left"
