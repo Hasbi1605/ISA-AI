@@ -160,12 +160,8 @@
                                 </svg>
                                 <span class="min-w-0 flex-1">
                                     <span class="block truncate text-[13.2px] font-medium" title="{{ $memo->title }}">{{ $memo->title }}</span>
-                                    <span class="mt-1 flex min-w-0 flex-wrap items-center gap-x-1.5 gap-y-0.5 text-[10.5px] text-stone-400 dark:text-gray-500">
-                                        <span>{{ $memo->updated_at?->diffForHumans(short: true) }}</span>
-                                        @if ($memo->currentVersion?->version_number)
-                                            <span class="text-stone-300 dark:text-gray-600">/</span>
-                                            <span>Versi {{ $memo->currentVersion->version_number }}</span>
-                                        @endif
+                                    <span class="mt-1 block text-[10.5px] text-stone-400 dark:text-gray-500">
+                                        {{ $memo->updated_at?->diffForHumans(short: true) }}
                                     </span>
                                 </span>
                             </button>

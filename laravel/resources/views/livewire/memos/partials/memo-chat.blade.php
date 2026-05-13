@@ -67,7 +67,7 @@
                     </div>
                     <button type="button"
                             wire:click="$toggle('showMemoConfiguration')"
-                            class="shrink-0 rounded-lg border border-ista-primary/30 bg-ista-primary/5 px-3 py-2 text-[12px] font-bold text-ista-primary transition hover:bg-ista-primary hover:text-white dark:border-amber-300/30 dark:bg-amber-300/10 dark:text-amber-200 dark:hover:bg-amber-300 dark:hover:text-gray-950">
+                            class="shrink-0 rounded-lg border border-stone-200 px-2.5 py-1.5 text-[11px] font-semibold text-stone-600 transition hover:bg-stone-100 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800">
                         {{ $showMemoConfiguration ? 'Tutup konfigurasi' : 'Edit konfigurasi' }}
                     </button>
                 </div>
@@ -76,7 +76,7 @@
                         <label for="memo-version-select" class="shrink-0 text-[10.5px] font-bold uppercase tracking-wider text-stone-400 dark:text-gray-500">Versi memo</label>
                         <select id="memo-version-select"
                                 wire:change="switchMemoVersion($event.target.value)"
-                                class="min-w-0 flex-1 rounded-md border border-stone-200 bg-white px-2.5 py-1.5 text-[12px] font-semibold text-stone-700 shadow-sm focus:border-ista-primary focus:ring-1 focus:ring-ista-primary dark:border-gray-700 dark:bg-gray-800 dark:text-gray-100">
+                                class="min-w-0 flex-1 rounded-md border border-stone-200 bg-white px-2.5 py-1.5 text-[12px] font-semibold text-stone-700 shadow-sm outline-none focus:border-ista-primary focus:outline-none focus:ring-1 focus:ring-ista-primary focus-visible:outline-none dark:border-gray-700 dark:bg-gray-800 dark:text-gray-100">
                             @foreach ($activeMemoVersions as $version)
                                 <option value="{{ $version->id }}" @selected((int) $activeMemoVersionId === (int) $version->id)>
                                     Versi {{ $version->version_number }} · {{ $version->created_at?->format('H:i') }}

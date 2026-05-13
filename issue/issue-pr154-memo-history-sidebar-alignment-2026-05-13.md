@@ -5,14 +5,14 @@ Sidebar history chat sudah memakai bucket waktu yang lebih akurat, pencarian, se
 
 ## Tujuan
 - Membuat sidebar memo terasa satu keluarga dengan sidebar chat.
-- Menjaga memo tetap berbeda sebagai workspace dokumen dengan metadata waktu dan versi.
+- Menjaga memo tetap berbeda sebagai workspace dokumen dengan metadata waktu yang ringkas.
 - Memakai bucket waktu yang tidak overlap: `Hari Ini`, `7 Hari Terakhir`, `30 Hari Terakhir`, `Lebih Lama`.
 - Menambahkan pencarian memo dan kontrol buka/tutup section lama.
 
 ## Ruang Lingkup
 1. Update `memo-history-sidebar.blade.php` untuk bucket waktu, search, collapse, dan tombol `Lihat semua` / `Ringkas`.
 2. Tambahkan state Alpine memo history di `chat-page.js`.
-3. Pertahankan item memo dengan ikon dokumen, judul, waktu update, dan info versi bila tersedia.
+3. Pertahankan item memo dengan ikon dokumen, judul, dan waktu update tanpa metadata versi agar sidebar tetap ringan.
 4. Update test MemoWorkspace agar kontrak UI memo history tercakup.
 
 ## Di Luar Scope
@@ -29,13 +29,13 @@ Sidebar history chat sudah memakai bucket waktu yang lebih akurat, pencarian, se
 ## Risiko
 - Search dan collapse memo perlu tetap aman saat Livewire re-render.
 - Memo aktif harus tetap terlihat saat berada di bucket lama.
-- Metadata versi harus tidak memicu error jika memo belum memiliki current version.
+- Sidebar memo harus tetap ringkas meskipun memo memiliki banyak versi.
 
 ## Langkah Implementasi
 1. Hitung bucket memo dengan timezone `Asia/Jakarta`.
 2. Tambahkan search input `Cari memo...` dengan style search chat yang sudah dirapikan.
 3. Tambahkan state Alpine `memoHistory` untuk search, collapse, persist section, dan active section auto-open.
-4. Tampilkan `Versi N` jika current version tersedia.
+4. Jangan tampilkan `Versi N` di item history sidebar.
 5. Update test render memo workspace untuk bucket/search/collapse dan tanpa count kategori.
 
 ## Rencana Test
