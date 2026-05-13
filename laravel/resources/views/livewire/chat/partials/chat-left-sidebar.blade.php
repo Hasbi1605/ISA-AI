@@ -95,13 +95,8 @@
                 type="search"
                 x-model.debounce.150ms="historySearch"
                 placeholder="Cari riwayat..."
-                class="h-9 w-full rounded-lg border border-stone-200/70 bg-white pl-9 pr-8 text-[12.5px] text-gray-700 placeholder:text-[#94A3B8] focus:border-ista-primary focus:ring-1 focus:ring-ista-primary dark:border-[#334155] dark:bg-transparent dark:text-gray-100 dark:placeholder:text-[#64748B]"
+                class="h-9 w-full rounded-lg border border-stone-200/70 bg-white pl-9 pr-8 text-[12.5px] text-gray-700 outline-none placeholder:text-[#94A3B8] focus:border-ista-primary focus:outline-none focus:ring-2 focus:ring-ista-primary/15 dark:border-[#334155] dark:bg-transparent dark:text-gray-100 dark:placeholder:text-[#64748B]"
             >
-            <button type="button" x-show="historySearch" x-transition.opacity @click="clearHistorySearch()" class="absolute right-2 top-1/2 -translate-y-1/2 rounded-md p-1 text-[#94A3B8] transition-colors hover:bg-stone-100 hover:text-gray-600 dark:text-[#64748B] dark:hover:bg-gray-800 dark:hover:text-gray-200" aria-label="Bersihkan pencarian riwayat" style="display: none;">
-                <svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18 18 6M6 6l12 12" />
-                </svg>
-            </button>
         </div>
 
         @if ($hasFoldedHistory)
