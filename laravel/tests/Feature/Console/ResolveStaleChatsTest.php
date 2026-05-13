@@ -138,6 +138,40 @@ class ResolveStaleChatsTest extends TestCase
         );
     }
 
+    public function test_command_resolves_multiple_stale_conversations_for_same_user(): void
+    {
+        $user = User::factory()->create();
+
+        // Two stale conversations for the same user
+        $conv1 = Conversation::create(['user_id' => $user->id, 'title' => 'Stale conv 1']);
+        $conv2 = Conversation::create(['user_id' => $user->id, 'title' => 'Stale conv 2']);
+
+        foreach ([$conv1, $conv2] as $conv) {
+            $msg = Message::create([
+                'conversation_id' => $conv->id,
+                'role' => 'user',
+                'content' => 'Pesan stale',
+            ]);
+            Message::withoutTimestamps(fn () => $msg->forceFill([
+                'created_at' => now()->subMinutes(11),
+                'updated_at' => now()->subMinutes(11),
+            ])->save());
+        }
+
+        $this->artisan('chat:resolve-stale-responses', ['--minutes' => 10])
+            ->expectsOutput('Resolved 2 stale chat response(s) older than 10 minute(s).')
+            ->assertExitCode(0);
+
+        // Both conversations must have an error message
+        foreach ([$conv1, $conv2] as $conv) {
+            $this->assertDatabaseHas('messages', [
+                'conversation_id' => $conv->id,
+                'role' => 'assistant',
+                'is_error' => true,
+            ]);
+        }
+    }
+
     public function test_stale_chat_resolve_is_registered_in_schedule(): void
     {
         $this->artisan('schedule:list')

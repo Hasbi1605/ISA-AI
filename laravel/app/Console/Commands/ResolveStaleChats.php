@@ -29,7 +29,9 @@ class ResolveStaleChats extends Command
         // Find conversations whose latest message is a user message older than
         // the cutoff, with no assistant message after it.
         // We use a subquery to avoid loading all messages into memory.
-        $staleConversationIds = Conversation::query()
+        // Use get(['id', 'user_id']) instead of pluck('id', 'user_id') to avoid
+        // key collision when one user has multiple stale conversations.
+        $staleConversations = Conversation::query()
             ->whereExists(function ($query) use ($cutoff) {
                 $query->select(DB::raw(1))
                     ->from('messages as m')
@@ -44,9 +46,9 @@ class ResolveStaleChats extends Command
                             ->whereColumn('m2.created_at', '>', 'm.created_at');
                     });
             })
-            ->pluck('id', 'user_id');
+            ->get(['id', 'user_id']);
 
-        if ($staleConversationIds->isEmpty()) {
+        if ($staleConversations->isEmpty()) {
             $this->info('No stale chat responses found.');
 
             return self::SUCCESS;
@@ -54,7 +56,9 @@ class ResolveStaleChats extends Command
 
         $resolved = 0;
 
-        foreach ($staleConversationIds as $userId => $conversationId) {
+        foreach ($staleConversations as $conversation) {
+            $conversationId = (int) $conversation->id;
+            $userId = (int) $conversation->user_id;
             try {
                 $result = $orchestrator->saveErrorMessage(
                     (int) $conversationId,
@@ -81,7 +85,6 @@ class ResolveStaleChats extends Command
         }
 
         $this->info("Resolved {$resolved} stale chat response(s) older than {$minutes} minute(s).");
-
         Log::info('ResolveStaleChats completed', [
             'resolved' => $resolved,
             'minutes_threshold' => $minutes,
