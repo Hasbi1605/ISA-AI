@@ -11,3 +11,8 @@ Artisan::command('inspire', function () {
 Schedule::command('documents:purge-deleted --days=7')
     ->dailyAt('03:00')
     ->withoutOverlapping();
+
+Schedule::command('chat:resolve-stale-responses --minutes=10')
+    ->everyMinute()
+    ->withoutOverlapping()
+    ->runInBackground();
