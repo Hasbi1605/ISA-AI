@@ -197,6 +197,28 @@ class ChatOrchestrationService
         }
     }
 
+    public function saveErrorMessage(int $conversationId, string $content, int $userId): ?Message
+    {
+        if (! $this->conversationExists($conversationId, $userId)) {
+            return null;
+        }
+
+        try {
+            return Message::create([
+                'conversation_id' => $conversationId,
+                'role' => 'assistant',
+                'content' => $content,
+                'is_error' => true,
+            ]);
+        } catch (QueryException $e) {
+            if ($this->isConversationFkViolation($e)) {
+                return null;
+            }
+
+            throw $e;
+        }
+    }
+
     protected function conversationExists(int $conversationId, int $userId): bool
     {
         return Conversation::query()

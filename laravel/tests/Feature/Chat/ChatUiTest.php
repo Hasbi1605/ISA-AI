@@ -278,10 +278,10 @@ class ChatUiTest extends TestCase
             'user_id' => $user->id,
             'title' => 'Older history hook test',
         ]);
-        $olderConversation->forceFill([
-            'created_at' => now('Asia/Jakarta')->subDay(),
-            'updated_at' => now('Asia/Jakarta')->subDay(),
-        ])->save();
+        Conversation::withoutTimestamps(fn () => $olderConversation->forceFill([
+            'created_at' => now('Asia/Jakarta')->subDays(2),
+            'updated_at' => now('Asia/Jakarta')->subDays(2),
+        ])->save());
         $pendingConversation = Conversation::create([
             'user_id' => $user->id,
             'title' => 'Pending history test',
@@ -478,6 +478,77 @@ class ChatUiTest extends TestCase
             'role' => 'assistant',
             'content' => 'Maaf, jawaban gagal diproses. Silakan coba kirim ulang.',
         ]);
+    }
+
+    public function test_generate_chat_response_saves_error_message_when_ai_service_returns_sentinel(): void
+    {
+        $user = User::factory()->create();
+
+        $conversation = Conversation::create([
+            'user_id' => $user->id,
+            'title' => 'Conversation untuk error sentinel test',
+        ]);
+
+        $this->app->bind(AIService::class, fn () => new class extends AIService
+        {
+            public function sendChat(array $messages, ?array $document_filenames = null, ?string $user_id = null, bool $force_web_search = false, ?string $source_policy = null, bool $allow_auto_realtime_web = true): \Generator
+            {
+                yield AIService::ERROR_SENTINEL.'❌ Kesalahan sistem saat menghubungi otak AI. Silakan coba lagi nanti.';
+            }
+        });
+
+        $job = new GenerateChatResponse(
+            conversationId: (int) $conversation->id,
+            userId: (int) $user->id,
+            history: [['role' => 'user', 'content' => 'Pesan user']],
+        );
+
+        $job->handle(app(AIService::class), new ChatOrchestrationService);
+
+        // Harus tersimpan sebagai is_error=true, bukan jawaban normal
+        $this->assertDatabaseHas('messages', [
+            'conversation_id' => $conversation->id,
+            'role' => 'assistant',
+            'content' => '❌ Kesalahan sistem saat menghubungi otak AI. Silakan coba lagi nanti.',
+            'is_error' => true,
+        ]);
+
+        // Tidak boleh ada pesan normal (is_error=false) dengan konten error
+        $this->assertDatabaseMissing('messages', [
+            'conversation_id' => $conversation->id,
+            'role' => 'assistant',
+            'is_error' => false,
+            'content' => '❌ Kesalahan sistem saat menghubungi otak AI. Silakan coba lagi nanti.',
+        ]);
+    }
+
+    public function test_message_is_error_is_cast_to_boolean(): void
+    {
+        $user = User::factory()->create();
+        $conversation = Conversation::create([
+            'user_id' => $user->id,
+            'title' => 'Cast test',
+        ]);
+
+        $errorMessage = \App\Models\Message::create([
+            'conversation_id' => $conversation->id,
+            'role' => 'assistant',
+            'content' => 'Error message',
+            'is_error' => true,
+        ]);
+
+        $normalMessage = \App\Models\Message::create([
+            'conversation_id' => $conversation->id,
+            'role' => 'assistant',
+            'content' => 'Normal message',
+            'is_error' => false,
+        ]);
+
+        // Harus selalu boolean, bukan int atau string
+        $this->assertIsBool($errorMessage->fresh()->is_error);
+        $this->assertIsBool($normalMessage->fresh()->is_error);
+        $this->assertTrue($errorMessage->fresh()->is_error);
+        $this->assertFalse($normalMessage->fresh()->is_error);
     }
 
     public function test_generate_chat_response_persists_assistant_message_to_origin_conversation(): void
