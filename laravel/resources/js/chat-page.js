@@ -510,7 +510,14 @@ const registerChatPageData = (Alpine) => {
 
     Alpine.data('chatHistory', (config = {}) => ({
         activeConversationId: config.activeConversationId ? Number(config.activeConversationId) : null,
-        showOlderChats: config.showOlderChats || false,
+        openHistorySections: {
+            seven: Boolean(config.openHistorySections?.seven || config.showOlderChats),
+            thirty: Boolean(config.openHistorySections?.thirty),
+            older: Boolean(config.openHistorySections?.older),
+        },
+        showAllHistory: false,
+        historySearch: '',
+        historyTitles: (config.historyTitles || []).map((title) => String(title || '')),
         pendingConversationIds: (config.pendingConversationIds || []).map((id) => Number(id)).filter(Boolean),
         completedConversationIds: loadStoredConversationIds(CHAT_COMPLETED_STORAGE_KEY),
         loadingConversationId: null,
@@ -567,6 +574,61 @@ const registerChatPageData = (Alpine) => {
             const conversationId = Number(id);
 
             return !this.isPending(conversationId) && this.completedConversationIds.includes(conversationId);
+        },
+
+        normalizedHistorySearch() {
+            return String(this.historySearch || '').trim().toLowerCase();
+        },
+
+        isSearchingHistory() {
+            return this.normalizedHistorySearch().length > 0;
+        },
+
+        isHistoryVisible(title) {
+            const search = this.normalizedHistorySearch();
+            if (!search) {
+                return true;
+            }
+
+            return String(title || '').toLowerCase().includes(search);
+        },
+
+        hasHistorySearchResults() {
+            const search = this.normalizedHistorySearch();
+            if (!search) {
+                return true;
+            }
+
+            return this.historyTitles.some((title) => String(title || '').toLowerCase().includes(search));
+        },
+
+        clearHistorySearch() {
+            this.historySearch = '';
+        },
+
+        isHistorySectionOpen(section) {
+            return this.isSearchingHistory() || this.showAllHistory || Boolean(this.openHistorySections?.[section]);
+        },
+
+        toggleHistorySection(section) {
+            if (!section) {
+                return;
+            }
+
+            this.openHistorySections = {
+                ...this.openHistorySections,
+                [section]: !this.openHistorySections?.[section],
+            };
+        },
+
+        toggleAllHistory() {
+            this.showAllHistory = !this.showAllHistory;
+        },
+
+        sectionHasActivity(ids) {
+            const sectionIds = (ids || []).map((id) => Number(id)).filter(Boolean);
+
+            return sectionIds.some((id) => this.isPending(id) || this.isCompleteUnread(id));
         },
 
         markConversationPending(id) {

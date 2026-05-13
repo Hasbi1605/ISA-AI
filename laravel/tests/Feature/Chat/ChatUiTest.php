@@ -274,6 +274,14 @@ class ChatUiTest extends TestCase
             'user_id' => $user->id,
             'title' => 'History test',
         ]);
+        $olderConversation = Conversation::create([
+            'user_id' => $user->id,
+            'title' => 'Older history hook test',
+        ]);
+        $olderConversation->forceFill([
+            'created_at' => now('Asia/Jakarta')->subDay(),
+            'updated_at' => now('Asia/Jakarta')->subDay(),
+        ])->save();
         $pendingConversation = Conversation::create([
             'user_id' => $user->id,
             'title' => 'Pending history test',
@@ -293,6 +301,10 @@ class ChatUiTest extends TestCase
         $this->assertStringContainsString('this.activeConversationId === conversationId', $chatPageJs);
         $this->assertStringContainsString('this.markConversationRead(this.activeConversationId)', $chatPageJs);
         $this->assertStringContainsString('window.history.pushState', $chatPageJs);
+        $this->assertStringContainsString('openHistorySections', $chatPageJs);
+        $this->assertStringContainsString('historySearch', $chatPageJs);
+        $this->assertStringContainsString('toggleAllHistory', $chatPageJs);
+        $this->assertStringContainsString('sectionHasActivity', $chatPageJs);
 
         $response
             ->assertOk()
@@ -317,6 +329,11 @@ class ChatUiTest extends TestCase
             ->assertSee('navigateToNewChat($event)', false)
             ->assertSee('chat-history-item', false)
             ->assertSee('wire:key="chat-history-visible-', false)
+            ->assertSee('Cari riwayat...', false)
+            ->assertSee('Lihat semua', false)
+            ->assertSee('data-chat-history-section=', false)
+            ->assertSee('x-show="isHistorySectionOpen(', false)
+            ->assertSee('sectionHasActivity(', false)
             ->assertSee('openGoogleDrivePicker()', false)
             ->assertSee('open-google-drive-picker', false)
             ->assertSee('Ambil dokumen dari Google Drive Kantor', false)
@@ -798,14 +815,43 @@ class ChatUiTest extends TestCase
                 'updated_at' => Carbon::now('Asia/Jakarta')->subDay(),
             ])->save();
 
+            $thirtyDayConversation = Conversation::create([
+                'user_id' => $user->id,
+                'title' => 'Percakapan sepuluh hari lalu',
+            ]);
+            $thirtyDayConversation->forceFill([
+                'created_at' => Carbon::now('Asia/Jakarta')->subDays(10),
+                'updated_at' => Carbon::now('Asia/Jakarta')->subDays(10),
+            ])->save();
+
+            $olderThanThirtyConversation = Conversation::create([
+                'user_id' => $user->id,
+                'title' => 'Percakapan empat puluh hari lalu',
+            ]);
+            $olderThanThirtyConversation->forceFill([
+                'created_at' => Carbon::now('Asia/Jakarta')->subDays(40),
+                'updated_at' => Carbon::now('Asia/Jakarta')->subDays(40),
+            ])->save();
+
             $response = $this->actingAs($user)->get('/chat');
 
             $response
                 ->assertOk()
-                ->assertSee('Hari Ini', false)
+                ->assertSee('Hari Ini · 1', false)
                 ->assertSee('Percakapan hari ini', false)
-                ->assertSee('7 Hari Terakhir', false)
-                ->assertSee('Percakapan kemarin', false);
+                ->assertSee('7 Hari Terakhir · 1', false)
+                ->assertSee('Percakapan kemarin', false)
+                ->assertSee('30 Hari Terakhir · 1', false)
+                ->assertSee('Percakapan sepuluh hari lalu', false)
+                ->assertSee('Lebih Lama · 1', false)
+                ->assertSee('Percakapan empat puluh hari lalu', false)
+                ->assertSee('Cari riwayat...', false)
+                ->assertSee('Lihat semua', false)
+                ->assertSee('id="chat-history-section-seven"', false)
+                ->assertSee('id="chat-history-section-thirty"', false)
+                ->assertSee('id="chat-history-section-older"', false)
+                ->assertSee('style="display: none;"', false)
+                ->assertSee('Tidak ada riwayat yang cocok.', false);
         } finally {
             Carbon::setTestNow();
         }
