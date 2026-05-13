@@ -180,9 +180,9 @@ class ChatOrchestrationService
         return trim($cleanContent);
     }
 
-    public function saveAssistantMessage(int $conversationId, string $content): ?Message
+    public function saveAssistantMessage(int $conversationId, string $content, int $userId): ?Message
     {
-        if (! $this->conversationExists($conversationId)) {
+        if (! $this->conversationExists($conversationId, $userId)) {
             return null;
         }
 
@@ -197,11 +197,11 @@ class ChatOrchestrationService
         }
     }
 
-    protected function conversationExists(int $conversationId): bool
+    protected function conversationExists(int $conversationId, int $userId): bool
     {
         return Conversation::query()
             ->whereKey($conversationId)
-            ->where('user_id', Auth::id())
+            ->where('user_id', $userId)
             ->exists();
     }
 

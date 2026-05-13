@@ -458,7 +458,7 @@ class ChatUiTest extends TestCase
     {
         $service = new class extends ChatOrchestrationService
         {
-            protected function conversationExists(int $conversationId): bool
+            protected function conversationExists(int $conversationId, int $userId): bool
             {
                 return true;
             }
@@ -477,12 +477,12 @@ class ChatUiTest extends TestCase
             }
         };
 
-        $result = $service->saveAssistantMessage(999999, 'Assistant response');
+        $result = $service->saveAssistantMessage(999999, 'Assistant response', 1);
 
         $this->assertNull($result);
     }
 
-    public function test_save_assistant_message_returns_null_for_conversation_not_owned_by_current_user(): void
+    public function test_save_assistant_message_returns_null_for_conversation_not_owned_by_caller(): void
     {
         $owner = User::factory()->create();
         $otherUser = User::factory()->create();
@@ -492,17 +492,41 @@ class ChatUiTest extends TestCase
             'title' => 'Owned by owner',
         ]);
 
-        $this->actingAs($otherUser);
-
         $service = new ChatOrchestrationService;
 
-        $result = $service->saveAssistantMessage($conversation->id, 'Assistant response should be blocked');
+        // Pass otherUser's ID explicitly — should be blocked because conversation belongs to owner
+        $result = $service->saveAssistantMessage($conversation->id, 'Assistant response should be blocked', $otherUser->id);
 
         $this->assertNull($result);
         $this->assertDatabaseMissing('messages', [
             'conversation_id' => $conversation->id,
             'role' => 'assistant',
             'content' => 'Assistant response should be blocked',
+        ]);
+    }
+
+    public function test_save_assistant_message_uses_explicit_user_id_not_auth_facade(): void
+    {
+        // Verifikasi bahwa saveAssistantMessage menggunakan userId eksplisit,
+        // bukan Auth::id(). Ini memastikan job queue tetap bisa menyimpan
+        // jawaban meski Auth facade tidak ter-set dengan benar.
+        $owner = User::factory()->create();
+        $conversation = Conversation::create([
+            'user_id' => $owner->id,
+            'title' => 'Owner conversation',
+        ]);
+
+        $service = new ChatOrchestrationService;
+
+        // Tidak ada actingAs — Auth::id() adalah null
+        // Tapi pass userId eksplisit milik owner → harus berhasil simpan
+        $result = $service->saveAssistantMessage($conversation->id, 'Jawaban AI tersimpan', $owner->id);
+
+        $this->assertNotNull($result);
+        $this->assertDatabaseHas('messages', [
+            'conversation_id' => $conversation->id,
+            'role' => 'assistant',
+            'content' => 'Jawaban AI tersimpan',
         ]);
     }
 
