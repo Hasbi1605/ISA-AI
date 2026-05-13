@@ -2,7 +2,9 @@ let hasRegisteredChatPageData = false;
 const CHAT_PENDING_STORAGE_KEY = 'ista.chat.pendingResponses.v1';
 const CHAT_COMPLETED_STORAGE_KEY = 'ista.chat.completedResponses.v1';
 const CHAT_HISTORY_SECTIONS_STORAGE_KEY = 'ista.chat.historySections.v1';
+const MEMO_HISTORY_SECTIONS_STORAGE_KEY = 'ista.memo.historySections.v1';
 const CHAT_HISTORY_SECTION_KEYS = ['seven', 'thirty', 'older'];
+const MEMO_HISTORY_SECTION_KEYS = ['seven', 'thirty', 'older'];
 const CHAT_PENDING_MARKER_TTL_MS = 10 * 60 * 1000;
 const CHAT_PENDING_RECENT_TTL_MS = 3 * 60 * 1000;
 const CHAT_PENDING_STALE_WARNING_MS = 45 * 1000;
@@ -14,6 +16,11 @@ const normalizeConversationIds = (ids = []) => [...new Set((ids || [])
     .filter((id) => Number.isFinite(id) && id > 0))];
 
 const normalizeHistorySectionState = (sections = {}) => CHAT_HISTORY_SECTION_KEYS.reduce((state, section) => ({
+    ...state,
+    [section]: Boolean(sections?.[section]),
+}), {});
+
+const normalizeMemoHistorySectionState = (sections = {}) => MEMO_HISTORY_SECTION_KEYS.reduce((state, section) => ({
     ...state,
     [section]: Boolean(sections?.[section]),
 }), {});
@@ -30,11 +37,34 @@ const loadHistorySectionState = () => {
     }
 };
 
+const loadMemoHistorySectionState = () => {
+    try {
+        const raw = window.localStorage?.getItem(MEMO_HISTORY_SECTIONS_STORAGE_KEY);
+        if (!raw) return {};
+        const parsed = JSON.parse(raw);
+
+        return parsed && typeof parsed === 'object' ? normalizeMemoHistorySectionState(parsed) : {};
+    } catch (_) {
+        return {};
+    }
+};
+
 const saveHistorySectionState = (sections) => {
     try {
         window.localStorage?.setItem(
             CHAT_HISTORY_SECTIONS_STORAGE_KEY,
             JSON.stringify(normalizeHistorySectionState(sections)),
+        );
+    } catch (_) {
+        // ignore storage write errors
+    }
+};
+
+const saveMemoHistorySectionState = (sections) => {
+    try {
+        window.localStorage?.setItem(
+            MEMO_HISTORY_SECTIONS_STORAGE_KEY,
+            JSON.stringify(normalizeMemoHistorySectionState(sections)),
         );
     } catch (_) {
         // ignore storage write errors
@@ -48,6 +78,16 @@ const initialHistorySectionState = (config = {}) => {
     return CHAT_HISTORY_SECTION_KEYS.reduce((state, section) => ({
         ...state,
         [section]: Boolean(storedSections[section] || serverSections[section] || (section === 'seven' && config.showOlderChats)),
+    }), {});
+};
+
+const initialMemoHistorySectionState = (config = {}) => {
+    const storedSections = loadMemoHistorySectionState();
+    const serverSections = normalizeMemoHistorySectionState(config.openHistorySections || {});
+
+    return MEMO_HISTORY_SECTION_KEYS.reduce((state, section) => ({
+        ...state,
+        [section]: Boolean(storedSections[section] || serverSections[section]),
     }), {});
 };
 
@@ -1068,6 +1108,127 @@ const registerChatPageData = (Alpine) => {
                 this._userMessageAckedCleanup();
                 this._userMessageAckedCleanup = null;
             }
+        },
+    }));
+
+    Alpine.data('memoHistory', (config = {}) => ({
+        activeMemoId: config.activeMemoId ? Number(config.activeMemoId) : null,
+        openMemoSections: initialMemoHistorySectionState(config),
+        memoSectionKeys: (config.memoSectionKeys || MEMO_HISTORY_SECTION_KEYS).map((section) => String(section)),
+        memoSearch: '',
+        memoTitles: (config.memoTitles || []).map((title) => String(title || '')),
+
+        init() {
+            this.$nextTick(() => this.syncActiveMemoItem());
+        },
+
+        setActiveMemo(id) {
+            const memoId = id ? Number(id) : null;
+            const nextMemoId = Number.isFinite(memoId) ? memoId : null;
+
+            if (this.activeMemoId === nextMemoId) {
+                this.syncActiveMemoItem();
+                return;
+            }
+
+            this.activeMemoId = nextMemoId;
+            this.$nextTick(() => this.syncActiveMemoItem());
+        },
+
+        normalizedMemoSearch() {
+            return String(this.memoSearch || '').trim().toLowerCase();
+        },
+
+        isSearchingMemoHistory() {
+            return this.normalizedMemoSearch().length > 0;
+        },
+
+        isMemoVisible(title) {
+            const search = this.normalizedMemoSearch();
+            if (!search) {
+                return true;
+            }
+
+            return String(title || '').toLowerCase().includes(search);
+        },
+
+        hasMemoSearchResults() {
+            const search = this.normalizedMemoSearch();
+            if (!search) {
+                return true;
+            }
+
+            return this.memoTitles.some((title) => String(title || '').toLowerCase().includes(search));
+        },
+
+        availableMemoSectionKeys() {
+            return (this.memoSectionKeys || [])
+                .map((section) => String(section))
+                .filter((section) => MEMO_HISTORY_SECTION_KEYS.includes(section));
+        },
+
+        allMemoSectionsOpen() {
+            const sections = this.availableMemoSectionKeys();
+
+            return sections.length > 0 && sections.every((section) => Boolean(this.openMemoSections?.[section]));
+        },
+
+        persistOpenMemoSections() {
+            saveMemoHistorySectionState(this.openMemoSections);
+        },
+
+        isMemoSectionOpen(section) {
+            return this.isSearchingMemoHistory() || Boolean(this.openMemoSections?.[section]);
+        },
+
+        toggleMemoSection(section) {
+            if (!section) {
+                return;
+            }
+
+            this.openMemoSections = {
+                ...this.openMemoSections,
+                [section]: !this.openMemoSections?.[section],
+            };
+            this.persistOpenMemoSections();
+        },
+
+        toggleAllMemoHistory() {
+            const shouldOpen = !this.allMemoSectionsOpen();
+            const nextSections = { ...this.openMemoSections };
+
+            this.availableMemoSectionKeys().forEach((section) => {
+                nextSections[section] = shouldOpen;
+            });
+
+            this.openMemoSections = nextSections;
+            this.persistOpenMemoSections();
+        },
+
+        syncActiveMemoItem(id = this.activeMemoId) {
+            const memoId = id ? Number(id) : null;
+            this.activeMemoId = Number.isFinite(memoId) ? memoId : null;
+
+            if (!this.$root) {
+                return;
+            }
+
+            this.$root.querySelectorAll('[data-memo-history-id]').forEach((button) => {
+                const isActive = Number(button.dataset.memoHistoryId) === this.activeMemoId;
+                button.classList.toggle('is-active', isActive);
+                button.setAttribute('aria-current', isActive ? 'page' : 'false');
+
+                if (isActive) {
+                    const section = button.closest('[data-memo-history-section]')?.dataset?.memoHistorySection;
+                    if (section && MEMO_HISTORY_SECTION_KEYS.includes(section) && !this.openMemoSections?.[section]) {
+                        this.openMemoSections = {
+                            ...this.openMemoSections,
+                            [section]: true,
+                        };
+                        this.persistOpenMemoSections();
+                    }
+                }
+            });
         },
     }));
 

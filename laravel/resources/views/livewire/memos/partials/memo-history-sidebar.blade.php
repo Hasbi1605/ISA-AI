@@ -1,14 +1,60 @@
 {{-- Memo History Sidebar (Left Column) --}}
 @php
-    $memoCutoff = now()->subDays(7)->startOfDay();
+    $memoHistoryNow = now('Asia/Jakarta');
+    $memoHistoryTodayStart = $memoHistoryNow->copy()->startOfDay();
+    $memoHistorySevenDayStart = $memoHistoryTodayStart->copy()->subDays(7);
+    $memoHistoryThirtyDayStart = $memoHistoryTodayStart->copy()->subDays(30);
+    $memoUpdatedAt = fn ($memo) => $memo->updated_at?->copy()->timezone('Asia/Jakarta');
+
+    $todayMemos = $memos->filter(function ($memo) use ($memoUpdatedAt, $memoHistoryTodayStart) {
+        $updatedAt = $memoUpdatedAt($memo);
+
+        return $updatedAt && $updatedAt->greaterThanOrEqualTo($memoHistoryTodayStart);
+    });
+    $sevenDayMemos = $memos->filter(function ($memo) use ($memoUpdatedAt, $memoHistoryTodayStart, $memoHistorySevenDayStart) {
+        $updatedAt = $memoUpdatedAt($memo);
+
+        return $updatedAt && $updatedAt->lessThan($memoHistoryTodayStart) && $updatedAt->greaterThanOrEqualTo($memoHistorySevenDayStart);
+    });
+    $thirtyDayMemos = $memos->filter(function ($memo) use ($memoUpdatedAt, $memoHistorySevenDayStart, $memoHistoryThirtyDayStart) {
+        $updatedAt = $memoUpdatedAt($memo);
+
+        return $updatedAt && $updatedAt->lessThan($memoHistorySevenDayStart) && $updatedAt->greaterThanOrEqualTo($memoHistoryThirtyDayStart);
+    });
+    $olderMemos = $memos->filter(function ($memo) use ($memoUpdatedAt, $memoHistoryThirtyDayStart) {
+        $updatedAt = $memoUpdatedAt($memo);
+
+        return $updatedAt && $updatedAt->lessThan($memoHistoryThirtyDayStart);
+    });
     $memoGroups = [
-        'Hari Ini' => $memos->filter(fn ($memo) => $memo->updated_at?->isToday()),
-        '7 Hari Terakhir' => $memos->filter(fn ($memo) => $memo->updated_at && ! $memo->updated_at->isToday() && $memo->updated_at->greaterThanOrEqualTo($memoCutoff)),
-        'Lebih Lama' => $memos->filter(fn ($memo) => $memo->updated_at && $memo->updated_at->lessThan($memoCutoff)),
+        ['key' => 'today', 'label' => 'Hari Ini', 'memos' => $todayMemos, 'collapsible' => false],
+        ['key' => 'seven', 'label' => '7 Hari Terakhir', 'memos' => $sevenDayMemos, 'collapsible' => true],
+        ['key' => 'thirty', 'label' => '30 Hari Terakhir', 'memos' => $thirtyDayMemos, 'collapsible' => true],
+        ['key' => 'older', 'label' => 'Lebih Lama', 'memos' => $olderMemos, 'collapsible' => true],
     ];
+    $activeMemoHistoryId = $activeMemoId ? (int) $activeMemoId : null;
+    $openMemoSections = collect($memoGroups)
+        ->filter(fn (array $group) => $group['collapsible'])
+        ->mapWithKeys(fn (array $group) => [
+            $group['key'] => $activeMemoHistoryId
+                ? $group['memos']->contains(fn ($memo) => (int) $memo->id === $activeMemoHistoryId)
+                : false,
+        ])
+        ->all();
+    $hasFoldedMemoHistory = collect($memoGroups)
+        ->filter(fn (array $group) => $group['collapsible'] && $group['memos']->isNotEmpty())
+        ->isNotEmpty();
+    $foldedMemoSectionKeys = collect($memoGroups)
+        ->filter(fn (array $group) => $group['collapsible'] && $group['memos']->isNotEmpty())
+        ->pluck('key')
+        ->values()
+        ->all();
+    $memoTitles = $memos->pluck('title')->map(fn ($title) => (string) $title)->values()->all();
 @endphp
 
 <aside
+    x-data="memoHistory({ activeMemoId: @js($activeMemoHistoryId), openHistorySections: @js($openMemoSections), memoSectionKeys: @js($foldedMemoSectionKeys), memoTitles: @js($memoTitles) })"
+    x-effect="setActiveMemo($wire.activeMemoId)"
     :class="[
         showMemoSidebar ? 'opacity-100 translate-x-0' : 'opacity-0 -translate-x-full pointer-events-none',
         isMobile ? 'fixed left-0 top-0 h-full w-[288px] shadow-2xl border-r border-stone-200/60 dark:border-[#1E293B]' : (showMemoSidebar ? 'relative w-[288px] border-r border-stone-200/60 dark:border-[#1E293B]' : 'relative w-0 border-r border-transparent')
@@ -43,6 +89,31 @@
         </button>
     </div>
 
+    @if ($memos->isNotEmpty())
+        <div class="px-4 pb-4">
+            <div class="relative">
+                <label for="memo-history-search" class="sr-only">Cari memo</label>
+                <svg xmlns="http://www.w3.org/2000/svg" class="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-[#94A3B8] dark:text-[#64748B]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="m21 21-4.35-4.35M10.5 18a7.5 7.5 0 1 1 0-15 7.5 7.5 0 0 1 0 15Z" />
+                </svg>
+                <input
+                    id="memo-history-search"
+                    type="search"
+                    x-model.debounce.150ms="memoSearch"
+                    placeholder="Cari memo..."
+                    class="h-9 w-full rounded-lg border border-stone-200/70 bg-white pl-9 pr-8 text-[12.5px] text-gray-700 outline-none placeholder:text-[#94A3B8] focus:border-ista-primary focus:outline-none focus:ring-2 focus:ring-ista-primary/15 dark:border-[#334155] dark:bg-transparent dark:text-gray-100 dark:placeholder:text-[#64748B]"
+                >
+            </div>
+
+            @if ($hasFoldedMemoHistory)
+                <div class="mt-2 flex items-center justify-between px-1">
+                    <span class="text-[10.5px] font-semibold uppercase tracking-wider text-[#94A3B8] dark:text-[#64748B]">Riwayat</span>
+                    <button type="button" @click="toggleAllMemoHistory()" class="rounded-md px-2 py-1 text-[11px] font-semibold text-ista-primary transition-colors hover:bg-ista-primary/10 dark:text-amber-200 dark:hover:bg-amber-300/10" x-text="allMemoSectionsOpen() ? 'Ringkas' : 'Lihat semua'">Lihat semua</button>
+                </div>
+            @endif
+        </div>
+    @endif
+
     {{-- Memo List --}}
     <div class="flex-1 overflow-y-auto overflow-x-hidden px-4">
         @if ($memos->isEmpty())
@@ -51,28 +122,50 @@
                 <button type="button" wire:click="startNewMemo" class="mt-3 rounded-lg bg-ista-primary px-3 py-2 text-[12px] font-semibold text-white hover:bg-ista-dark">Buat memo pertama</button>
             </div>
         @else
-        @foreach ($memoGroups as $groupLabel => $groupMemos)
-            @continue($groupMemos->isEmpty())
+            @foreach ($memoGroups as $group)
+                @php
+                    $groupKey = $group['key'];
+                    $groupLabel = $group['label'];
+                    $groupMemos = $group['memos'];
+                    $isCollapsible = (bool) $group['collapsible'];
+                @endphp
 
-            <div class="mb-6">
-                <h3 class="text-[11.6px] font-bold text-[#64748B] dark:text-[#94A3B8] uppercase tracking-wider mb-2">{{ $groupLabel }}</h3>
-                <ul class="space-y-1">
-                    @foreach ($groupMemos as $memo)
-                        <li class="group relative" wire:key="memo-sidebar-{{ $groupLabel }}-{{ $memo->id }}">
+                @continue($isCollapsible && $groupMemos->isEmpty())
+
+                <div class="mb-6" data-memo-history-section="{{ $groupKey }}">
+                    @if ($isCollapsible)
+                        <button type="button" @click="toggleMemoSection('{{ $groupKey }}')" :aria-expanded="isMemoSectionOpen('{{ $groupKey }}') ? 'true' : 'false'" aria-controls="memo-history-section-{{ $groupKey }}" class="flex w-full items-center justify-between text-left">
+                            <span class="truncate text-[11.3px] font-bold uppercase tracking-wider text-[#64748B] dark:text-[#94A3B8]">{{ $groupLabel }}</span>
+                            <svg xmlns="http://www.w3.org/2000/svg" :class="isMemoSectionOpen('{{ $groupKey }}') ? 'rotate-180' : ''" class="h-3 w-3 text-[#64748B] dark:text-[#94A3B8] transition-transform duration-200" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" />
+                            </svg>
+                        </button>
+                        <ul id="memo-history-section-{{ $groupKey }}" x-show="isMemoSectionOpen('{{ $groupKey }}')" class="mt-2 space-y-1" style="{{ ($openMemoSections[$groupKey] ?? false) ? '' : 'display: none;' }}">
+                    @else
+                        <h3 class="text-[11.6px] font-bold text-[#64748B] dark:text-[#94A3B8] uppercase tracking-wider mb-2">{{ $groupLabel }}</h3>
+                        <ul id="memo-history-section-{{ $groupKey }}" class="space-y-1">
+                    @endif
+
+                    @forelse ($groupMemos as $memo)
+                        <li class="group relative" wire:key="memo-sidebar-{{ $groupKey }}-{{ $memo->id }}" x-show="isMemoVisible(@js($memo->title))">
                             <button
                                 type="button"
                                 wire:click="loadMemo({{ $memo->id }})"
                                 data-memo-history-id="{{ $memo->id }}"
-                                :class="{ 'is-active': $wire.activeMemoId === {{ (int) $memo->id }} }"
-                                class="chat-history-item items-start gap-2.5 py-2.5 pr-9"
+                                :class="{ 'is-active': activeMemoId === {{ (int) $memo->id }} }"
+                                class="chat-history-item items-start gap-2.5 py-2.5 pr-9 {{ (int) $activeMemoHistoryId === (int) $memo->id ? 'is-active' : '' }}"
                             >
                                 <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 mt-0.5 flex-shrink-0 text-stone-400 dark:text-gray-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
                                 </svg>
                                 <span class="min-w-0 flex-1">
                                     <span class="block truncate text-[13.2px] font-medium" title="{{ $memo->title }}">{{ $memo->title }}</span>
-                                    <span class="mt-1 block text-[10.5px] text-stone-400 dark:text-gray-500">
-                                        {{ $memo->updated_at->diffForHumans(short: true) }}
+                                    <span class="mt-1 flex min-w-0 flex-wrap items-center gap-x-1.5 gap-y-0.5 text-[10.5px] text-stone-400 dark:text-gray-500">
+                                        <span>{{ $memo->updated_at?->diffForHumans(short: true) }}</span>
+                                        @if ($memo->currentVersion?->version_number)
+                                            <span class="text-stone-300 dark:text-gray-600">/</span>
+                                            <span>Versi {{ $memo->currentVersion->version_number }}</span>
+                                        @endif
                                     </span>
                                 </span>
                             </button>
@@ -86,10 +179,20 @@
                                 </svg>
                             </button>
                         </li>
-                    @endforeach
-                </ul>
+                    @empty
+                        @if ($groupKey === 'today')
+                            <li class="rounded-lg border border-dashed border-stone-200/70 px-3 py-3 text-[12px] leading-relaxed text-stone-400 dark:border-gray-800 dark:text-gray-500">
+                                Belum ada memo hari ini.
+                            </li>
+                        @endif
+                    @endforelse
+                    </ul>
+                </div>
+            @endforeach
+
+            <div x-show="isSearchingMemoHistory() && !hasMemoSearchResults()" x-transition.opacity class="mb-6 rounded-lg border border-dashed border-stone-200/70 px-3 py-3 text-[12px] leading-relaxed text-stone-400 dark:border-gray-800 dark:text-gray-500" style="display: none;">
+                Tidak ada memo yang cocok.
             </div>
-        @endforeach
         @endif
     </div>
 

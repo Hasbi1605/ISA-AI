@@ -102,6 +102,12 @@ class MemoWorkspaceTest extends TestCase
             'created_at' => now(),
             'updated_at' => now(),
         ])->save();
+        $todayVersion = $todayMemo->versions()->create([
+            'version_number' => 1,
+            'label' => 'Versi 1',
+            'status' => Memo::STATUS_GENERATED,
+        ]);
+        $todayMemo->forceFill(['current_version_id' => $todayVersion->id])->save();
 
         $recentMemo = Memo::create([
             'user_id' => $user->id,
@@ -114,6 +120,17 @@ class MemoWorkspaceTest extends TestCase
             'updated_at' => now()->subDays(3),
         ])->save();
 
+        $monthMemo = Memo::create([
+            'user_id' => $user->id,
+            'title' => 'Memo Bulan Ini',
+            'memo_type' => 'memo_internal',
+            'status' => Memo::STATUS_GENERATED,
+        ]);
+        $monthMemo->forceFill([
+            'created_at' => now()->subDays(10),
+            'updated_at' => now()->subDays(10),
+        ])->save();
+
         $olderMemo = Memo::create([
             'user_id' => $user->id,
             'title' => 'Memo Lama',
@@ -121,28 +138,47 @@ class MemoWorkspaceTest extends TestCase
             'status' => Memo::STATUS_GENERATED,
         ]);
         $olderMemo->forceFill([
-            'created_at' => now()->subDays(10),
-            'updated_at' => now()->subDays(10),
+            'created_at' => now()->subDays(40),
+            'updated_at' => now()->subDays(40),
         ])->save();
 
         Livewire::actingAs($user)
             ->test(MemoWorkspace::class)
+            ->assertSee('memoHistory({', false)
+            ->assertSee('memoSectionKeys:', false)
+            ->assertSee('Cari memo...', false)
+            ->assertSee('Riwayat', false)
+            ->assertSee('Lihat semua', false)
             ->assertSee('Hari Ini', false)
             ->assertSee('7 Hari Terakhir', false)
+            ->assertSee('30 Hari Terakhir', false)
             ->assertSee('Lebih Lama', false)
+            ->assertSee('id="memo-history-section-seven"', false)
+            ->assertSee('id="memo-history-section-thirty"', false)
+            ->assertSee('id="memo-history-section-older"', false)
+            ->assertSee('data-memo-history-section=', false)
+            ->assertSee('x-show="isMemoSectionOpen(', false)
             ->assertSee('chat-history-item', false)
             ->assertSee('wire:click="deleteMemo', false)
             ->assertSee('data-memo-history-id=', false)
             ->assertSee('Memo Hari Ini', false)
             ->assertSee('Memo Minggu Ini', false)
+            ->assertSee('Memo Bulan Ini', false)
             ->assertSee('Memo Lama', false)
+            ->assertSee('Versi 1', false)
+            ->assertSee('Tidak ada memo yang cocok.', false)
+            ->assertDontSee('Today', false)
+            ->assertDontSee('Previous 7 Days', false)
+            ->assertDontSee('Older', false)
+            ->assertDontSee('7 Hari Terakhir ·', false)
+            ->assertDontSee('30 Hari Terakhir ·', false)
             ->assertDontSee('Memo Internal', false);
     }
 
     public function test_loading_memo_history_does_not_refresh_timestamp_or_move_sidebar_group(): void
     {
         $user = User::factory()->create(['email_verified_at' => now()]);
-        $oldTimestamp = now()->subDays(10)->setTime(9, 0);
+        $oldTimestamp = now()->subDays(40)->setTime(9, 0);
 
         Memo::create([
             'user_id' => $user->id,
