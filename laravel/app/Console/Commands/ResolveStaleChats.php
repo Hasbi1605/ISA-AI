@@ -40,6 +40,18 @@ class ResolveStaleChats extends Command
                     ->where('m.created_at', '<=', $cutoff)
                     ->whereNotExists(function ($inner) {
                         $inner->select(DB::raw(1))
+                            ->from('messages as m3')
+                            ->whereColumn('m3.conversation_id', 'm.conversation_id')
+                            ->where(function ($newer) {
+                                $newer->whereColumn('m3.created_at', '>', 'm.created_at')
+                                    ->orWhere(function ($sameTimestamp) {
+                                        $sameTimestamp->whereColumn('m3.created_at', '=', 'm.created_at')
+                                            ->whereColumn('m3.id', '>', 'm.id');
+                                    });
+                            });
+                    })
+                    ->whereNotExists(function ($inner) {
+                        $inner->select(DB::raw(1))
                             ->from('messages as m2')
                             ->whereColumn('m2.conversation_id', 'm.conversation_id')
                             ->where('m2.role', 'assistant')

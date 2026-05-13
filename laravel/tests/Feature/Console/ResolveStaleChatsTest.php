@@ -105,6 +105,45 @@ class ResolveStaleChatsTest extends TestCase
         ]);
     }
 
+    public function test_command_skips_conversation_when_latest_user_message_is_not_stale(): void
+    {
+        $user = User::factory()->create();
+        $conversation = Conversation::create([
+            'user_id' => $user->id,
+            'title' => 'Recent latest user message',
+        ]);
+
+        $oldUserMessage = Message::create([
+            'conversation_id' => $conversation->id,
+            'role' => 'user',
+            'content' => 'Pesan lama yang belum dijawab',
+        ]);
+        Message::withoutTimestamps(fn () => $oldUserMessage->forceFill([
+            'created_at' => now()->subMinutes(11),
+            'updated_at' => now()->subMinutes(11),
+        ])->save());
+
+        $recentUserMessage = Message::create([
+            'conversation_id' => $conversation->id,
+            'role' => 'user',
+            'content' => 'Pesan baru yang masih diproses',
+        ]);
+        Message::withoutTimestamps(fn () => $recentUserMessage->forceFill([
+            'created_at' => now()->subMinutes(2),
+            'updated_at' => now()->subMinutes(2),
+        ])->save());
+
+        $this->artisan('chat:resolve-stale-responses', ['--minutes' => 10])
+            ->expectsOutput('No stale chat responses found.')
+            ->assertExitCode(0);
+
+        $this->assertDatabaseMissing('messages', [
+            'conversation_id' => $conversation->id,
+            'role' => 'assistant',
+            'is_error' => true,
+        ]);
+    }
+
     public function test_command_is_idempotent(): void
     {
         $user = User::factory()->create();
