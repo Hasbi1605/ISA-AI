@@ -113,6 +113,7 @@ class ChatIndex extends Component
         $this->conversations = $user->conversations()
             ->with('latestMessage')
             ->orderBy('updated_at', 'desc')
+            ->orderBy('id', 'desc')
             ->get();
         $this->pendingConversationIds = $this->conversations
             ->filter(fn (Conversation $conversation) => $this->conversationHasPendingResponse($conversation))
