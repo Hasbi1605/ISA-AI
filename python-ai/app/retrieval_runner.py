@@ -29,6 +29,7 @@ def _run_retrieval_search_inprocess(
     filenames: List[str] | None = None,
     top_k: int = 5,
     user_id: str | None = None,
+    document_ids: List[str] | None = None,
 ) -> Tuple[List[Dict[str, Any]], bool]:
     from app.services.rag_retrieval import search_relevant_chunks
 
@@ -37,6 +38,7 @@ def _run_retrieval_search_inprocess(
         filenames,
         top_k=top_k,
         user_id=user_id,
+        document_ids=document_ids,
     )
     return list(chunks or []), bool(success)
 
@@ -46,6 +48,7 @@ def run_retrieval_search(
     filenames: List[str] | None = None,
     top_k: int = 5,
     user_id: str | None = None,
+    document_ids: List[str] | None = None,
 ) -> Tuple[List[Dict[str, Any]], bool]:
     timeout_seconds = get_env_int("DOCUMENT_RETRIEVAL_SUBPROCESS_TIMEOUT", 180)
     app_dir = os.path.dirname(os.path.dirname(__file__))
@@ -54,27 +57,33 @@ def run_retrieval_search(
 
     if not use_subprocess:
         try:
-            return _run_retrieval_search_inprocess(query, filenames, top_k=top_k, user_id=user_id)
+            return _run_retrieval_search_inprocess(
+                query, filenames, top_k=top_k, user_id=user_id, document_ids=document_ids
+            )
         except Exception:
             logger.exception("In-process retrieval failed; falling back to subprocess")
 
-    completed = subprocess.run(
-        [
-            sys.executable,
-            "-m",
-            "app.retrieval_tasks",
-            "search",
-            query,
-            filenames_json,
-            str(top_k),
-            user_id or "",
-        ],
-        cwd=app_dir,
-        capture_output=True,
-        text=True,
-        timeout=timeout_seconds,
-        check=False,
-    )
+    try:
+        completed = subprocess.run(
+            [
+                sys.executable,
+                "-m",
+                "app.retrieval_tasks",
+                "search",
+                query,
+                filenames_json,
+                str(top_k),
+                user_id or "",
+            ],
+            cwd=app_dir,
+            capture_output=True,
+            text=True,
+            timeout=timeout_seconds,
+            check=False,
+        )
+    except subprocess.TimeoutExpired:
+        logger.error("Retrieval subprocess timed out after %s seconds", timeout_seconds)
+        return [], False
 
     try:
         payload = _parse_search_payload(completed.stdout)

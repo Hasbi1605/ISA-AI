@@ -566,6 +566,16 @@ class ChatIndex extends Component
 
         $conversationIdForRequest = (int) $this->currentConversationId;
 
+        if ($conversationIdForRequest) {
+            $activeConversation = Conversation::query()
+                ->with('latestMessage')
+                ->find($conversationIdForRequest);
+
+            if ($activeConversation !== null && $this->conversationHasPendingResponse($activeConversation)) {
+                return;
+            }
+        }
+
         $userMessageArray = $orchestrator->saveUserMessage($conversationIdForRequest, $this->prompt);
         $this->messages[] = $userMessageArray;
         $this->dispatch('user-message-acked', conversationId: $conversationIdForRequest, messageId: $userMessageArray['id'] ?? null);

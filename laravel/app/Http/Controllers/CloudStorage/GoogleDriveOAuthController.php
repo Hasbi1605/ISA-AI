@@ -9,6 +9,7 @@ use App\Support\UserFacingError;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\RateLimiter;
 
 class GoogleDriveOAuthController extends Controller
 {
@@ -17,6 +18,12 @@ class GoogleDriveOAuthController extends Controller
         if (! $oauthService->canUseSetupKey($request->query('setup_key'))) {
             abort(403, 'Setup key Google Drive tidak valid.');
         }
+
+        if (RateLimiter::tooManyAttempts('gdrive-connect:'.Auth::id(), 3)) {
+            abort(429, 'Terlalu banyak percobaan. Coba lagi nanti.');
+        }
+
+        RateLimiter::hit('gdrive-connect:'.Auth::id(), 3600);
 
         /** @var User $user */
         $user = Auth::user();

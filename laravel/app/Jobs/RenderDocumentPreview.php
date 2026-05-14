@@ -4,22 +4,20 @@ namespace App\Jobs;
 
 use App\Models\Document;
 use App\Services\Documents\DocumentPreviewRenderer;
-use Illuminate\Contracts\Queue\ShouldBeUnique;
+use Illuminate\Contracts\Queue\ShouldBeUniqueUntilProcessing;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Bus\Dispatchable;
 use Illuminate\Foundation\Queue\Queueable;
 use Illuminate\Queue\InteractsWithQueue;
 use Illuminate\Queue\SerializesModels;
 
-class RenderDocumentPreview implements ShouldBeUnique, ShouldQueue
+class RenderDocumentPreview implements ShouldBeUniqueUntilProcessing, ShouldQueue
 {
     use Dispatchable, InteractsWithQueue, Queueable, SerializesModels;
 
     public int $tries = 2;
 
     public int $timeout = 300;
-
-    public int $uniqueFor = 3600;
 
     public function __construct(public Document $document)
     {

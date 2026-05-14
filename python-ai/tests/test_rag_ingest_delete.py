@@ -50,3 +50,174 @@ def test_delete_document_vectors_scopes_filename_by_user(monkeypatch):
             {"chunk_type": "parent"},
         ],
     }]
+
+
+def test_process_document_returns_false_on_partial_batch_failure(monkeypatch, tmp_path):
+    """
+    Regression for H2: when at least one embedding batch fails during ingest,
+    process_document must return (False, ...) — not (True, ...).
+    Previously the function always returned True regardless of failed_chunks.
+    """
+    from langchain_core.documents import Document as LCDoc
+
+    # Fake embeddings that return a plausible embedding vector.
+    class FakeEmbeddings:
+        def embed_documents(self, texts):
+            return [[0.1] * 3072 for _ in texts]
+
+        def embed_query(self, text):
+            return [0.1] * 3072
+
+    # Fake Chroma whose add_documents always raises, simulating every batch
+    # failing at the embedding provider level.
+    class FakeChromaAlwaysFail:
+        def __init__(self, *a, **kw):
+            pass
+
+        def add_documents(self, *a, **kw):
+            raise Exception("Fake provider error — batch rejected")
+
+        def delete(self, *a, **kw):
+            pass
+
+        @property
+        def _collection(self):
+            return None
+
+    # Patch get_embeddings_with_fallback.
+    monkeypatch.setattr(
+        "app.services.rag_ingest.get_embeddings_with_fallback",
+        lambda *args, **kwargs: (FakeEmbeddings(), "fake-provider", 0),
+    )
+
+    # Patch the lightweight loader (imported as _load_documents_lightweight in rag_ingest).
+    monkeypatch.setattr(
+        "app.services.rag_ingest._load_documents_lightweight",
+        lambda *args, **kwargs: [LCDoc(page_content="chunk one"), LCDoc(page_content="chunk two")],
+    )
+
+    # Patch delete_document_vectors (called on re-ingest) to be a no-op.
+    monkeypatch.setattr(
+        "app.services.rag_ingest.delete_document_vectors",
+        lambda *args, **kwargs: (True, "deleted"),
+    )
+
+    # Replace the Chroma name in rag_ingest's module namespace so both
+    # the main vectorstore and the PDR parent store use the failing fake.
+    monkeypatch.setattr("app.services.rag_ingest.Chroma", FakeChromaAlwaysFail)
+
+    # Minimal temp file — content doesn't matter because the loader is patched.
+    test_file = tmp_path / "sample.txt"
+    test_file.write_text("placeholder", encoding="utf-8")
+
+    from app.services.rag_ingest import process_document
+
+    success, message = process_document(
+        str(test_file),
+        "sample.txt",
+        user_id="user-test-42",
+        document_id="99",
+    )
+
+    # H2 fix: partial failure must return (False, ...).
+    assert success is False, f"Expected False but got True with message: {message}"
+    # The message should mention chunks failing.
+    assert any(kw in message.lower() for kw in ("chunk", "gagal", "partial", "fail", "ingest"))
+
+
+def test_strict_delete_does_not_delete_by_filename(monkeypatch):
+    """
+    Regression for H3/H4: when delete_document_vectors is called with
+    document_id but cleanup_legacy=False (default / strict mode), only the
+    document_id-based filter should be applied.
+    The filename-based filter must NOT be sent — it would otherwise delete
+    vectors belonging to a newly uploaded document with the same filename.
+
+    This covers the skenario:
+    - Old 'agenda.pdf' (document_id=5) is being processed.
+    - User deletes it; user re-uploads 'agenda.pdf' (document_id=9).
+    - Old ProcessDocument job finishes and calls deleteVectorsForDocument
+      (strict = cleanup_legacy omitted / False).
+    - Only document_id=5 chunks must be removed; document_id=9 must survive.
+    """
+    from app.services.rag_ingest import delete_document_vectors
+
+    delete_calls: list = []
+
+    class FakeCollection:
+        def delete(self, where):
+            delete_calls.append({"type": "parent", "where": where})
+
+    class FakeChroma:
+        def __init__(self, collection_name, **kwargs):
+            self.collection_name = collection_name
+            self._collection = FakeCollection()
+
+        def delete(self, where):
+            delete_calls.append({"type": "main", "where": where})
+
+    monkeypatch.setattr("app.services.rag_ingest.Chroma", FakeChroma)
+    monkeypatch.setattr(
+        "app.services.rag_ingest.get_embeddings_with_fallback",
+        lambda *a, **kw: (object(), "fake", 0),
+    )
+
+    delete_document_vectors(
+        "agenda.pdf",
+        user_id="user-1",
+        document_id="5",
+        cleanup_legacy=False,   # strict mode — simulates ProcessDocument job
+    )
+
+    # Exactly one main delete call should have been issued.
+    main_deletes = [c for c in delete_calls if c["type"] == "main"]
+    assert len(main_deletes) == 1, f"Expected 1 main delete call, got {len(main_deletes)}"
+
+    # The single delete must filter by document_id, NOT by filename.
+    filter_where = str(main_deletes[0]["where"])
+    assert "document_id" in filter_where, "Delete must include document_id filter"
+    assert "filename" not in filter_where, \
+        "Strict delete must NOT filter by filename — would delete new document's vectors"
+
+
+def test_legacy_cleanup_delete_removes_both_new_and_legacy_chunks(monkeypatch):
+    """
+    Regression: when cleanup_legacy=True (user-initiated delete), both
+    document_id-based AND filename-based filters must be applied to clean
+    up legacy chunks that pre-date document_id tracking.
+    """
+    from app.services.rag_ingest import delete_document_vectors
+
+    delete_calls: list = []
+
+    class FakeCollection:
+        def delete(self, where):
+            delete_calls.append({"type": "parent", "where": where})
+
+    class FakeChroma:
+        def __init__(self, collection_name, **kwargs):
+            self.collection_name = collection_name
+            self._collection = FakeCollection()
+
+        def delete(self, where):
+            delete_calls.append({"type": "main", "where": where})
+
+    monkeypatch.setattr("app.services.rag_ingest.Chroma", FakeChroma)
+    monkeypatch.setattr(
+        "app.services.rag_ingest.get_embeddings_with_fallback",
+        lambda *a, **kw: (object(), "fake", 0),
+    )
+
+    delete_document_vectors(
+        "agenda.pdf",
+        user_id="user-1",
+        document_id="5",
+        cleanup_legacy=True,    # full cleanup — simulates user-initiated delete
+    )
+
+    main_deletes = [c for c in delete_calls if c["type"] == "main"]
+    assert len(main_deletes) == 2, f"Expected 2 main delete calls (new + legacy), got {len(main_deletes)}"
+
+    filters_str = " ".join(str(c["where"]) for c in main_deletes)
+    assert "document_id" in filters_str, "One pass must delete by document_id"
+    assert "filename" in filters_str, "One pass must delete by filename for legacy cleanup"

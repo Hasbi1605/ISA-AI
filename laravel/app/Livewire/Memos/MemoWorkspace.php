@@ -10,6 +10,7 @@ use App\Services\OnlyOffice\JwtSigner;
 use App\Services\OnlyOffice\MemoDocumentKey;
 use App\Support\UserFacingError;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\RateLimiter;
 use Illuminate\Support\Facades\URL;
 use Illuminate\Validation\ValidationException;
@@ -449,9 +450,11 @@ class MemoWorkspace extends Component
         $laravelInternalUrl = rtrim((string) config('services.onlyoffice.laravel_internal_url', config('app.url')), '/');
         $ttlMinutes = max(1, (int) config('services.onlyoffice.signed_url_ttl_minutes', 30));
         $versionId = $version?->id;
+        $ooToken = app(MemoDocumentKey::class)->generateFileToken($memo, $versionId, $ttlMinutes);
         $documentPath = URL::temporarySignedRoute('memos.file.signed', now()->addMinutes($ttlMinutes), array_filter([
             'memo' => $memo,
             'version_id' => $versionId,
+            'oo_token' => $ooToken,
         ], fn ($value) => filled($value)), false);
         $callbackPath = route('onlyoffice.callback', array_filter([
             'memo' => $memo,
@@ -1210,31 +1213,40 @@ class MemoWorkspace extends Component
             return;
         }
 
-        $memo = Memo::with('versions')
-            ->where('user_id', Auth::id())
-            ->where('id', $this->activeMemoId)
-            ->first();
+        $mergedThread = DB::transaction(function () {
+            $memo = Memo::with('versions')
+                ->lockForUpdate()
+                ->where('user_id', Auth::id())
+                ->where('id', $this->activeMemoId)
+                ->first();
 
-        if (! $memo) {
+            if (! $memo) {
+                return null;
+            }
+
+            $storedThread = $this->threadWithRevisionInstructions(
+                $this->normalizeStoredThread($memo->chat_messages ?? []),
+                $memo,
+            );
+            $currentThread = $this->threadWithRevisionInstructions(
+                $this->normalizeStoredThread($this->memoChatMessages),
+                $memo,
+            );
+            $mergedThread = $this->mergeMemoChatThreads($storedThread, $currentThread);
+
+            Memo::withoutTimestamps(fn () => Memo::where('id', $this->activeMemoId)
+                ->where('user_id', Auth::id())
+                ->update(['chat_messages' => $mergedThread]));
+
+            return $mergedThread;
+        });
+
+        if ($mergedThread === null) {
             return;
         }
 
-        $storedThread = $this->threadWithRevisionInstructions(
-            $this->normalizeStoredThread($memo->chat_messages ?? []),
-            $memo,
-        );
-        $currentThread = $this->threadWithRevisionInstructions(
-            $this->normalizeStoredThread($this->memoChatMessages),
-            $memo,
-        );
-        $mergedThread = $this->mergeMemoChatThreads($storedThread, $currentThread);
-
         $this->memoChatMessages = $mergedThread;
         $this->memoChatThreads[$this->threadKey($this->activeMemoId)] = $mergedThread;
-
-        Memo::withoutTimestamps(fn () => Memo::where('id', $this->activeMemoId)
-            ->where('user_id', Auth::id())
-            ->update(['chat_messages' => $mergedThread]));
     }
 
     protected function normalizeStoredThread(array $messages): array

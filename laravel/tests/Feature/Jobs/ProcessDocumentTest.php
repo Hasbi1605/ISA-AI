@@ -268,4 +268,54 @@ class ProcessDocumentTest extends TestCase
 
         $this->assertTrue($job->deleteWhenMissingModels);
     }
+
+    /**
+     * Regression for H3: document deleted between HTTP success and status update.
+     * The job must attempt vector cleanup and NOT mark the (now-missing) row ready.
+     */
+    public function test_job_cleans_up_vectors_when_document_deleted_after_http_completes(): void
+    {
+        Storage::fake('local');
+        config()->set('services.ai_document_service.url', 'http://python-ai-docs:8002');
+        config()->set('services.ai_document_service.token', 'internal-token');
+        Queue::fake();
+
+        $user = User::factory()->create();
+        $filePath = 'documents/'.$user->id.'/deleted-mid.pdf';
+        Storage::disk('local')->put($filePath, '%PDF-1.4 fake');
+
+        $document = Document::create([
+            'user_id' => $user->id,
+            'filename' => 'deleted-mid.pdf',
+            'original_name' => 'deleted-mid.pdf',
+            'file_path' => $filePath,
+            'mime_type' => 'application/pdf',
+            'file_size_bytes' => 123,
+            'status' => 'pending',
+        ]);
+
+        $documentId = $document->id;
+
+        // Simulate the document being hard-deleted while the Python ingest HTTP call
+        // is in flight. The fake callback deletes the row so that the post-HTTP
+        // fresh-check in handle() returns null.
+        Http::fake([
+            '*/api/documents/process' => function () use ($document) {
+                $document->forceDelete();
+
+                return Http::response(['message' => 'success'], 200);
+            },
+            '*/api/documents/*' => Http::response(['message' => 'deleted'], 200),
+        ]);
+
+        (new ProcessDocument($document))->handle();
+
+        // Row must still be absent (was hard-deleted during the fake HTTP call).
+        $this->assertDatabaseMissing('documents', ['id' => $documentId]);
+        // Status must NOT have been set to 'ready' on a deleted row.
+        // Vector-cleanup HTTP call should have been attempted.
+        Http::assertSent(fn ($req) => str_contains($req->url(), 'deleted-mid.pdf'));
+        // Preview job must NOT have been dispatched.
+        Queue::assertNotPushed(RenderDocumentPreview::class);
+    }
 }

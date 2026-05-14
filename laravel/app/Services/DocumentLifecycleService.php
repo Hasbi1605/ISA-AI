@@ -10,6 +10,7 @@ use App\Models\User;
 use App\Services\CloudStorage\GoogleDriveService;
 use App\Services\Documents\DocumentPreviewRenderer;
 use Illuminate\Http\UploadedFile;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Validation\ValidationException;
@@ -31,15 +32,6 @@ class DocumentLifecycleService
      */
     public function uploadDocument(UploadedFile $file, int $userId, array $sourceAttributes = []): Document
     {
-        // 1. Check Document Limit
-        $count = Document::where('user_id', $userId)->count();
-        if ($count >= self::MAX_DOCUMENTS_PER_USER) {
-            throw ValidationException::withMessages([
-                'file' => 'Limit kuota dokumen tercapai (Maksimal 10 dokumen).',
-            ]);
-        }
-
-        // 2. Validate MIME Type
         $originalName = $file->getClientOriginalName();
         $detectedMimeType = (string) $file->getMimeType();
 
@@ -57,40 +49,16 @@ class DocumentLifecycleService
             ]);
         }
 
-        // 3. Check for duplicates
-        $duplicateExists = Document::where('user_id', $userId)
-            ->where('original_name', $originalName)
-            ->exists();
+        $document = $this->storeUploadedDocumentRecord(
+            file: $file,
+            userId: $userId,
+            sourceAttributes: $sourceAttributes,
+            originalName: $originalName,
+            detectedMimeType: $detectedMimeType,
+            fileSizeBytes: $fileSizeBytes,
+            wrapInTransaction: true,
+        );
 
-        if ($duplicateExists) {
-            throw ValidationException::withMessages([
-                'file' => 'File dengan nama yang sama sudah pernah diunggah.',
-            ]);
-        }
-
-        // 4. Store file
-        $filename = time().'_'.$file->hashName();
-        $filePath = $file->storeAs('documents/'.$userId, $filename);
-
-        if (! $filePath) {
-            throw new \Exception('Gagal menyimpan file ke storage.');
-        }
-
-        // 5. Create Database Record
-        $document = Document::create([
-            'user_id' => $userId,
-            'filename' => $filename,
-            'original_name' => $originalName,
-            'file_path' => $filePath,
-            'source_provider' => $sourceAttributes['source_provider'] ?? 'local',
-            'source_external_id' => $sourceAttributes['source_external_id'] ?? null,
-            'source_synced_at' => $sourceAttributes['source_synced_at'] ?? null,
-            'mime_type' => $detectedMimeType,
-            'file_size_bytes' => $fileSizeBytes,
-            'status' => 'pending',
-        ]);
-
-        // 6. Dispatch preview and processing jobs on separate queues.
         try {
             $this->dispatchPreviewRendering($document);
         } catch (\Throwable $e) {
@@ -135,6 +103,16 @@ class DocumentLifecycleService
         $mimeType = (string) ($download['mime_type'] ?? 'application/octet-stream');
         $sourceSyncedAt = now();
 
+        // Validate MIME type against the same allowlist used for manual uploads.
+        // GoogleDriveService::downloadToTemp() already enforces size and rejects
+        // native Google Docs formats; this adds the MIME-type gate so Drive imports
+        // cannot bypass Document::attachmentMimeTypes() checks.
+        if (! in_array($mimeType, Document::attachmentMimeTypes(), true)) {
+            throw ValidationException::withMessages([
+                'file' => 'Tipe file dari Google Drive tidak didukung. Gunakan PDF, DOCX, XLSX, atau CSV.',
+            ]);
+        }
+
         try {
             $uploadedFile = new UploadedFile(
                 $tempPath,
@@ -144,26 +122,45 @@ class DocumentLifecycleService
                 true
             );
 
-            $document = $this->uploadDocument($uploadedFile, $user->id, [
-                'source_provider' => $provider,
-                'source_external_id' => $externalId,
-                'source_synced_at' => $sourceSyncedAt,
-            ]);
+            $document = DB::transaction(function () use ($uploadedFile, $user, $provider, $externalId, $sourceSyncedAt, $originalName, $mimeType, $download) {
+                $document = $this->storeUploadedDocumentRecord(
+                    file: $uploadedFile,
+                    userId: $user->id,
+                    sourceAttributes: [
+                        'source_provider' => $provider,
+                        'source_external_id' => $externalId,
+                        'source_synced_at' => $sourceSyncedAt,
+                    ],
+                    originalName: $originalName,
+                    detectedMimeType: $mimeType,
+                    fileSizeBytes: $uploadedFile->getSize(),
+                    wrapInTransaction: false,
+                );
 
-            CloudStorageFile::create([
-                'user_id' => $user->id,
-                'provider' => $provider,
-                'direction' => CloudStorageFile::DIRECTION_IMPORT,
-                'local_type' => Document::class,
-                'local_id' => $document->id,
-                'external_id' => $externalId,
-                'name' => $originalName,
-                'mime_type' => $mimeType,
-                'web_view_link' => $download['web_view_link'] ?? null,
-                'folder_external_id' => $download['folder_external_id'] ?? null,
-                'size_bytes' => $download['size_bytes'] ?? null,
-                'synced_at' => $sourceSyncedAt,
-            ]);
+                CloudStorageFile::create([
+                    'user_id' => $user->id,
+                    'provider' => $provider,
+                    'direction' => CloudStorageFile::DIRECTION_IMPORT,
+                    'local_type' => Document::class,
+                    'local_id' => $document->id,
+                    'external_id' => $externalId,
+                    'name' => $originalName,
+                    'mime_type' => $mimeType,
+                    'web_view_link' => $download['web_view_link'] ?? null,
+                    'folder_external_id' => $download['folder_external_id'] ?? null,
+                    'size_bytes' => $download['size_bytes'] ?? null,
+                    'synced_at' => $sourceSyncedAt,
+                ]);
+
+                return $document;
+            });
+
+            try {
+                $this->dispatchPreviewRendering($document);
+            } catch (\Throwable $e) {
+                logger()->warning("Preview dispatch failed for document {$document->id}, proceeding: ".$e->getMessage());
+            }
+            $this->dispatchProcessing($document);
 
             return $document;
         } finally {
@@ -171,6 +168,71 @@ class DocumentLifecycleService
                 @unlink($tempPath);
             }
         }
+    }
+
+    /**
+     * @param  array<string, mixed>  $sourceAttributes
+     */
+    private function storeUploadedDocumentRecord(
+        UploadedFile $file,
+        int $userId,
+        array $sourceAttributes,
+        string $originalName,
+        string $detectedMimeType,
+        ?int $fileSizeBytes,
+        bool $wrapInTransaction = true,
+    ): Document {
+        $callback = function () use ($file, $userId, $sourceAttributes, $originalName, $detectedMimeType, $fileSizeBytes) {
+            $count = Document::where('user_id', $userId)
+                ->lockForUpdate()
+                ->count();
+            if ($count >= self::MAX_DOCUMENTS_PER_USER) {
+                throw ValidationException::withMessages([
+                    'file' => 'Limit kuota dokumen tercapai (Maksimal 10 dokumen).',
+                ]);
+            }
+
+            $duplicateExists = Document::where('user_id', $userId)
+                ->where('original_name', $originalName)
+                ->lockForUpdate()
+                ->exists();
+
+            if ($duplicateExists) {
+                throw ValidationException::withMessages([
+                    'file' => 'File dengan nama yang sama sudah pernah diunggah.',
+                ]);
+            }
+
+            $filename = time().'_'.$file->hashName();
+            $filePath = $file->storeAs('documents/'.$userId, $filename);
+
+            if (! $filePath) {
+                throw new \Exception('Gagal menyimpan file ke storage.');
+            }
+
+            try {
+                return Document::create([
+                    'user_id' => $userId,
+                    'filename' => $filename,
+                    'original_name' => $originalName,
+                    'file_path' => $filePath,
+                    'source_provider' => $sourceAttributes['source_provider'] ?? 'local',
+                    'source_external_id' => $sourceAttributes['source_external_id'] ?? null,
+                    'source_synced_at' => $sourceAttributes['source_synced_at'] ?? null,
+                    'mime_type' => $detectedMimeType,
+                    'file_size_bytes' => $fileSizeBytes,
+                    'status' => 'pending',
+                ]);
+            } catch (\Throwable $e) {
+                if ($filePath) {
+                    Storage::delete($filePath);
+                }
+
+                throw $e;
+            }
+        };
+
+        return $wrapInTransaction ? DB::transaction($callback) : $callback();
     }
 
     /**
@@ -226,7 +288,11 @@ class DocumentLifecycleService
             throw new InvalidArgumentException('Dokumen belum selesai diproses. Tunggu hingga status menjadi "ready".');
         }
 
-        return $aiService->summarizeDocument($document->original_name, (string) $document->user_id);
+        return $aiService->summarizeDocument(
+            $document->original_name,
+            (string) $document->user_id,
+            (string) $document->id
+        );
     }
 
     private function cleanupDocumentArtifacts(Document $document): void
@@ -247,9 +313,18 @@ class DocumentLifecycleService
 
     private function deleteDocumentVectors(Document $document): void
     {
+        // User-initiated delete: the document's filename is being permanently retired
+        // so it is safe to also clean up legacy Chroma chunks that pre-date document_id
+        // tracking (cleanup_legacy=true). This is distinct from ProcessDocument job
+        // cleanup, which must NOT use legacy cleanup to avoid deleting a re-uploaded
+        // same-filename document's vectors.
         $pythonUrl = rtrim((string) config('services.ai_document_service.url', config('services.ai_service.url', 'http://127.0.0.1:8001')), '/')
             .'/api/documents/'.urlencode($document->original_name)
-            .'?'.http_build_query(['user_id' => (string) $document->user_id]);
+            .'?'.http_build_query([
+                'user_id' => (string) $document->user_id,
+                'document_id' => (string) $document->id,
+                'cleanup_legacy' => 'true',
+            ]);
         $token = config('services.ai_document_service.token', config('services.ai_service.token'));
 
         try {

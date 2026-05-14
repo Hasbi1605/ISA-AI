@@ -1,9 +1,11 @@
+import os
 import socket
 
 from fastapi import Header, HTTPException
 from pydantic import BaseModel
 
 from app.env_utils import get_env
+from app.services.rag_config import CHROMA_PATH
 
 
 DEFAULT_AI_SERVICE_TOKEN = "your_internal_api_secret"
@@ -43,4 +45,26 @@ def build_health_payload() -> dict:
     return {
         "status": "ok",
         "host": socket.gethostname(),
+    }
+
+
+def build_ready_payload() -> dict:
+    token = get_internal_service_token()
+    if token is None:
+        return {
+            "status": "not_ready",
+            "ready": False,
+            "reason": "AI Service token is not configured.",
+        }
+
+    if not os.path.exists(CHROMA_PATH):
+        return {
+            "status": "not_ready",
+            "ready": False,
+            "reason": f"Chroma path does not exist: {CHROMA_PATH}",
+        }
+
+    return {
+        "status": "ready",
+        "ready": True,
     }

@@ -7,6 +7,7 @@ use App\Models\User;
 use Google\Client;
 use Google\Service\Drive;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Crypt;
 use Illuminate\Support\Str;
 use RuntimeException;
@@ -52,10 +53,12 @@ class GoogleDriveOAuthService
         }
 
         $client = $this->oauthClient();
+        $nonce = Str::random(40);
+        Cache::put("gdrive_oauth_nonce:{$user->id}", $nonce, now()->addMinutes(20));
         $client->setState(Crypt::encryptString(json_encode([
             'user_id' => $user->id,
             'expires_at' => now()->addMinutes(15)->timestamp,
-            'nonce' => Str::random(40),
+            'nonce' => $nonce,
         ], JSON_THROW_ON_ERROR)));
 
         return $client->createAuthUrl();
@@ -224,6 +227,11 @@ class GoogleDriveOAuthService
 
         if ((int) ($payload['expires_at'] ?? 0) < now()->timestamp) {
             throw new RuntimeException('State OAuth Google Drive sudah kedaluwarsa. Silakan mulai connect ulang.');
+        }
+
+        $expectedNonce = Cache::pull("gdrive_oauth_nonce:{$payload['user_id']}");
+        if ($expectedNonce === null || ! hash_equals($expectedNonce, $payload['nonce'] ?? '')) {
+            throw new RuntimeException('State OAuth Google Drive tidak valid atau sudah digunakan.');
         }
     }
 

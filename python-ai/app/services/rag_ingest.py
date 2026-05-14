@@ -24,7 +24,12 @@ from app.services.lightweight_text_splitter import LightweightRecursiveTextSplit
 logger = logging.getLogger(__name__)
 
 
-def process_document(file_path: str, filename: str, user_id: str = "unknown"):
+def process_document(
+    file_path: str,
+    filename: str,
+    user_id: str = "unknown",
+    document_id: str | None = None,
+):
     try:
         logger.info(f"=== Processing document: {filename} ===")
         logger.info(f"File path: {file_path}")
@@ -32,6 +37,15 @@ def process_document(file_path: str, filename: str, user_id: str = "unknown"):
         if os.path.exists(file_path):
             file_size = os.path.getsize(file_path)
             logger.info(f"File size: {file_size:,} bytes ({file_size / 1024 / 1024:.2f} MB)")
+
+        logger.info("Cleaning up existing vectors before re-ingest for filename='%s', user_id='%s'", filename, user_id)
+        _del_ok, _del_msg = delete_document_vectors(filename, user_id, document_id=document_id, cleanup_legacy=True)
+        if not _del_ok:
+            logger.warning(
+                "Pre-ingest cleanup failed for '%s' (user=%s, document_id=%s): %s — "
+                "continuing with ingest but stale chunks may remain if cleanup did not complete.",
+                filename, user_id, document_id, _del_msg,
+            )
 
         import time as _time
         _load_start = _time.time()
@@ -100,6 +114,8 @@ def process_document(file_path: str, filename: str, user_id: str = "unknown"):
                     "parent_id": parent_id,
                     "parent_index": p_idx,
                 }
+                if document_id:
+                    parent_meta["document_id"] = str(document_id)
                 pdr_parent_docs.append((parent_id, parent.page_content, parent_meta))
 
                 children = child_splitter.split_documents([parent])
@@ -155,6 +171,9 @@ def process_document(file_path: str, filename: str, user_id: str = "unknown"):
             chunk.metadata["filename"] = filename
             chunk.metadata["user_id"]  = str(user_id)
             chunk.metadata["embedding_model"] = provider_name
+            chunk.metadata["chunk_index"] = idx
+            if document_id:
+                chunk.metadata["document_id"] = str(document_id)
             if idx == 0:
                 logger.info("🔍 INGEST: Storing chunk metadata - filename='%s', user_id='%s'", filename, str(user_id))
 
@@ -346,7 +365,7 @@ def process_document(file_path: str, filename: str, user_id: str = "unknown"):
         logger.info(f"{'='*60}")
 
         if failed_chunks > 0:
-            return True, f"Document processed dengan {failed_chunks}/{len(chunks)} chunks gagal"
+            return False, f"Ingest partial: {failed_chunks}/{len(chunks)} chunks gagal saat embedding."
 
         return True, "Document processed successfully dengan Token-Aware Chunking & Aggressive Batching."
 
@@ -355,7 +374,12 @@ def process_document(file_path: str, filename: str, user_id: str = "unknown"):
         return False, str(e)
 
 
-def delete_document_vectors(filename: str, user_id: str | None = None):
+def delete_document_vectors(
+    filename: str,
+    user_id: str | None = None,
+    document_id: str | None = None,
+    cleanup_legacy: bool = False,
+):
     try:
         from app.services.rag_config import (
             CHROMA_PATH,
@@ -376,8 +400,19 @@ def delete_document_vectors(filename: str, user_id: str | None = None):
             persist_directory=CHROMA_PATH
         )
 
-        scoped_filter = {"$and": [{"filename": filename}, {"user_id": str(user_id)}]}
-        vectorstore.delete(where=scoped_filter)
+        if document_id:
+            # Always delete new-style chunks by document_id (strict).
+            vectorstore.delete(where={"$and": [{"document_id": str(document_id)}, {"user_id": str(user_id)}]})
+            if cleanup_legacy:
+                # Also delete legacy chunks (only have filename+user_id, no document_id).
+                # Only safe when the caller KNOWS the filename is being permanently
+                # retired (user-initiated delete or pre-ingest cleanup).
+                # Must NOT be used from ProcessDocument job cleanup — that job runs
+                # after the old document was deleted and a new document with the same
+                # filename may already have been uploaded.
+                vectorstore.delete(where={"$and": [{"filename": filename}, {"user_id": str(user_id)}]})
+        else:
+            vectorstore.delete(where={"$and": [{"filename": filename}, {"user_id": str(user_id)}]})
 
         try:
             parent_store = Chroma(
@@ -385,13 +420,18 @@ def delete_document_vectors(filename: str, user_id: str | None = None):
                 persist_directory=CHROMA_PATH,
             )
             raw_col = parent_store._collection
-            raw_col.delete(where={
-                "$and": [
-                    {"filename": filename},
-                    {"user_id": str(user_id)},
-                    {"chunk_type": "parent"},
-                ],
-            })
+            if document_id:
+                raw_col.delete(where={
+                    "$and": [{"document_id": str(document_id)}, {"user_id": str(user_id)}, {"chunk_type": "parent"}],
+                })
+                if cleanup_legacy:
+                    raw_col.delete(where={
+                        "$and": [{"filename": filename}, {"user_id": str(user_id)}, {"chunk_type": "parent"}],
+                    })
+            else:
+                raw_col.delete(where={
+                    "$and": [{"filename": filename}, {"user_id": str(user_id)}, {"chunk_type": "parent"}],
+                })
             logger.info("✅ PDR parent chunks for %s deleted for user_id=%s", filename, user_id)
         except Exception as pe:
             logger.debug("PDR parent delete skipped (mungkin non-PDR dokumen): %s", pe)

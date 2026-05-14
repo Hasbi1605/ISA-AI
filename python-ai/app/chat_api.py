@@ -4,11 +4,11 @@ import os
 from typing import Dict, List, Optional, Tuple
 
 from dotenv import load_dotenv
-from fastapi import Depends, FastAPI
+from fastapi import Depends, FastAPI, Response
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
-from app.api_shared import HealthResponse, build_health_payload, verify_token
+from app.api_shared import HealthResponse, build_health_payload, build_ready_payload, verify_token
 
 # Load .env from the project root (python-ai/.env)
 load_dotenv(os.path.join(os.path.dirname(os.path.dirname(__file__)), ".env"))
@@ -33,6 +33,7 @@ app = FastAPI(title="ISTA AI Chat Microservice", version="1.2.0")
 class ChatRequest(BaseModel):
     messages: List[Dict[str, str]]
     document_filenames: Optional[List[str]] = None
+    document_ids: Optional[List[str]] = None
     user_id: Optional[str] = None
     force_web_search: bool = False
     source_policy: Optional[str] = None
@@ -124,6 +125,14 @@ async def health_check():
     return build_health_payload()
 
 
+@app.get("/api/ready")
+async def ready_check(response: Response):
+    payload = build_ready_payload()
+    if not payload.get("ready"):
+        response.status_code = 503
+    return payload
+
+
 @app.post("/api/chat", dependencies=[Depends(verify_token)])
 async def chat_stream(request: ChatRequest):
     (
@@ -164,6 +173,7 @@ async def chat_stream(request: ChatRequest):
                 request.document_filenames,
                 _get_rag_top_k(),
                 request.user_id,
+                request.document_ids,
             )
             web_context = ""
             if success and chunks:
@@ -183,6 +193,7 @@ async def chat_stream(request: ChatRequest):
                 request.document_filenames,
                 _get_rag_top_k(),
                 request.user_id,
+                request.document_ids,
             )
             web_context = ""
 

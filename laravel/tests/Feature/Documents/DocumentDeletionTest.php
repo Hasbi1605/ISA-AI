@@ -47,7 +47,9 @@ class DocumentDeletionTest extends TestCase
         $component->assertSee('Dokumen berhasil dihapus.');
         Http::assertSent(function ($request) use ($document, $user) {
             return $request->method() === 'DELETE'
-                && $request->url() === 'http://python-ai-docs:8002/api/documents/delete_chat.pdf?user_id='.$user->id;
+                && str_contains($request->url(), '/api/documents/delete_chat.pdf')
+                && str_contains($request->url(), 'user_id='.$user->id)
+                && str_contains($request->url(), 'document_id='.$document->id);
         });
     }
 

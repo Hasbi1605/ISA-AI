@@ -8,9 +8,11 @@ use App\Models\User;
 use App\Services\OnlyOffice\JwtSigner;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\Client\Request as HttpRequest;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Facades\URL;
+use Illuminate\Support\Str;
 use Tests\TestCase;
 
 class MemoPolicyTest extends TestCase
@@ -76,7 +78,13 @@ class MemoPolicyTest extends TestCase
         $memo = $this->createMemo($user);
         Storage::disk('local')->put($memo->file_path, 'docx-bytes');
 
-        $path = URL::temporarySignedRoute('memos.file.signed', now()->addHour(), $memo, false);
+        $ooToken = Str::random(40);
+        Cache::put('oo_file_token:'.$ooToken, ['memo_id' => $memo->id, 'version_id' => null], now()->addHour());
+
+        $path = URL::temporarySignedRoute('memos.file.signed', now()->addHour(), [
+            'memo' => $memo,
+            'oo_token' => $ooToken,
+        ], false);
 
         $this->get($path)
             ->assertOk()
@@ -97,9 +105,13 @@ class MemoPolicyTest extends TestCase
             'current_version_id' => $firstVersion->id,
         ])->save();
 
+        $ooToken = Str::random(40);
+        Cache::put('oo_file_token:'.$ooToken, ['memo_id' => $memo->id, 'version_id' => $secondVersion->id], now()->addHour());
+
         $path = URL::temporarySignedRoute('memos.file.signed', now()->addHour(), [
             'memo' => $memo,
             'version_id' => $secondVersion->id,
+            'oo_token' => $ooToken,
         ], false);
 
         $response = $this->get($path)

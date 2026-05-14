@@ -600,8 +600,13 @@ class MemoWorkspaceTest extends TestCase
         $this->assertMatchesRegularExpression('/^memo-'.$memo->id.'-v'.$originalVersion->id.'-[0-9]+-[a-f0-9]{12}$/', $editorConfig['document']['key']);
     }
 
-    public function test_editor_config_document_key_changes_when_version_file_changes(): void
+    public function test_editor_config_document_key_is_stable_within_session(): void
     {
+        // Bug M3 fix: the document key must remain stable within a single
+        // editor session. Previously the key was derived from updated_at and
+        // file_path, which meant a save callback changed the key and caused
+        // subsequent callbacks from the same session to be rejected as stale.
+        // After the fix the key is cached at editor-open time for 24 hours.
         $user = User::factory()->create(['email_verified_at' => now()]);
         $memo = Memo::create([
             'user_id' => $user->id,
@@ -625,11 +630,15 @@ class MemoWorkspaceTest extends TestCase
             ->call('loadMemo', $memo->id);
 
         $firstKey = $component->instance()->editorConfig()['document']['key'];
+
+        // Simulate a save callback updating the file path (old behavior caused
+        // key to change here, breaking subsequent callbacks in the same session).
         $version->forceFill(['file_path' => 'memos/'.$user->id.'/memo-revisi.docx'])->save();
 
         $secondKey = $component->instance()->editorConfig()['document']['key'];
 
-        $this->assertNotSame($firstKey, $secondKey);
+        // Key must be SAME (stable) within the session — this is the fixed behavior.
+        $this->assertSame($firstKey, $secondKey);
     }
 
     public function test_generate_configuration_allows_blank_signatory_and_preserves_it_for_ai_service(): void

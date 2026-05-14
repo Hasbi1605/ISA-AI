@@ -10,7 +10,7 @@ services:
       MYSQL_ROOT_PASSWORD: '${DB_PASSWORD:-secret}'
       MYSQL_DATABASE: 'istanaai'
     ports:
-      - "3306:3306"
+      - "127.0.0.1:3306:3306"
     volumes:
       - mysql_data:/var/lib/mysql
     # Tuning MySQL agar hemat RAM (default MySQL bisa makan 500+ MB)
@@ -39,7 +39,7 @@ services:
     container_name: ista_redis
     restart: always
     ports:
-      - "6379:6379"
+      - "127.0.0.1:6379:6379"
     # Batasi max memory Redis agar tidak membengkak tak terbatas
     command: redis-server --maxmemory 100mb --maxmemory-policy allkeys-lru
     deploy:
@@ -63,7 +63,7 @@ services:
     container_name: ista_python_ai
     restart: always
     ports:
-      - "8001:8001"
+      - "127.0.0.1:8001:8001"
     environment:
       - GEMINI_API_KEY=${GEMINI_API_KEY}
       - GITHUB_TOKEN=${GITHUB_TOKEN}
@@ -113,7 +113,7 @@ services:
     container_name: ista_python_ai_docs
     restart: always
     ports:
-      - "8002:8002"
+      - "127.0.0.1:8002:8002"
     environment:
       - GEMINI_API_KEY=${GEMINI_API_KEY}
       - GITHUB_TOKEN=${GITHUB_TOKEN}
@@ -157,7 +157,7 @@ services:
     container_name: ista_onlyoffice
     restart: always
     ports:
-      - "8080:80"
+      - "127.0.0.1:8080:80"
     environment:
       - JWT_ENABLED=true
       - JWT_SECRET=${ONLYOFFICE_JWT_SECRET}

@@ -71,6 +71,7 @@ class OnlyOfficeCallbackController extends Controller
                         'searchable_text' => $newSearchableText,
                     ])->save();
                 }
+
             } else {
                 $newSearchableText = $freshText !== ''
                     ? $freshText
@@ -91,6 +92,7 @@ class OnlyOfficeCallbackController extends Controller
                         'searchable_text' => $newSearchableText,
                     ])->save();
                 }
+
             }
         }
 

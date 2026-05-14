@@ -118,17 +118,18 @@ def _extract_xlsx_content_html(file_path: str, title: str) -> str:
     workbook = load_workbook(file_path, data_only=True, read_only=True)
     sections: list[str] = []
 
-    for sheet in workbook.worksheets:
-        rows = [
-            [cell for cell in row]
-            for row in sheet.iter_rows(values_only=True)
-        ]
-        table_html = _table_html(rows)
+    try:
+        for sheet in workbook.worksheets:
+            rows = [
+                [cell for cell in row]
+                for row in sheet.iter_rows(values_only=True)
+            ]
+            table_html = _table_html(rows)
 
-        if table_html:
-            sections.append(f"<section><h2>{escape(sheet.title)}</h2>{table_html}</section>")
-
-    workbook.close()
+            if table_html:
+                sections.append(f"<section><h2>{escape(sheet.title)}</h2>{table_html}</section>")
+    finally:
+        workbook.close()
 
     return _wrap_document(title, sections)
 

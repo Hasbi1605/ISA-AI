@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\Memo;
 use App\Models\MemoVersion;
 use App\Services\OnlyOffice\DocumentConverter;
+use App\Services\OnlyOffice\MemoDocumentKey;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Storage;
 use Symfony\Component\HttpFoundation\BinaryFileResponse;
@@ -16,6 +17,16 @@ class MemoFileController extends Controller
     public function signed(Request $request, Memo $memo): BinaryFileResponse
     {
         abort_unless($request->hasValidSignature(false), Response::HTTP_FORBIDDEN);
+
+        // Require a valid memo-bound session token (oo_token) generated at editor-open
+        // time. The token is random, TTL-limited, and stored in cache — not derivable
+        // from the URL itself, preventing replay by anyone who captures the signed URL.
+        $ooToken = $request->query('oo_token', '');
+        abort_unless(
+            is_string($ooToken) && $ooToken !== '' && app(MemoDocumentKey::class)->validateFileToken($ooToken, $memo),
+            Response::HTTP_FORBIDDEN,
+            'Token akses memo tidak valid atau sudah kedaluwarsa.'
+        );
 
         $version = $this->resolveVersion($request, $memo);
 

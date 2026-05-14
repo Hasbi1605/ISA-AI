@@ -4,6 +4,7 @@ namespace App\Services\Memo;
 
 use App\Models\Memo;
 use App\Models\MemoVersion;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
 
 class MemoLifecycleService
@@ -17,21 +18,22 @@ class MemoLifecycleService
      */
     public function deleteMemo(Memo $memo): void
     {
-        // 1. Delete all version DOCX files from disk
-        foreach ($memo->versions as $version) {
-            $this->deleteFile($version->file_path);
+        $filePaths = collect([$memo->file_path])
+            ->merge($memo->versions->pluck('file_path'))
+            ->filter(fn (?string $path) => filled($path))
+            ->unique()
+            ->values()
+            ->all();
+
+        DB::transaction(function () use ($memo) {
+            $memo->cloudStorageFiles()->delete();
+            $memo->versions()->forceDelete();
+            $memo->forceDelete();
+        });
+
+        foreach ($filePaths as $path) {
+            $this->deleteFile($path);
         }
-
-        // 2. Delete the master memo file (may differ from current version path)
-        $this->deleteFile($memo->file_path);
-
-        // 3. Delete cloud storage records (exports/imports linked to this memo)
-        $memo->cloudStorageFiles()->delete();
-
-        // 4. Force-delete the memo so the DB cascade removes MemoVersion rows.
-        // Using forceDelete() instead of delete() ensures no orphan version rows
-        // remain even if the model uses SoftDeletes.
-        $memo->forceDelete();
     }
 
     protected function deleteFile(?string $path): void

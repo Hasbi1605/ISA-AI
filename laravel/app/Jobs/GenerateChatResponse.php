@@ -48,6 +48,10 @@ class GenerateChatResponse implements ShouldQueue
         $documentFilenames = $orchestrator->getDocumentFilenames($this->conversationDocuments);
         $sourcePolicy = $orchestrator->getSourcePolicy($documentFilenames);
         $allowAutoRealtimeWeb = $orchestrator->shouldAllowAutoRealtimeWeb($documentFilenames);
+        // Pass the document IDs (already integers) alongside filenames so Python
+        // can use document_id-based Chroma filtering for new-style chunks while
+        // falling back to filename for legacy chunks.
+        $documentIds = array_values(array_map('intval', $this->conversationDocuments));
 
         $fullResponse = '';
         $streamBuffer = '';
@@ -60,7 +64,8 @@ class GenerateChatResponse implements ShouldQueue
                 (string) $this->userId,
                 $this->webSearchMode,
                 $sourcePolicy,
-                $allowAutoRealtimeWeb
+                $allowAutoRealtimeWeb,
+                $documentIds
             ) as $chunk
         ) {
             [$chunk, $streamBuffer, $_modelName, $parsedSources] = $orchestrator->extractStreamMetadata(

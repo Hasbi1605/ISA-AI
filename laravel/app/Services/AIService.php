@@ -19,6 +19,7 @@ class AIService
     protected $baseUrl;
     protected $documentBaseUrl;
     protected $token;
+    protected $documentToken;
     protected $maxRetries;
     protected $retryDelayMs;
 
@@ -33,6 +34,7 @@ class AIService
             '/'
         );
         $this->token = $this->normalizeStringConfig(config('services.ai_service.token'));
+        $this->documentToken = $this->normalizeStringConfig(config('services.ai_document_service.token', config('services.ai_service.token')));
         $this->maxRetries = max(1, $this->normalizeIntConfig(config('services.ai_service.retries'), 2));
         $this->retryDelayMs = max(0, $this->normalizeIntConfig(config('services.ai_service.retry_delay_ms'), 400));
 
@@ -49,6 +51,7 @@ class AIService
      * @param array $messages
      * @param array|null $document_filenames Optional document filenames for RAG mode
      * @param string|null $user_id User ID for authorization in RAG mode
+     * @param array|null $document_ids Optional document IDs for stable Chroma filtering
      * @return \Generator
      */
     public function sendChat(
@@ -57,7 +60,8 @@ class AIService
         ?string $user_id = null,
         bool $force_web_search = false,
         ?string $source_policy = null,
-        bool $allow_auto_realtime_web = true
+        bool $allow_auto_realtime_web = true,
+        ?array $document_ids = null
     ) {
         $payload = [
             'messages' => $messages,
@@ -71,6 +75,10 @@ class AIService
 
         if ($document_filenames !== null) {
             $payload['document_filenames'] = $document_filenames;
+        }
+
+        if ($document_ids !== null && count($document_ids) > 0) {
+            $payload['document_ids'] = array_map('strval', $document_ids);
         }
 
         if ($user_id !== null) {
@@ -140,20 +148,21 @@ class AIService
      * @param string|null $user_id User ID for authorization
      * @return array
      */
-    public function summarizeDocument(string $filename, ?string $user_id = null): array
+    public function summarizeDocument(string $filename, ?string $user_id = null, string $documentId = ''): array
     {
         try {
             $payload = [
                 'filename' => $filename,
+                'user_id' => $user_id,
             ];
 
-            if ($user_id !== null) {
-                $payload['user_id'] = $user_id;
+            if ($documentId !== '') {
+                $payload['document_id'] = $documentId;
             }
 
             $response = $this->client->post($this->documentBaseUrl . '/api/documents/summarize', [
                 'headers' => [
-                    'Authorization' => 'Bearer ' . $this->token,
+                    'Authorization' => 'Bearer ' . $this->documentToken,
                     'Accept' => 'application/json',
                     'Content-Type' => 'application/json',
                 ],
