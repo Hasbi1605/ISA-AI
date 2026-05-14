@@ -15,7 +15,7 @@ class MemoIndex extends Component
         return view('livewire.memos.memo-index', [
             'memos' => Memo::query()
                 ->where('user_id', Auth::id())
-                ->latest()
+                ->orderBy('updated_at', 'desc')
                 ->get(),
         ]);
     }
