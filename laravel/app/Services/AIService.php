@@ -19,6 +19,7 @@ class AIService
     protected $baseUrl;
     protected $documentBaseUrl;
     protected $token;
+    protected $documentToken;
     protected $maxRetries;
     protected $retryDelayMs;
 
@@ -33,6 +34,7 @@ class AIService
             '/'
         );
         $this->token = $this->normalizeStringConfig(config('services.ai_service.token'));
+        $this->documentToken = $this->normalizeStringConfig(config('services.ai_document_service.token', config('services.ai_service.token')));
         $this->maxRetries = max(1, $this->normalizeIntConfig(config('services.ai_service.retries'), 2));
         $this->retryDelayMs = max(0, $this->normalizeIntConfig(config('services.ai_service.retry_delay_ms'), 400));
 
@@ -153,7 +155,7 @@ class AIService
 
             $response = $this->client->post($this->documentBaseUrl . '/api/documents/summarize', [
                 'headers' => [
-                    'Authorization' => 'Bearer ' . $this->token,
+                    'Authorization' => 'Bearer ' . $this->documentToken,
                     'Accept' => 'application/json',
                     'Content-Type' => 'application/json',
                 ],

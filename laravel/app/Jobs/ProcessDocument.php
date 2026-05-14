@@ -112,8 +112,19 @@ class ProcessDocument implements ShouldQueue
                 ]);
 
         if ($response->successful()) {
+            $freshDocument = $this->document->fresh();
+            if ($freshDocument === null) {
+                try {
+                    $this->deleteVectorsForDocument($this->document);
+                } catch (\Throwable $ignored) {
+                }
+
+                return;
+            }
+
             // 4. Update status to ready
-            $this->document->update(['status' => 'ready']);
+            $freshDocument->update(['status' => 'ready']);
+            $this->document = $freshDocument;
 
                 // 5. Dispatch preview rendering job as a fallback if the
                 // eager upload-time dispatch has not already completed it.
@@ -134,5 +145,21 @@ class ProcessDocument implements ShouldQueue
     {
         $this->document->update(['status' => 'error']);
         logger()->error("Document processing permanently failed for ID {$this->document->id}: ".$exception->getMessage());
+    }
+
+    private function deleteVectorsForDocument(Document $doc): void
+    {
+        $pythonUrl = rtrim((string) config('services.ai_document_service.url', config('services.ai_service.url', 'http://127.0.0.1:8001')), '/')
+            .'/api/documents/'.urlencode($doc->original_name)
+            .'?'.http_build_query(['user_id' => (string) $doc->user_id]);
+        $token = config('services.ai_document_service.token', config('services.ai_service.token'));
+
+        $response = Http::withHeaders([
+            'Authorization' => "Bearer {$token}",
+        ])->delete($pythonUrl);
+
+        if (! $response->successful() && $response->status() !== 404) {
+            throw new \RuntimeException('Vector deletion failed: '.$response->body());
+        }
     }
 }

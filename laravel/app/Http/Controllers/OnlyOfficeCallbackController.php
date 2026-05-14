@@ -71,6 +71,8 @@ class OnlyOfficeCallbackController extends Controller
                         'searchable_text' => $newSearchableText,
                     ])->save();
                 }
+
+                app(MemoDocumentKey::class)->invalidateEditorKey($memo, $version);
             } else {
                 $newSearchableText = $freshText !== ''
                     ? $freshText
@@ -91,6 +93,9 @@ class OnlyOfficeCallbackController extends Controller
                         'searchable_text' => $newSearchableText,
                     ])->save();
                 }
+
+                app(MemoDocumentKey::class)->invalidateEditorKey($memo, $currentVersion);
+                app(MemoDocumentKey::class)->invalidateEditorKey($memo);
             }
         }
 

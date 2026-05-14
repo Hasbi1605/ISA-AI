@@ -33,6 +33,9 @@ def process_document(file_path: str, filename: str, user_id: str = "unknown"):
             file_size = os.path.getsize(file_path)
             logger.info(f"File size: {file_size:,} bytes ({file_size / 1024 / 1024:.2f} MB)")
 
+        logger.info("Cleaning up existing vectors before re-ingest for filename='%s', user_id='%s'", filename, user_id)
+        delete_document_vectors(filename, user_id)
+
         import time as _time
         _load_start = _time.time()
         logger.info("Step 1: Loading document dengan parser ringan lokal...")
@@ -155,6 +158,7 @@ def process_document(file_path: str, filename: str, user_id: str = "unknown"):
             chunk.metadata["filename"] = filename
             chunk.metadata["user_id"]  = str(user_id)
             chunk.metadata["embedding_model"] = provider_name
+            chunk.metadata["chunk_index"] = idx
             if idx == 0:
                 logger.info("🔍 INGEST: Storing chunk metadata - filename='%s', user_id='%s'", filename, str(user_id))
 
@@ -346,7 +350,7 @@ def process_document(file_path: str, filename: str, user_id: str = "unknown"):
         logger.info(f"{'='*60}")
 
         if failed_chunks > 0:
-            return True, f"Document processed dengan {failed_chunks}/{len(chunks)} chunks gagal"
+            return False, f"Ingest partial: {failed_chunks}/{len(chunks)} chunks gagal saat embedding."
 
         return True, "Document processed successfully dengan Token-Aware Chunking & Aggressive Batching."
 

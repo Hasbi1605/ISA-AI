@@ -85,6 +85,8 @@ class DocumentConverter
             $routeParameters['version_id'] = $version->id;
         }
 
+        $routeParameters['viewer_user_id'] = $memo->user_id;
+
         $documentPath = URL::temporarySignedRoute('memos.file.signed', now()->addMinutes($ttlMinutes), $routeParameters, false);
 
         return $laravelInternalUrl.$documentPath;

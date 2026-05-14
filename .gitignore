@@ -13,6 +13,9 @@ laravel/app/.!*.DS_Store
 # Security and Best Practices Exclusions
 .env
 .env.droplet
+/.env.droplet
+/.env.production
+/.env.staging
 vendor/
 node_modules/
 __pycache__/

@@ -20,7 +20,7 @@ class GenerateMemoRequest(BaseModel):
 
 
 @router.post("/generate-body", dependencies=[Depends(verify_token)])
-async def generate_memo_body(request: GenerateMemoRequest):
+def generate_memo_body(request: GenerateMemoRequest):
     try:
         draft = generate_memo_docx(
             memo_type=request.memo_type,

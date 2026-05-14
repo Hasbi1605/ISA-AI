@@ -1,9 +1,9 @@
 import os
 
 from dotenv import load_dotenv
-from fastapi import FastAPI
+from fastapi import FastAPI, Response
 
-from app.api_shared import HealthResponse, build_health_payload
+from app.api_shared import HealthResponse, build_health_payload, build_ready_payload
 from app.routers import documents, memos
 
 # Load .env from the project root (python-ai/.env)
@@ -17,3 +17,11 @@ app.include_router(memos.router)
 @app.get("/api/health", response_model=HealthResponse)
 async def health_check():
     return build_health_payload()
+
+
+@app.get("/api/ready")
+async def ready_check(response: Response):
+    payload = build_ready_payload()
+    if not payload.get("ready"):
+        response.status_code = 503
+    return payload

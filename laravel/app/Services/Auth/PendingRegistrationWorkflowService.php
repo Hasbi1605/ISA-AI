@@ -4,6 +4,8 @@ namespace App\Services\Auth;
 
 use App\Mail\VerificationCodeMail;
 use App\Models\User;
+use Illuminate\Database\QueryException;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Mail;
@@ -144,30 +146,56 @@ class PendingRegistrationWorkflowService
         }
 
         $email = (string) ($pending['email'] ?? '');
+        $lockKey = 'otp_register:'.md5($email);
+        $lock = Cache::lock($lockKey, 30);
 
-        $user = DB::transaction(function () use ($email, $pending) {
-            $legacyUnverifiedUser = User::where('email', $email)
-                ->whereNull('email_verified_at')
-                ->first();
-
-            if ($legacyUnverifiedUser) {
-                $legacyUnverifiedUser->delete();
-            }
-
-            $user = User::create([
-                'name' => (string) ($pending['name'] ?? ''),
-                'email' => $email,
-                'password' => (string) ($pending['password'] ?? ''),
-                'verification_code' => null,
-                'verification_code_expires_at' => null,
+        if (! $lock->get()) {
+            throw ValidationException::withMessages([
+                'otp' => 'Permintaan sedang diproses. Coba lagi sesaat.',
             ]);
+        }
 
-            $user->forceFill([
-                'email_verified_at' => now(),
-            ])->save();
+        try {
+            $user = DB::transaction(function () use ($email, $pending) {
+                $legacyUnverifiedUser = User::where('email', $email)
+                    ->whereNull('email_verified_at')
+                    ->first();
 
-            return $user;
-        });
+                if ($legacyUnverifiedUser) {
+                    $legacyUnverifiedUser->delete();
+                }
+
+                $user = User::create([
+                    'name' => (string) ($pending['name'] ?? ''),
+                    'email' => $email,
+                    'password' => (string) ($pending['password'] ?? ''),
+                    'verification_code' => null,
+                    'verification_code_expires_at' => null,
+                ]);
+
+                $user->forceFill([
+                    'email_verified_at' => now(),
+                ])->save();
+
+                return $user;
+            });
+        } catch (QueryException $e) {
+            if (str_contains($e->getMessage(), 'Duplicate entry') || (($e->errorInfo[1] ?? null) == 1062)) {
+                $existingUser = User::where('email', $email)
+                    ->whereNotNull('email_verified_at')
+                    ->first();
+
+                if ($existingUser) {
+                    $user = $existingUser;
+                } else {
+                    throw $e;
+                }
+            } else {
+                throw $e;
+            }
+        } finally {
+            $lock->release();
+        }
 
         RateLimiter::clear($otpRateLimitKey);
 

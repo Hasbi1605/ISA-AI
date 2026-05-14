@@ -4,11 +4,11 @@ import os
 from typing import Dict, List, Optional, Tuple
 
 from dotenv import load_dotenv
-from fastapi import Depends, FastAPI
+from fastapi import Depends, FastAPI, Response
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
-from app.api_shared import HealthResponse, build_health_payload, verify_token
+from app.api_shared import HealthResponse, build_health_payload, build_ready_payload, verify_token
 
 # Load .env from the project root (python-ai/.env)
 load_dotenv(os.path.join(os.path.dirname(os.path.dirname(__file__)), ".env"))
@@ -122,6 +122,14 @@ def _get_rag_document_helpers():
 @app.get("/api/health", response_model=HealthResponse)
 async def health_check():
     return build_health_payload()
+
+
+@app.get("/api/ready")
+async def ready_check(response: Response):
+    payload = build_ready_payload()
+    if not payload.get("ready"):
+        response.status_code = 503
+    return payload
 
 
 @app.post("/api/chat", dependencies=[Depends(verify_token)])

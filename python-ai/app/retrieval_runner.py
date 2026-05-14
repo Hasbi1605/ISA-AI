@@ -58,23 +58,27 @@ def run_retrieval_search(
         except Exception:
             logger.exception("In-process retrieval failed; falling back to subprocess")
 
-    completed = subprocess.run(
-        [
-            sys.executable,
-            "-m",
-            "app.retrieval_tasks",
-            "search",
-            query,
-            filenames_json,
-            str(top_k),
-            user_id or "",
-        ],
-        cwd=app_dir,
-        capture_output=True,
-        text=True,
-        timeout=timeout_seconds,
-        check=False,
-    )
+    try:
+        completed = subprocess.run(
+            [
+                sys.executable,
+                "-m",
+                "app.retrieval_tasks",
+                "search",
+                query,
+                filenames_json,
+                str(top_k),
+                user_id or "",
+            ],
+            cwd=app_dir,
+            capture_output=True,
+            text=True,
+            timeout=timeout_seconds,
+            check=False,
+        )
+    except subprocess.TimeoutExpired:
+        logger.error("Retrieval subprocess timed out after %s seconds", timeout_seconds)
+        return [], False
 
     try:
         payload = _parse_search_payload(completed.stdout)

@@ -1,3 +1,4 @@
+import hashlib
 import logging
 import requests
 import time
@@ -12,8 +13,16 @@ from app.env_utils import get_env, get_env_int
 logger = logging.getLogger(__name__)
 
 LANGSEARCH_TIMEOUT = get_env_int("LANGSEARCH_TIMEOUT", 10)
-LANGSEARCH_CACHE_TTL = get_env_int("LANGSEARCH_CACHE_TTL", 300)  # 5 minutes default
+LANGSEARCH_CACHE_TTL = max(1, get_env_int("LANGSEARCH_CACHE_TTL", 300))  # 5 minutes default
 LANGSEARCH_CACHE_MAX_SIZE = get_env_int("LANGSEARCH_CACHE_MAX_SIZE", 200)
+
+
+def _query_log_meta(query: str) -> dict:
+    safe_query = query or ""
+    return {
+        "query_len": len(safe_query),
+        "query_hash": hashlib.md5(safe_query.encode()).hexdigest()[:8],
+    }
 
 
 class LangSearchService:
@@ -47,7 +56,8 @@ class LangSearchService:
                 results, timestamp = self._search_cache[key]
                 if now - timestamp < LANGSEARCH_CACHE_TTL:
                     self._search_cache.move_to_end(key)
-                    logger.info(f"📦 LangSearch: cache hit for '{query}'")
+                    meta = _query_log_meta(query)
+                    logger.info("📦 LangSearch: cache hit query_len=%s query_hash=%s", meta["query_len"], meta["query_hash"])
                     return results
                 del self._search_cache[key]
         return None
@@ -120,17 +130,35 @@ class LangSearchService:
                 if i < len(api_keys) - 1:
                     logger.warning(f"⏱️ LangSearch: attempt {i+1} timeout. Retrying with backup key...")
                     continue
-                logger.error(f"⏱️ LangSearch: query='{query}', timeout after {LANGSEARCH_TIMEOUT}s")
+                meta = _query_log_meta(query)
+                logger.error(
+                    "⏱️ LangSearch: query_len=%s query_hash=%s timeout after %ss",
+                    meta["query_len"],
+                    meta["query_hash"],
+                    LANGSEARCH_TIMEOUT,
+                )
                 return []
             except requests.exceptions.RequestException as e:
                 status_code = getattr(getattr(e, 'response', None), 'status_code', None)
                 if i < len(api_keys) - 1 and (status_code in (401, 403, 429) or (status_code and status_code >= 500)):
                     logger.warning(f"⚠️ LangSearch: attempt {i+1} failed ({status_code}). Retrying with backup key...")
                     continue
-                logger.error(f"❌ LangSearch: query='{query}', error={str(e)}")
+                meta = _query_log_meta(query)
+                logger.error(
+                    "❌ LangSearch: query_len=%s query_hash=%s error=%s",
+                    meta["query_len"],
+                    meta["query_hash"],
+                    str(e),
+                )
                 return []
             except Exception as e:
-                logger.error(f"❌ LangSearch: query='{query}', unexpected error={str(e)}")
+                meta = _query_log_meta(query)
+                logger.error(
+                    "❌ LangSearch: query_len=%s query_hash=%s unexpected error=%s",
+                    meta["query_len"],
+                    meta["query_hash"],
+                    str(e),
+                )
                 return []
                 
         if not data:
@@ -149,7 +177,13 @@ class LangSearchService:
                 "datePublished": item.get("datePublished", "")
             })
         
-        logger.info(f"✅ LangSearch: query='{query}', results={len(formatted_results)}")
+        meta = _query_log_meta(query)
+        logger.info(
+            "✅ LangSearch: query_len=%s query_hash=%s results=%s",
+            meta["query_len"],
+            meta["query_hash"],
+            len(formatted_results),
+        )
         
         # Cache the result
         self._cache_result(query, time_bucket, formatted_results)
@@ -255,7 +289,14 @@ Ringkasan: {snippet}"""
                 "Content-Type": "application/json"
             }
             try:
-                logger.info(f"🔄 LangSearch Rerank: query='{query}', docs={len(documents)}, top_n={top_n}")
+                meta = _query_log_meta(query)
+                logger.info(
+                    "🔄 LangSearch Rerank: query_len=%s query_hash=%s docs=%s top_n=%s",
+                    meta["query_len"],
+                    meta["query_hash"],
+                    len(documents),
+                    top_n,
+                )
                 
                 response = requests.post(
                     "https://api.langsearch.com/v1/rerank",
@@ -279,24 +320,48 @@ Ringkasan: {snippet}"""
                 if i < len(api_keys) - 1:
                     logger.warning(f"⏱️ LangSearch Rerank: attempt {i+1} timeout. Retrying with backup key...")
                     continue
-                logger.error(f"⏱️ LangSearch Rerank: query='{query}', timeout after {timeout}s")
+                meta = _query_log_meta(query)
+                logger.error(
+                    "⏱️ LangSearch Rerank: query_len=%s query_hash=%s timeout after %ss",
+                    meta["query_len"],
+                    meta["query_hash"],
+                    timeout,
+                )
                 return None
             except requests.exceptions.RequestException as e:
                 status_code = getattr(getattr(e, 'response', None), 'status_code', None)
                 if i < len(api_keys) - 1 and (status_code in (401, 403, 429) or (status_code and status_code >= 500)):
                     logger.warning(f"⚠️ LangSearch Rerank: attempt {i+1} failed ({status_code}). Retrying with backup key...")
                     continue
-                logger.error(f"❌ LangSearch Rerank: query='{query}', error={str(e)}")
+                meta = _query_log_meta(query)
+                logger.error(
+                    "❌ LangSearch Rerank: query_len=%s query_hash=%s error=%s",
+                    meta["query_len"],
+                    meta["query_hash"],
+                    str(e),
+                )
                 return None
             except Exception as e:
-                logger.error(f"❌ LangSearch Rerank: query='{query}', unexpected error={str(e)}")
+                meta = _query_log_meta(query)
+                logger.error(
+                    "❌ LangSearch Rerank: query_len=%s query_hash=%s unexpected error=%s",
+                    meta["query_len"],
+                    meta["query_hash"],
+                    str(e),
+                )
                 return None
                 
         if not data:
             return None
             
         results = data.get("results", [])
-        logger.info(f"✅ LangSearch Rerank: query='{query}', returned {len(results)} results")
+        meta = _query_log_meta(query)
+        logger.info(
+            "✅ LangSearch Rerank: query_len=%s query_hash=%s returned %s results",
+            meta["query_len"],
+            meta["query_hash"],
+            len(results),
+        )
         
         return results
 

@@ -13,14 +13,14 @@ class ReprocessDocuments extends Command
      *
      * @var string
      */
-    protected $signature = 'documents:reprocess {--all : Reprocess all documents} {--id= : Reprocess specific document ID}';
+    protected $signature = 'documents:reprocess {--all : Reprocess all ready and error documents} {--include-pending : Include pending documents when using --all} {--id= : Reprocess specific document ID}';
 
     /**
      * The console command description.
      *
      * @var string
      */
-    protected $description = 'Reprocess documents that failed or need to be re-embedded in ChromaDB';
+    protected $description = 'Reprocess ready or failed documents, with optional pending inclusion for full queue replay';
 
     /**
      * Execute the console command.
@@ -39,7 +39,13 @@ class ReprocessDocuments extends Command
         }
         
         if ($this->option('all')) {
-            $documents = Document::whereIn('status', ['ready', 'error', 'pending'])->get();
+            $statuses = ['ready', 'error'];
+
+            if ($this->option('include-pending')) {
+                $statuses[] = 'pending';
+            }
+
+            $documents = Document::whereIn('status', $statuses)->get();
         } else {
             // Default: reprocess only 'ready' documents (might be missing in ChromaDB)
             $documents = Document::where('status', 'ready')->get();

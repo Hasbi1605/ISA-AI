@@ -6,6 +6,7 @@ use App\Models\Memo;
 use App\Models\MemoVersion;
 use App\Models\User;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 use RuntimeException;
@@ -65,21 +66,35 @@ class MemoGenerationService
         $title = (string) ($configuration['subject'] ?? $memo->title);
         $draft = $this->requestDraft($memo->memo_type, $title, $context, $configuration);
         $configuration = $this->applyResolvedPageSize($configuration, $draft['page_size']);
-        $versionNumber = ((int) $memo->versions()->max('version_number')) + 1;
-        $path = $this->storeDraft($memo, $draft['content'], $versionNumber);
 
-        $version = $this->createVersion(
-            $memo,
-            $versionNumber,
-            $path,
-            $configuration,
-            $draft['searchable_text'],
-            $configuration['revision_instruction'] ?? null,
-        );
+        return DB::transaction(function () use ($memo, $draft, $configuration) {
+            $lockedMemo = Memo::lockForUpdate()->findOrFail($memo->id);
+            $path = null;
 
-        $this->activateVersion($memo, $version);
+            try {
+                $versionNumber = ((int) $lockedMemo->versions()->max('version_number')) + 1;
+                $path = $this->storeDraft($lockedMemo, $draft['content'], $versionNumber);
 
-        return $version;
+                $version = $this->createVersion(
+                    $lockedMemo,
+                    $versionNumber,
+                    $path,
+                    $configuration,
+                    $draft['searchable_text'],
+                    $configuration['revision_instruction'] ?? null,
+                );
+
+                $this->activateVersion($lockedMemo, $version);
+
+                return $version;
+            } catch (\Throwable $e) {
+                if ($path) {
+                    Storage::delete($path);
+                }
+
+                throw $e;
+            }
+        });
     }
 
     public function generateRevisionFromBody(Memo $memo, string $body, array $configuration = [], ?string $revisionInstruction = null): MemoVersion
@@ -95,21 +110,35 @@ class MemoGenerationService
         ]);
         $draft = $this->requestDraft($memo->memo_type, $title, $body, $requestConfiguration);
         $storedConfiguration = $this->applyResolvedPageSize($storedConfiguration, $draft['page_size']);
-        $versionNumber = ((int) $memo->versions()->max('version_number')) + 1;
-        $path = $this->storeDraft($memo, $draft['content'], $versionNumber);
 
-        $version = $this->createVersion(
-            $memo,
-            $versionNumber,
-            $path,
-            $storedConfiguration,
-            $draft['searchable_text'],
-            $storedConfiguration['revision_instruction'] ?? null,
-        );
+        return DB::transaction(function () use ($memo, $draft, $storedConfiguration) {
+            $lockedMemo = Memo::lockForUpdate()->findOrFail($memo->id);
+            $path = null;
 
-        $this->activateVersion($memo, $version);
+            try {
+                $versionNumber = ((int) $lockedMemo->versions()->max('version_number')) + 1;
+                $path = $this->storeDraft($lockedMemo, $draft['content'], $versionNumber);
 
-        return $version;
+                $version = $this->createVersion(
+                    $lockedMemo,
+                    $versionNumber,
+                    $path,
+                    $storedConfiguration,
+                    $draft['searchable_text'],
+                    $storedConfiguration['revision_instruction'] ?? null,
+                );
+
+                $this->activateVersion($lockedMemo, $version);
+
+                return $version;
+            } catch (\Throwable $e) {
+                if ($path) {
+                    Storage::delete($path);
+                }
+
+                throw $e;
+            }
+        });
     }
 
     public function activateVersion(Memo $memo, MemoVersion $version, bool $touch = true): Memo

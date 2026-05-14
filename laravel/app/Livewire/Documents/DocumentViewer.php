@@ -41,6 +41,14 @@ class DocumentViewer extends Component
 
     public function saveToGoogleDrive(string $targetFormat, ?string $folderExternalId = null): void
     {
+        $allowedFormats = ['pdf', 'docx', 'xlsx', 'csv'];
+        if (! in_array(strtolower($targetFormat), $allowedFormats, true)) {
+            $this->dispatch('notify', type: 'error', message: 'Format ekspor tidak valid.');
+
+            return;
+        }
+        $targetFormat = strtolower($targetFormat);
+
         $userId = Auth::id();
 
         if ($userId === null) {

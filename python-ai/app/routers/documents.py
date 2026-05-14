@@ -56,7 +56,7 @@ def get_document_chunks_for_summarization(*args, **kwargs):
 
 
 @router.post("/process", dependencies=[Depends(verify_token)])
-async def upload_document(
+def upload_document(
     file: UploadFile = File(...),
     user_id: str = Form(...),
 ):
@@ -130,7 +130,7 @@ def _render_prompt_or_http_exception(template: str, **kwargs) -> str:
 
 
 @router.post("/extract-tables", dependencies=[Depends(verify_token)])
-async def extract_tables_endpoint(file: UploadFile = File(...)):
+def extract_tables_endpoint(file: UploadFile = File(...)):
     temp_dir = "temp_files"
     os.makedirs(temp_dir, exist_ok=True)
 
@@ -157,7 +157,7 @@ async def extract_tables_endpoint(file: UploadFile = File(...)):
 
 
 @router.post("/extract-content", dependencies=[Depends(verify_token)])
-async def extract_content_endpoint(file: UploadFile = File(...)):
+def extract_content_endpoint(file: UploadFile = File(...)):
     temp_dir = "temp_files"
     os.makedirs(temp_dir, exist_ok=True)
 
@@ -184,7 +184,7 @@ async def extract_content_endpoint(file: UploadFile = File(...)):
 
 
 @router.post("/export", dependencies=[Depends(verify_token)])
-async def export_document_endpoint(request: ExportRequest):
+def export_document_endpoint(request: ExportRequest):
     try:
         artifact = export_content(
             request.content_html,
@@ -204,7 +204,7 @@ async def export_document_endpoint(request: ExportRequest):
 
 
 @router.post("/summarize", dependencies=[Depends(verify_token)])
-async def summarize_document_endpoint(request: SummarizeRequest):
+def summarize_document_endpoint(request: SummarizeRequest):
     from app.llm_manager import get_llm_stream
 
     if not request.filename:

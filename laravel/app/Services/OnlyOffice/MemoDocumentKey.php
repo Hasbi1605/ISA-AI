@@ -4,12 +4,26 @@ namespace App\Services\OnlyOffice;
 
 use App\Models\Memo;
 use App\Models\MemoVersion;
+use Illuminate\Support\Facades\Cache;
 
 class MemoDocumentKey
 {
     public function forEditor(Memo $memo, ?MemoVersion $version = null): string
     {
-        return $this->baseKey($memo, $version);
+        $cacheKey = $this->editorCacheKey($memo, $version);
+
+        // Cache the key computed at editor-open time so it stays stable for
+        // the duration of the editor session (up to 24 hours). This prevents
+        // the key from changing after a save callback updates updated_at,
+        // which would cause subsequent callbacks to be rejected as stale.
+        return Cache::remember($cacheKey, now()->addHours(24), function () use ($memo, $version) {
+            return $this->baseKey($memo, $version);
+        });
+    }
+
+    public function invalidateEditorKey(Memo $memo, ?MemoVersion $version = null): void
+    {
+        Cache::forget($this->editorCacheKey($memo, $version));
     }
 
     public function forConversion(Memo $memo, ?MemoVersion $version = null): string
@@ -27,5 +41,10 @@ class MemoDocumentKey
         $scope = $version ? 'v'.$version->id : 'current';
 
         return 'memo-'.$memo->id.'-'.$scope.'-'.$timestamp.'-'.$pathHash;
+    }
+
+    protected function editorCacheKey(Memo $memo, ?MemoVersion $version = null): string
+    {
+        return 'onlyoffice_doc_key:'.$memo->id.':'.($version?->id ?? 'base');
     }
 }

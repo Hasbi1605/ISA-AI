@@ -17,6 +17,16 @@ class MemoFileController extends Controller
     {
         abort_unless($request->hasValidSignature(false), Response::HTTP_FORBIDDEN);
 
+        // If the signed URL includes a viewer_user_id claim, verify it matches
+        // the memo owner. This prevents a URL minted for user A from being
+        // replayed by user B. URLs without a claim are still accepted so that
+        // legacy/internal OnlyOffice server calls without the claim continue
+        // to work during a rolling deploy.
+        $viewerUserId = (int) $request->query('viewer_user_id', 0);
+        if ($viewerUserId > 0 && $viewerUserId !== (int) $memo->user_id) {
+            abort(403, 'Akses ke memo ini tidak diizinkan.');
+        }
+
         $version = $this->resolveVersion($request, $memo);
 
         return $this->fileResponse($memo, 'inline', $version);

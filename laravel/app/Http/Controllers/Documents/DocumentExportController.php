@@ -19,8 +19,12 @@ class DocumentExportController extends Controller
             'file_name' => ['nullable', 'string', 'max:120'],
         ]);
 
+        $contentHtml = preg_replace('/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/is', '', $data['content_html']);
+        $contentHtml = preg_replace('/\s+on\w+\s*=\s*["\'][^"\']*["\']/i', '', $contentHtml ?? '');
+        $contentHtml = preg_replace('/<iframe\b[^>]*>.*?<\/iframe>/is', '', $contentHtml ?? '');
+
         $artifact = $exportService->exportContent(
-            $data['content_html'],
+            $contentHtml ?? '',
             $data['target_format'],
             $data['file_name'] ?? null,
         );
