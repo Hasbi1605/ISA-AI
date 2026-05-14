@@ -42,7 +42,7 @@ class DocumentDeletionTest extends TestCase
             ->test(ChatIndex::class)
             ->call('deleteDocument', $document->id);
 
-        $this->assertSoftDeleted($document);
+        $this->assertDatabaseMissing('documents', ['id' => $document->id]);
         Storage::disk('local')->assertMissing($filePath);
         $component->assertSee('Dokumen berhasil dihapus.');
         Http::assertSent(function ($request) use ($document, $user) {
@@ -88,8 +88,8 @@ class DocumentDeletionTest extends TestCase
             ->set('selectedDocuments', [$doc1->id, $doc2->id])
             ->call('deleteSelectedDocuments');
 
-        $this->assertSoftDeleted($doc1);
-        $this->assertSoftDeleted($doc2);
+        $this->assertDatabaseMissing('documents', ['id' => $doc1->id]);
+        $this->assertDatabaseMissing('documents', ['id' => $doc2->id]);
         Storage::disk('local')->assertMissing('documents/' . $user->id . '/doc1.pdf');
         Storage::disk('local')->assertMissing('documents/' . $user->id . '/doc2.pdf');
         $component->assertSee('Dokumen terpilih berhasil dihapus.');
