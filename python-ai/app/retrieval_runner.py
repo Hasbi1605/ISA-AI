@@ -64,6 +64,7 @@ def run_retrieval_search(
             logger.exception("In-process retrieval failed; falling back to subprocess")
 
     try:
+        document_ids_json = json.dumps([str(d) for d in document_ids] if document_ids else [], ensure_ascii=False)
         completed = subprocess.run(
             [
                 sys.executable,
@@ -74,6 +75,7 @@ def run_retrieval_search(
                 filenames_json,
                 str(top_k),
                 user_id or "",
+                document_ids_json,
             ],
             cwd=app_dir,
             capture_output=True,
