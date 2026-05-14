@@ -60,6 +60,10 @@ class ChatOrchestrationService
      * unbounded token costs on long conversations. The window size is
      * configurable via services.ai_service.max_history_messages (default 20).
      * Only the most recent N messages are sent; older messages are dropped.
+     *
+     * After slicing, any leading assistant messages are dropped so the
+     * payload always starts with a user message — required by providers
+     * that enforce strict user/assistant turn ordering (e.g. Bedrock Converse).
      */
     public function buildHistory(array $messages): array
     {
@@ -68,6 +72,13 @@ class ChatOrchestrationService
         // Keep only the most recent N messages (sliding window)
         if (count($messages) > $maxMessages) {
             $messages = array_slice($messages, -$maxMessages);
+        }
+
+        // Drop leading assistant messages so the payload always starts
+        // with a user turn. This can happen when the window boundary
+        // falls in the middle of a user/assistant pair.
+        while (! empty($messages) && ($messages[0]['role'] ?? '') === 'assistant') {
+            array_shift($messages);
         }
 
         return array_map(

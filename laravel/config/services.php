@@ -43,6 +43,7 @@ return [
         'read_timeout' => env('AI_SERVICE_READ_TIMEOUT', 120),
         'retries' => env('AI_SERVICE_RETRIES', 2),
         'retry_delay_ms' => env('AI_SERVICE_RETRY_DELAY_MS', 400),
+        'max_history_messages' => env('AI_SERVICE_MAX_HISTORY_MESSAGES', 20),
     ],
 
     'ai_document_service' => [
