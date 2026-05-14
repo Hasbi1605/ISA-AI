@@ -103,6 +103,16 @@ class DocumentLifecycleService
         $mimeType = (string) ($download['mime_type'] ?? 'application/octet-stream');
         $sourceSyncedAt = now();
 
+        // Validate MIME type against the same allowlist used for manual uploads.
+        // GoogleDriveService::downloadToTemp() already enforces size and rejects
+        // native Google Docs formats; this adds the MIME-type gate so Drive imports
+        // cannot bypass Document::attachmentMimeTypes() checks.
+        if (! in_array($mimeType, Document::attachmentMimeTypes(), true)) {
+            throw ValidationException::withMessages([
+                'file' => 'Tipe file dari Google Drive tidak didukung. Gunakan PDF, DOCX, XLSX, atau CSV.',
+            ]);
+        }
+
         try {
             $uploadedFile = new UploadedFile(
                 $tempPath,

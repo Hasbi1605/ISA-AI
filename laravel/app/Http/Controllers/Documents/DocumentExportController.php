@@ -20,7 +20,9 @@ class DocumentExportController extends Controller
         ]);
 
         $contentHtml = preg_replace('/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/is', '', $data['content_html']);
-        $contentHtml = preg_replace('/\s+on\w+\s*=\s*["\'][^"\']*["\']/i', '', $contentHtml ?? '');
+        // Strip event-handler attributes in all forms: quoted, unquoted, and bare.
+        // The original regex missed `onerror=alert(1)` (unquoted, no whitespace prefix).
+        $contentHtml = preg_replace('/\bon\w+\s*=\s*(?:"[^"]*"|\'[^\']*\'|[^\s>\/]*)/i', '', $contentHtml ?? '');
         $contentHtml = preg_replace('/<iframe\b[^>]*>.*?<\/iframe>/is', '', $contentHtml ?? '');
 
         $artifact = $exportService->exportContent(

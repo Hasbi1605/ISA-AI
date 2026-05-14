@@ -39,7 +39,13 @@ def process_document(
             logger.info(f"File size: {file_size:,} bytes ({file_size / 1024 / 1024:.2f} MB)")
 
         logger.info("Cleaning up existing vectors before re-ingest for filename='%s', user_id='%s'", filename, user_id)
-        delete_document_vectors(filename, user_id, document_id=document_id)
+        _del_ok, _del_msg = delete_document_vectors(filename, user_id, document_id=document_id)
+        if not _del_ok:
+            logger.warning(
+                "Pre-ingest cleanup failed for '%s' (user=%s, document_id=%s): %s — "
+                "continuing with ingest but stale chunks may remain if cleanup did not complete.",
+                filename, user_id, document_id, _del_msg,
+            )
 
         import time as _time
         _load_start = _time.time()
