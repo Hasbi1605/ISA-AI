@@ -34,15 +34,16 @@ class MemoDocumentKey
 
     /**
      * Generate a short-lived, memo-bound token for the signed file URL.
-     * The token is stored in cache and validated in MemoFileController::signed().
-     * Multi-use within TTL — OnlyOffice may request the file more than once per session.
+     * The token becomes single-use after the first validation: it transitions
+     * into a 60-second retry window so OnlyOffice can retry a failed initial
+     * load, but cannot be replayed indefinitely as a bearer URL.
      */
     public function generateFileToken(Memo $memo, ?int $versionId, int $ttlMinutes): string
     {
         $token = Str::random(40);
         Cache::put(
             'oo_file_token:'.$token,
-            ['memo_id' => $memo->id, 'version_id' => $versionId],
+            ['memo_id' => $memo->id, 'version_id' => $versionId, 'used' => false],
             now()->addMinutes($ttlMinutes + 5)
         );
 
@@ -51,17 +52,35 @@ class MemoDocumentKey
 
     /**
      * Validate an oo_token from a signed file request.
-     * Returns true only if the token exists in cache and belongs to the given memo.
+     *
+     * On first use: transitions the token to a 60-second retry window so
+     * OnlyOffice can retry the initial file fetch, but the URL is no longer
+     * replayable after that window expires.
+     *
+     * Returns true only if the token is valid, belongs to the given memo,
+     * and has not yet expired.
      */
     public function validateFileToken(string $token, Memo $memo): bool
     {
-        $data = Cache::get('oo_file_token:'.$token);
+        $cacheKey = 'oo_file_token:'.$token;
+        $data = Cache::get($cacheKey);
 
         if ($data === null) {
             return false;
         }
 
-        return (int) ($data['memo_id'] ?? 0) === (int) $memo->id;
+        if ((int) ($data['memo_id'] ?? 0) !== (int) $memo->id) {
+            return false;
+        }
+
+        // First use: shrink TTL to a 60-second retry window so the URL cannot
+        // be replayed as a long-lived bearer token by anyone who captured it.
+        if (! ($data['used'] ?? false)) {
+            Cache::put($cacheKey, array_merge($data, ['used' => true]), now()->addSeconds(60));
+        }
+
+        // Token still in cache (either not yet used, or within retry window).
+        return true;
     }
 
     protected function baseKey(Memo $memo, ?MemoVersion $version = null): string

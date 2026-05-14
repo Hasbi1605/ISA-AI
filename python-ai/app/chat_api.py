@@ -33,6 +33,7 @@ app = FastAPI(title="ISTA AI Chat Microservice", version="1.2.0")
 class ChatRequest(BaseModel):
     messages: List[Dict[str, str]]
     document_filenames: Optional[List[str]] = None
+    document_ids: Optional[List[str]] = None
     user_id: Optional[str] = None
     force_web_search: bool = False
     source_policy: Optional[str] = None
@@ -172,6 +173,7 @@ async def chat_stream(request: ChatRequest):
                 request.document_filenames,
                 _get_rag_top_k(),
                 request.user_id,
+                request.document_ids,
             )
             web_context = ""
             if success and chunks:
@@ -191,6 +193,7 @@ async def chat_stream(request: ChatRequest):
                 request.document_filenames,
                 _get_rag_top_k(),
                 request.user_id,
+                request.document_ids,
             )
             web_context = ""
 

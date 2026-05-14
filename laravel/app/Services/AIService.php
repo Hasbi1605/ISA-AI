@@ -51,6 +51,7 @@ class AIService
      * @param array $messages
      * @param array|null $document_filenames Optional document filenames for RAG mode
      * @param string|null $user_id User ID for authorization in RAG mode
+     * @param array|null $document_ids Optional document IDs for stable Chroma filtering
      * @return \Generator
      */
     public function sendChat(
@@ -59,7 +60,8 @@ class AIService
         ?string $user_id = null,
         bool $force_web_search = false,
         ?string $source_policy = null,
-        bool $allow_auto_realtime_web = true
+        bool $allow_auto_realtime_web = true,
+        ?array $document_ids = null
     ) {
         $payload = [
             'messages' => $messages,
@@ -73,6 +75,10 @@ class AIService
 
         if ($document_filenames !== null) {
             $payload['document_filenames'] = $document_filenames;
+        }
+
+        if ($document_ids !== null && count($document_ids) > 0) {
+            $payload['document_ids'] = array_map('strval', $document_ids);
         }
 
         if ($user_id !== null) {

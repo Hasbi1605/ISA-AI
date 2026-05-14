@@ -58,7 +58,7 @@ def _bm25_child_fallback(
     return fallback_docs
 
 
-def search_relevant_chunks(query: str, filenames: List[str] = None, top_k: int = 5, user_id: str = None) -> Tuple[List[Dict], bool]:
+def search_relevant_chunks(query: str, filenames: List[str] = None, top_k: int = 5, user_id: str = None, document_ids: List[str] = None) -> Tuple[List[Dict], bool]:
     try:
         embeddings, provider_name, _ = get_embeddings_with_fallback()
 
@@ -109,7 +109,35 @@ def search_relevant_chunks(query: str, filenames: List[str] = None, top_k: int =
                 else:
                     logger.debug("🔮 HyDE: mode=smart — skip (%s)", hyde_reason)
 
-        if filenames and len(filenames) > 1:
+        # When document_ids are provided use a combined filter that matches chunks by
+        # document_id (new-style) OR by filename (legacy chunks ingested before
+        # document_id tracking was introduced). This ensures retrieval is correct
+        # even for Chroma data that pre-dates the document_id metadata field.
+        if document_ids and filenames:
+            n_docs = len(document_ids)
+            k_combined = doc_candidates * max(1, n_docs)
+            logger.info(
+                "🔍 RAG: document_ids (%d) — combined filter (new-style + legacy), k=%d, user_id: %s",
+                n_docs, k_combined, user_id,
+            )
+            doc_id_list = [str(d) for d in document_ids]
+            doc_conditions: list = [{"document_id": {"$in": doc_id_list} if len(doc_id_list) > 1 else doc_id_list[0]}]
+            if len(filenames) == 1:
+                doc_conditions.append({"filename": filenames[0]})
+            else:
+                doc_conditions.append({"filename": {"$in": filenames}})
+            combined_doc_filter = {"$or": doc_conditions} if len(doc_conditions) > 1 else doc_conditions[0]
+            f_filter = {"$and": [user_filter, combined_doc_filter]}
+            try:
+                f_vec = vectorstore.similarity_search_with_score(search_query, k=k_combined, filter=f_filter)
+                docs = _exclude_parent_search_results(f_vec)
+            except Exception as e:
+                logger.warning("🔍 RAG: combined document_id filter failed (%s), fallback to filename filter", e)
+                # Fallback to filename-based filter if $or is not supported
+                fn_filter = {"$and": [user_filter, {"filename": {"$in": filenames}} if len(filenames) > 1 else {"$and": [user_filter, {"filename": filenames[0]}]}]}
+                f_vec = vectorstore.similarity_search_with_score(search_query, k=k_combined, filter=fn_filter)
+                docs = _exclude_parent_search_results(f_vec)
+        elif filenames and len(filenames) > 1:
             n_docs = len(filenames)
             per_doc_k = max(2, doc_candidates // n_docs)
             logger.info(

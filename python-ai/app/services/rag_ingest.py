@@ -400,10 +400,15 @@ def delete_document_vectors(
         )
 
         if document_id:
-            scoped_filter = {"$and": [{"document_id": str(document_id)}, {"user_id": str(user_id)}]}
+            # Two-pass delete:
+            # 1. Delete new-style chunks (have document_id in metadata).
+            # 2. Delete legacy chunks (ingested before document_id was tracked;
+            #    only have filename+user_id). Without this second pass, legacy
+            #    chunks accumulate silently and pollute future retrievals.
+            vectorstore.delete(where={"$and": [{"document_id": str(document_id)}, {"user_id": str(user_id)}]})
+            vectorstore.delete(where={"$and": [{"filename": filename}, {"user_id": str(user_id)}]})
         else:
-            scoped_filter = {"$and": [{"filename": filename}, {"user_id": str(user_id)}]}
-        vectorstore.delete(where=scoped_filter)
+            vectorstore.delete(where={"$and": [{"filename": filename}, {"user_id": str(user_id)}]})
 
         try:
             parent_store = Chroma(
@@ -412,22 +417,17 @@ def delete_document_vectors(
             )
             raw_col = parent_store._collection
             if document_id:
-                parent_filter = {
-                    "$and": [
-                        {"document_id": str(document_id)},
-                        {"user_id": str(user_id)},
-                        {"chunk_type": "parent"},
-                    ],
-                }
+                # Two-pass: new-style (document_id) then legacy (filename).
+                raw_col.delete(where={
+                    "$and": [{"document_id": str(document_id)}, {"user_id": str(user_id)}, {"chunk_type": "parent"}],
+                })
+                raw_col.delete(where={
+                    "$and": [{"filename": filename}, {"user_id": str(user_id)}, {"chunk_type": "parent"}],
+                })
             else:
-                parent_filter = {
-                    "$and": [
-                        {"filename": filename},
-                        {"user_id": str(user_id)},
-                        {"chunk_type": "parent"},
-                    ],
-                }
-            raw_col.delete(where=parent_filter)
+                raw_col.delete(where={
+                    "$and": [{"filename": filename}, {"user_id": str(user_id)}, {"chunk_type": "parent"}],
+                })
             logger.info("✅ PDR parent chunks for %s deleted for user_id=%s", filename, user_id)
         except Exception as pe:
             logger.debug("PDR parent delete skipped (mungkin non-PDR dokumen): %s", pe)
