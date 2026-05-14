@@ -51,7 +51,11 @@ class JwtSigner
             throw new RuntimeException('Payload OnlyOffice tidak valid.');
         }
 
-        if (isset($decoded['exp']) && is_numeric($decoded['exp']) && time() > (int) $decoded['exp']) {
+        if (! isset($decoded['exp']) || ! is_numeric($decoded['exp'])) {
+            throw new RuntimeException('Token OnlyOffice tidak memiliki waktu kedaluwarsa (exp wajib).');
+        }
+
+        if (time() > (int) $decoded['exp']) {
             throw new RuntimeException('Token OnlyOffice kedaluwarsa.');
         }
 

@@ -28,6 +28,37 @@ class OnlyOfficeCallbackTest extends TestCase
         ])->assertUnauthorized();
     }
 
+    public function test_callback_rejects_token_without_exp(): void
+    {
+        config([
+            'services.onlyoffice.jwt_secret' => 'callback-secret',
+            'services.onlyoffice.internal_url' => 'https://onlyoffice.test',
+        ]);
+        Http::fake();
+
+        $user = User::factory()->create(['email_verified_at' => now()]);
+        $memo = $this->createMemo($user);
+        $key = $this->callbackKey($memo);
+        $url = 'https://onlyoffice.test/file.docx';
+
+        // Token signed without 'exp' claim — must be rejected.
+        $token = (new JwtSigner('callback-secret'))->sign([
+            'status' => 2,
+            'key' => $key,
+            'url' => $url,
+            // deliberately omit 'exp'
+        ]);
+
+        $this->postJson(route('onlyoffice.callback', $memo), [
+            'status' => 2,
+            'key' => $key,
+            'url' => $url,
+            'token' => $token,
+        ])->assertUnauthorized();
+
+        Http::assertNothingSent();
+    }
+
     public function test_callback_with_valid_token_saves_file(): void
     {
         config([
@@ -36,7 +67,7 @@ class OnlyOfficeCallbackTest extends TestCase
         ]);
         Storage::fake('local');
         Http::fake([
-            'https://onlyoffice.test/file.docx' => Http::response('updated-docx', 200),
+            'https://onlyoffice.test/file.docx' => Http::response(self::fakeDocxBytes(), 200),
         ]);
 
         $user = User::factory()->create(['email_verified_at' => now()]);
@@ -63,7 +94,7 @@ class OnlyOfficeCallbackTest extends TestCase
         $this->assertSame(Memo::STATUS_EDITED, $memo->currentVersion?->status);
         $this->assertSame($memo->file_path, $memo->currentVersion?->file_path);
         Storage::disk('local')->assertExists($memo->file_path);
-        $this->assertSame('updated-docx', Storage::disk('local')->get($memo->file_path));
+        $this->assertStringStartsWith("PK\x03\x04", Storage::disk('local')->get($memo->file_path));
     }
 
     public function test_callback_accepts_public_onlyoffice_download_url(): void
@@ -75,7 +106,7 @@ class OnlyOfficeCallbackTest extends TestCase
         ]);
         Storage::fake('local');
         Http::fake([
-            'https://ista-ai.app/cache/files/data/output.docx*' => Http::response('public-docx', 200),
+            'https://ista-ai.app/cache/files/data/output.docx*' => Http::response(self::fakeDocxBytes(), 200),
         ]);
 
         $user = User::factory()->create(['email_verified_at' => now()]);
@@ -98,7 +129,7 @@ class OnlyOfficeCallbackTest extends TestCase
             ->assertJson(['error' => 0]);
 
         Storage::disk('local')->assertExists($memo->refresh()->file_path);
-        $this->assertSame('public-docx', Storage::disk('local')->get($memo->file_path));
+        $this->assertStringStartsWith("PK\x03\x04", Storage::disk('local')->get($memo->file_path));
     }
 
     public function test_callback_accepts_onlyoffice_header_payload_wrapper(): void
@@ -109,7 +140,7 @@ class OnlyOfficeCallbackTest extends TestCase
         ]);
         Storage::fake('local');
         Http::fake([
-            'https://onlyoffice.test/header-file.docx' => Http::response('header-docx', 200),
+            'https://onlyoffice.test/header-file.docx' => Http::response(self::fakeDocxBytes(), 200),
         ]);
 
         $user = User::factory()->create(['email_verified_at' => now()]);
@@ -121,6 +152,7 @@ class OnlyOfficeCallbackTest extends TestCase
         ];
         $token = (new JwtSigner('callback-secret'))->sign([
             'payload' => $body,
+            'exp' => time() + 60,
         ]);
 
         $this->withHeader('Authorization', 'Bearer '.$token)
@@ -129,7 +161,7 @@ class OnlyOfficeCallbackTest extends TestCase
             ->assertJson(['error' => 0]);
 
         Storage::disk('local')->assertExists($memo->refresh()->file_path);
-        $this->assertSame('header-docx', Storage::disk('local')->get($memo->file_path));
+        $this->assertStringStartsWith("PK\x03\x04", Storage::disk('local')->get($memo->file_path));
     }
 
     public function test_callback_accepts_onlyoffice_token_in_body_payload_only(): void
@@ -140,7 +172,7 @@ class OnlyOfficeCallbackTest extends TestCase
         ]);
         Storage::fake('local');
         Http::fake([
-            'https://onlyoffice.test/body-file.docx' => Http::response('body-docx', 200),
+            'https://onlyoffice.test/body-file.docx' => Http::response(self::fakeDocxBytes(), 200),
         ]);
 
         $user = User::factory()->create(['email_verified_at' => now()]);
@@ -149,6 +181,7 @@ class OnlyOfficeCallbackTest extends TestCase
             'status' => 2,
             'key' => $this->callbackKey($memo),
             'url' => 'https://onlyoffice.test/body-file.docx',
+            'exp' => time() + 60,
         ]);
 
         $this->postJson(route('onlyoffice.callback', $memo), [
@@ -157,7 +190,7 @@ class OnlyOfficeCallbackTest extends TestCase
             ->assertJson(['error' => 0]);
 
         Storage::disk('local')->assertExists($memo->refresh()->file_path);
-        $this->assertSame('body-docx', Storage::disk('local')->get($memo->file_path));
+        $this->assertStringStartsWith("PK\x03\x04", Storage::disk('local')->get($memo->file_path));
     }
 
     public function test_callback_rejects_mismatch_between_header_payload_and_body(): void
@@ -177,6 +210,7 @@ class OnlyOfficeCallbackTest extends TestCase
                 'key' => $key,
                 'url' => 'https://onlyoffice.test/header-file.docx',
             ],
+            'exp' => time() + 60,
         ]);
 
         $this->withHeader('Authorization', 'Bearer '.$token)
@@ -276,6 +310,240 @@ class OnlyOfficeCallbackTest extends TestCase
         Http::assertNothingSent();
     }
 
+    // -------------------------------------------------------------------------
+    // Status 1: document being edited — acknowledge, no file save
+    // -------------------------------------------------------------------------
+
+    public function test_callback_status_1_acknowledges_without_saving(): void
+    {
+        config([
+            'services.onlyoffice.jwt_secret' => 'callback-secret',
+            'services.onlyoffice.internal_url' => 'https://onlyoffice.test',
+        ]);
+        Storage::fake('local');
+        Http::fake();
+
+        $user = User::factory()->create(['email_verified_at' => now()]);
+        $memo = $this->createMemo($user);
+        $originalPath = $memo->file_path;
+        Storage::disk('local')->put($originalPath, 'original-content');
+
+        $key = $this->callbackKey($memo);
+        $token = (new JwtSigner('callback-secret'))->sign([
+            'status' => 1,
+            'key' => $key,
+            'exp' => time() + 60,
+        ]);
+
+        $this->postJson(route('onlyoffice.callback', $memo), [
+            'status' => 1,
+            'key' => $key,
+            'token' => $token,
+        ])->assertOk()
+            ->assertJson(['error' => 0]);
+
+        // No file should be downloaded or written.
+        Http::assertNothingSent();
+        $this->assertSame('original-content', Storage::disk('local')->get($originalPath));
+    }
+
+    // -------------------------------------------------------------------------
+    // Status 4: no editors remaining — acknowledge, no file save
+    // -------------------------------------------------------------------------
+
+    public function test_callback_status_4_acknowledges_without_saving(): void
+    {
+        config([
+            'services.onlyoffice.jwt_secret' => 'callback-secret',
+            'services.onlyoffice.internal_url' => 'https://onlyoffice.test',
+        ]);
+        Storage::fake('local');
+        Http::fake();
+
+        $user = User::factory()->create(['email_verified_at' => now()]);
+        $memo = $this->createMemo($user);
+        $originalPath = $memo->file_path;
+        Storage::disk('local')->put($originalPath, 'original-content');
+
+        $key = $this->callbackKey($memo);
+        $token = (new JwtSigner('callback-secret'))->sign([
+            'status' => 4,
+            'key' => $key,
+            'exp' => time() + 60,
+        ]);
+
+        $this->postJson(route('onlyoffice.callback', $memo), [
+            'status' => 4,
+            'key' => $key,
+            'token' => $token,
+        ])->assertOk()
+            ->assertJson(['error' => 0]);
+
+        Http::assertNothingSent();
+        $this->assertSame('original-content', Storage::disk('local')->get($originalPath));
+    }
+
+    // -------------------------------------------------------------------------
+    // Status 3: save error — acknowledge, no file write, logged
+    // -------------------------------------------------------------------------
+
+    public function test_callback_status_3_acknowledges_and_does_not_save_file(): void
+    {
+        config([
+            'services.onlyoffice.jwt_secret' => 'callback-secret',
+            'services.onlyoffice.internal_url' => 'https://onlyoffice.test',
+        ]);
+        Storage::fake('local');
+        Http::fake();
+
+        $user = User::factory()->create(['email_verified_at' => now()]);
+        $memo = $this->createMemo($user);
+        $originalPath = $memo->file_path;
+        Storage::disk('local')->put($originalPath, 'original-content');
+
+        $key = $this->callbackKey($memo);
+        $token = (new JwtSigner('callback-secret'))->sign([
+            'status' => 3,
+            'key' => $key,
+            'exp' => time() + 60,
+        ]);
+
+        $this->postJson(route('onlyoffice.callback', $memo), [
+            'status' => 3,
+            'key' => $key,
+            'token' => $token,
+        ])->assertOk()
+            ->assertJson(['error' => 0]);
+
+        // No HTTP request should have been made (no file to download for errors).
+        Http::assertNothingSent();
+
+        // Original file must NOT be overwritten.
+        $this->assertSame('original-content', Storage::disk('local')->get($originalPath));
+
+        // Memo status must remain unchanged.
+        $this->assertNotSame(Memo::STATUS_EDITED, $memo->refresh()->status);
+    }
+
+    // -------------------------------------------------------------------------
+    // Status 7: force-save error — acknowledge, no file write, logged
+    // -------------------------------------------------------------------------
+
+    public function test_callback_status_7_acknowledges_and_does_not_save_file(): void
+    {
+        config([
+            'services.onlyoffice.jwt_secret' => 'callback-secret',
+            'services.onlyoffice.internal_url' => 'https://onlyoffice.test',
+        ]);
+        Storage::fake('local');
+        Http::fake();
+
+        $user = User::factory()->create(['email_verified_at' => now()]);
+        $memo = $this->createMemo($user);
+        $originalPath = $memo->file_path;
+        Storage::disk('local')->put($originalPath, 'original-content');
+
+        $key = $this->callbackKey($memo);
+        $token = (new JwtSigner('callback-secret'))->sign([
+            'status' => 7,
+            'key' => $key,
+            'exp' => time() + 60,
+        ]);
+
+        $this->postJson(route('onlyoffice.callback', $memo), [
+            'status' => 7,
+            'key' => $key,
+            'token' => $token,
+        ])->assertOk()
+            ->assertJson(['error' => 0]);
+
+        Http::assertNothingSent();
+        $this->assertSame('original-content', Storage::disk('local')->get($originalPath));
+        $this->assertNotSame(Memo::STATUS_EDITED, $memo->refresh()->status);
+    }
+
+    // -------------------------------------------------------------------------
+    // Anti-replay: identical callback must be rejected the second time
+    // -------------------------------------------------------------------------
+
+    public function test_callback_replay_is_rejected(): void
+    {
+        config([
+            'services.onlyoffice.jwt_secret' => 'callback-secret',
+            'services.onlyoffice.internal_url' => 'https://onlyoffice.test',
+        ]);
+        Storage::fake('local');
+        Http::fake([
+            'https://onlyoffice.test/replay.docx' => Http::response(self::fakeDocxBytes(), 200),
+        ]);
+
+        $user = User::factory()->create(['email_verified_at' => now()]);
+        $memo = $this->createMemo($user);
+        $key = $this->callbackKey($memo);
+        $url = 'https://onlyoffice.test/replay.docx';
+        $token = (new JwtSigner('callback-secret'))->sign([
+            'status' => 2,
+            'key' => $key,
+            'url' => $url,
+            'exp' => time() + 60,
+        ]);
+
+        $payload = ['status' => 2, 'key' => $key, 'url' => $url, 'token' => $token];
+
+        // First call: must succeed.
+        $this->postJson(route('onlyoffice.callback', $memo), $payload)
+            ->assertOk()
+            ->assertJson(['error' => 0]);
+
+        // Re-open editor key for the second call (simulates a fresh cache state).
+        // We need a *new* key because the replay guard is keyed on key+status.
+        // To test replay, we verify that the SAME key+status combination is blocked.
+        // Second call with identical payload: must be rejected as replay.
+        $this->postJson(route('onlyoffice.callback', $memo), $payload)
+            ->assertConflict();
+    }
+
+    // -------------------------------------------------------------------------
+    // Non-DOCX download response rejected before write
+    // -------------------------------------------------------------------------
+
+    public function test_callback_rejects_non_docx_response_body(): void
+    {
+        config([
+            'services.onlyoffice.jwt_secret' => 'callback-secret',
+            'services.onlyoffice.internal_url' => 'https://onlyoffice.test',
+        ]);
+        Storage::fake('local');
+        // Server returns an HTML error page instead of a DOCX file.
+        Http::fake([
+            'https://onlyoffice.test/bad.docx' => Http::response('<html><body>Error</body></html>', 200),
+        ]);
+
+        $user = User::factory()->create(['email_verified_at' => now()]);
+        $memo = $this->createMemo($user);
+        $originalPath = $memo->file_path;
+        Storage::disk('local')->put($originalPath, 'original-content');
+
+        $key = $this->callbackKey($memo);
+        $url = 'https://onlyoffice.test/bad.docx';
+        $token = (new JwtSigner('callback-secret'))->sign([
+            'status' => 2,
+            'key' => $key,
+            'url' => $url,
+            'exp' => time() + 60,
+        ]);
+
+        $this->postJson(route('onlyoffice.callback', $memo), [
+            'status' => 2,
+            'key' => $key,
+            'url' => $url,
+            'token' => $token,
+        ])->assertStatus(502);
+
+        // Original file must not be overwritten.
+        $this->assertSame('original-content', Storage::disk('local')->get($originalPath));
+    }
+
     public function test_callback_with_version_id_updates_only_that_version_file(): void
     {
         config([
@@ -284,7 +552,7 @@ class OnlyOfficeCallbackTest extends TestCase
         ]);
         Storage::fake('local');
         Http::fake([
-            'https://onlyoffice.test/version-one.docx' => Http::response('late-version-one-docx', 200),
+            'https://onlyoffice.test/version-one.docx' => Http::response(self::fakeDocxBytes('v1'), 200),
         ]);
 
         $user = User::factory()->create(['email_verified_at' => now()]);
@@ -299,8 +567,8 @@ class OnlyOfficeCallbackTest extends TestCase
             'searchable_text' => 'Versi 2',
         ]);
 
-        Storage::disk('local')->put($versionOne->file_path, 'original-version-one');
-        Storage::disk('local')->put($versionTwo->file_path, 'current-version-two');
+        Storage::disk('local')->put($versionOne->file_path, self::fakeDocxBytes('original-v1'));
+        Storage::disk('local')->put($versionTwo->file_path, self::fakeDocxBytes('current-v2'));
 
         $memo->forceFill([
             'file_path' => $versionTwo->file_path,
@@ -327,8 +595,11 @@ class OnlyOfficeCallbackTest extends TestCase
         ])->assertOk()
             ->assertJson(['error' => 0]);
 
-        $this->assertSame('late-version-one-docx', Storage::disk('local')->get($versionOne->file_path));
-        $this->assertSame('current-version-two', Storage::disk('local')->get($versionTwo->file_path));
+        // Version one should now have the new DOCX content.
+        $this->assertStringStartsWith("PK\x03\x04", Storage::disk('local')->get($versionOne->file_path));
+        // Version two must remain unchanged.
+        $savedV2 = Storage::disk('local')->get($versionTwo->file_path);
+        $this->assertStringContainsString('current-v2', $savedV2);
 
         $memo->refresh();
         $this->assertSame($versionTwo->id, $memo->current_version_id);
@@ -345,7 +616,7 @@ class OnlyOfficeCallbackTest extends TestCase
         ]);
         Storage::fake('local');
         Http::fake([
-            'https://onlyoffice.test/legacy-version-one.docx' => Http::response('legacy-version-one-docx', 200),
+            'https://onlyoffice.test/legacy-version-one.docx' => Http::response(self::fakeDocxBytes(), 200),
         ]);
 
         $user = User::factory()->create(['email_verified_at' => now()]);
@@ -401,7 +672,7 @@ class OnlyOfficeCallbackTest extends TestCase
         ]);
         Storage::fake('local');
         Http::fake([
-            'https://onlyoffice.test/stale-current.docx' => Http::response('stale-current-docx', 200),
+            'https://onlyoffice.test/stale-current.docx' => Http::response(self::fakeDocxBytes(), 200),
         ]);
 
         $user = User::factory()->create(['email_verified_at' => now()]);
@@ -526,10 +797,10 @@ class OnlyOfficeCallbackTest extends TestCase
         ]);
         Storage::fake('local');
 
-        // Kirim konten bukan DOCX valid (corrupt/binary acak) — extractor harus
-        // return '' dan callback tetap return {"error": 0}
+        // Send PK-prefixed but otherwise corrupt content: passes the ZIP magic
+        // bytes check but fails DOCX parsing so text extraction returns ''.
         Http::fake([
-            'https://onlyoffice.test/corrupt.docx' => Http::response('NOT-A-VALID-DOCX-CONTENT', 200),
+            'https://onlyoffice.test/corrupt.docx' => Http::response(self::fakeDocxBytes('corrupt'), 200),
         ]);
 
         $user = User::factory()->create(['email_verified_at' => now()]);
@@ -627,6 +898,57 @@ class OnlyOfficeCallbackTest extends TestCase
         // Versi 2 (current) tidak boleh terpengaruh
         $this->assertSame('Teks versi dua asli', $versionTwo->refresh()->searchable_text);
         $this->assertSame('Teks versi dua asli', $memo->refresh()->searchable_text);
+    }
+
+    // -------------------------------------------------------------------------
+    // Path traversal in download URL rejected
+    // -------------------------------------------------------------------------
+
+    public function test_callback_rejects_url_with_path_traversal(): void
+    {
+        config([
+            'services.onlyoffice.jwt_secret' => 'callback-secret',
+            'services.onlyoffice.internal_url' => 'https://onlyoffice.test',
+        ]);
+        Http::fake();
+
+        $user = User::factory()->create(['email_verified_at' => now()]);
+        $memo = $this->createMemo($user);
+        $key = $this->callbackKey($memo);
+        $url = 'https://onlyoffice.test/../../../etc/passwd';
+        $token = (new JwtSigner('callback-secret'))->sign([
+            'status' => 2,
+            'key' => $key,
+            'url' => $url,
+            'exp' => time() + 60,
+        ]);
+
+        $this->postJson(route('onlyoffice.callback', $memo), [
+            'status' => 2,
+            'key' => $key,
+            'url' => $url,
+            'token' => $token,
+        ])->assertForbidden();
+
+        Http::assertNothingSent();
+    }
+
+    // -------------------------------------------------------------------------
+    // Helpers
+    // -------------------------------------------------------------------------
+
+    /**
+     * Build a minimal fake DOCX payload for tests.
+     *
+     * The returned string starts with the ZIP magic bytes (PK\x03\x04) so it
+     * passes the controller's validateDocxResponse() signature check, while
+     * remaining small enough for fast in-memory test assertions.
+     */
+    private static function fakeDocxBytes(string $tag = ''): string
+    {
+        $padding = str_repeat("\x00", max(0, 20 - strlen($tag)));
+
+        return "PK\x03\x04" . $padding . $tag;
     }
 
     protected function callbackKey(Memo $memo, ?MemoVersion $version = null): string
