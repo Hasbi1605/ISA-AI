@@ -93,10 +93,35 @@ class ChatOrchestrationService
     protected function maxHistoryMessages(): int
     {
         try {
-            return max(1, (int) config('services.ai_service.max_history_messages', 20));
+            $raw = config('services.ai_service.max_history_messages', 20);
+
+            return max(1, (int) $this->normalizeIntConfig($raw, 20));
         } catch (\Throwable) {
             return 20;
         }
+    }
+
+    /**
+     * Normalize a config value that may arrive as a quoted string at runtime.
+     * e.g. ' "20" ' → 20, '20' → 20, 20 → 20.
+     */
+    private function normalizeIntConfig(mixed $value, int $default): int
+    {
+        if ($value === null) {
+            return $default;
+        }
+
+        $normalized = trim((string) $value);
+
+        // Strip surrounding quotes (single or double)
+        if (strlen($normalized) >= 2) {
+            $quote = $normalized[0];
+            if (($quote === '"' || $quote === "'") && $normalized[strlen($normalized) - 1] === $quote) {
+                $normalized = substr($normalized, 1, -1);
+            }
+        }
+
+        return is_numeric($normalized) ? (int) $normalized : $default;
     }
 
     public function getDocumentFilenames(array $conversationDocuments): ?array
