@@ -267,8 +267,8 @@ class DocumentLifecycleService
 
     private function deleteDocumentFile(Document $document): void
     {
-        if ($document->file_path && Storage::exists($document->file_path)) {
-            Storage::delete($document->file_path);
+        if ($document->file_path && Storage::disk('local')->exists($document->file_path)) {
+            Storage::disk('local')->delete($document->file_path);
         }
     }
 }

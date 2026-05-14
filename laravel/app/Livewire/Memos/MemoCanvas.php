@@ -38,13 +38,13 @@ class MemoCanvas extends Component
 
     public function generate(MemoGenerationService $generationService): void
     {
-        $this->enforceRateLimit('generate', 5, 60, 'Terlalu banyak generate memo. Coba lagi sebentar.');
-
         $data = $this->validate([
             'memoType' => ['required', 'in:'.implode(',', array_keys(Memo::TYPES))],
             'title' => ['required', 'string', 'max:160'],
             'context' => ['required', 'string', 'max:12000'],
         ]);
+
+        $this->enforceRateLimit('generate', 5, 60, 'Terlalu banyak generate memo. Coba lagi sebentar.');
 
         $this->isGenerating = true;
 

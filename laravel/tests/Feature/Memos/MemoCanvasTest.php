@@ -48,6 +48,31 @@ class MemoCanvasTest extends TestCase
         Http::assertNothingSent();
     }
 
+    public function test_generate_invalid_input_does_not_consume_rate_limit(): void
+    {
+        Http::fake([
+            '*' => fn () => throw new \RuntimeException('HTTP should not be called on invalid input.'),
+        ]);
+
+        $user = User::factory()->create(['email_verified_at' => now()]);
+        $key = MemoCanvas::class.':generate:user-'.$user->id.':127.0.0.1';
+
+        // Submit invalid input (empty title) 5 times — should NOT consume rate limit
+        for ($i = 0; $i < 5; $i++) {
+            Livewire::actingAs($user)
+                ->test(MemoCanvas::class)
+                ->set('memoType', 'memo_internal')
+                ->set('title', '') // invalid
+                ->set('context', 'Konteks memo.')
+                ->call('generate')
+                ->assertHasErrors(['title']);
+        }
+
+        // Rate limiter counter must still be 0 — invalid input did not hit it
+        $this->assertSame(0, RateLimiter::attempts($key));
+        Http::assertNothingSent();
+    }
+
     public function test_generate_creates_memo_and_redirects_to_canvas(): void
     {
         Storage::fake('local');

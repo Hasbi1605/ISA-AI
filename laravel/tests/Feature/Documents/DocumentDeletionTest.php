@@ -95,4 +95,37 @@ class DocumentDeletionTest extends TestCase
         $component->assertSee('Dokumen terpilih berhasil dihapus.');
         Http::assertSentCount(2);
     }
+
+    public function test_delete_document_uses_explicit_local_disk(): void
+    {
+        // Verifikasi bahwa deleteDocumentFile menggunakan Storage::disk('local')
+        // bukan disk default. Jika FILESYSTEM_DISK diubah, file tetap terhapus.
+        Storage::fake('local');
+        Storage::fake('s3'); // simulate alternate disk
+        config()->set('filesystems.default', 's3');
+
+        Http::fake(['*' => Http::response(['message' => 'success'], 200)]);
+        config()->set('services.ai_document_service.url', 'http://python-ai-docs:8002');
+
+        $user = User::factory()->create();
+        $filePath = 'documents/'.$user->id.'/explicit-disk.pdf';
+        Storage::disk('local')->put($filePath, 'dummy content');
+
+        $document = Document::create([
+            'user_id' => $user->id,
+            'filename' => 'explicit-disk.pdf',
+            'original_name' => 'explicit-disk.pdf',
+            'file_path' => $filePath,
+            'mime_type' => 'application/pdf',
+            'file_size_bytes' => 123,
+            'status' => 'ready',
+        ]);
+
+        Livewire::actingAs($user)
+            ->test(\App\Livewire\Chat\ChatIndex::class)
+            ->call('deleteDocument', $document->id);
+
+        // File harus terhapus dari disk 'local' meski default disk adalah 's3'
+        Storage::disk('local')->assertMissing($filePath);
+    }
 }
