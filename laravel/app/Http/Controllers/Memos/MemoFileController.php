@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\Memo;
 use App\Models\MemoVersion;
 use App\Services\OnlyOffice\DocumentConverter;
+use App\Services\OnlyOffice\MemoDocumentKey;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Storage;
 use Symfony\Component\HttpFoundation\BinaryFileResponse;
@@ -17,15 +18,15 @@ class MemoFileController extends Controller
     {
         abort_unless($request->hasValidSignature(false), Response::HTTP_FORBIDDEN);
 
-        // If the signed URL includes a viewer_user_id claim, verify it matches
-        // the memo owner. This prevents a URL minted for user A from being
-        // replayed by user B. URLs without a claim are still accepted so that
-        // legacy/internal OnlyOffice server calls without the claim continue
-        // to work during a rolling deploy.
-        $viewerUserId = (int) $request->query('viewer_user_id', 0);
-        if ($viewerUserId > 0 && $viewerUserId !== (int) $memo->user_id) {
-            abort(403, 'Akses ke memo ini tidak diizinkan.');
-        }
+        // Require a valid memo-bound session token (oo_token) generated at editor-open
+        // time. The token is random, TTL-limited, and stored in cache — not derivable
+        // from the URL itself, preventing replay by anyone who captures the signed URL.
+        $ooToken = $request->query('oo_token', '');
+        abort_unless(
+            is_string($ooToken) && $ooToken !== '' && app(MemoDocumentKey::class)->validateFileToken($ooToken, $memo),
+            Response::HTTP_FORBIDDEN,
+            'Token akses memo tidak valid atau sudah kedaluwarsa.'
+        );
 
         $version = $this->resolveVersion($request, $memo);
 

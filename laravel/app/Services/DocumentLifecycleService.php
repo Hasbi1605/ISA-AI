@@ -278,7 +278,11 @@ class DocumentLifecycleService
             throw new InvalidArgumentException('Dokumen belum selesai diproses. Tunggu hingga status menjadi "ready".');
         }
 
-        return $aiService->summarizeDocument($document->original_name, (string) $document->user_id);
+        return $aiService->summarizeDocument(
+            $document->original_name,
+            (string) $document->user_id,
+            (string) $document->id
+        );
     }
 
     private function cleanupDocumentArtifacts(Document $document): void
@@ -301,7 +305,10 @@ class DocumentLifecycleService
     {
         $pythonUrl = rtrim((string) config('services.ai_document_service.url', config('services.ai_service.url', 'http://127.0.0.1:8001')), '/')
             .'/api/documents/'.urlencode($document->original_name)
-            .'?'.http_build_query(['user_id' => (string) $document->user_id]);
+            .'?'.http_build_query([
+                'user_id' => (string) $document->user_id,
+                'document_id' => (string) $document->id,
+            ]);
         $token = config('services.ai_document_service.token', config('services.ai_service.token'));
 
         try {

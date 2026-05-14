@@ -109,6 +109,7 @@ class ProcessDocument implements ShouldQueue
                 )
                 ->post($pythonUrl, [
                     'user_id' => (string) $this->document->user_id,
+                    'document_id' => (string) $this->document->id,
                 ]);
 
         if ($response->successful()) {
@@ -151,7 +152,10 @@ class ProcessDocument implements ShouldQueue
     {
         $pythonUrl = rtrim((string) config('services.ai_document_service.url', config('services.ai_service.url', 'http://127.0.0.1:8001')), '/')
             .'/api/documents/'.urlencode($doc->original_name)
-            .'?'.http_build_query(['user_id' => (string) $doc->user_id]);
+            .'?'.http_build_query([
+                'user_id' => (string) $doc->user_id,
+                'document_id' => (string) $doc->id,
+            ]);
         $token = config('services.ai_document_service.token', config('services.ai_service.token'));
 
         $response = Http::withHeaders([

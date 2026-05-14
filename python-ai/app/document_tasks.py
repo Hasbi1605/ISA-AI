@@ -5,10 +5,15 @@ import logging
 logging.basicConfig(level=logging.INFO)
 
 
-def run_process_task(file_path: str, filename: str, user_id: str) -> int:
+def run_process_task(file_path: str, filename: str, user_id: str, document_id: str = "") -> int:
     from app.services.rag_ingest import process_document
 
-    success, message = process_document(file_path, filename, user_id=user_id)
+    success, message = process_document(
+        file_path,
+        filename,
+        user_id=user_id,
+        document_id=document_id if document_id else None,
+    )
     print(json.dumps({
         "success": bool(success),
         "message": message,
@@ -24,11 +29,12 @@ def main() -> int:
     process_parser.add_argument("file_path")
     process_parser.add_argument("filename")
     process_parser.add_argument("user_id")
+    process_parser.add_argument("document_id", nargs="?", default="")
 
     args = parser.parse_args()
 
     if args.command == "process":
-        return run_process_task(args.file_path, args.filename, args.user_id)
+        return run_process_task(args.file_path, args.filename, args.user_id, getattr(args, "document_id", ""))
 
     parser.error("Unknown command")
     return 2

@@ -19,6 +19,9 @@ from app.services.table_extraction import extract_tables_from_file
 
 router = APIRouter(prefix="/api/documents", tags=["Documents"])
 
+ALLOWED_EXTENSIONS: frozenset[str] = frozenset({"pdf", "docx", "xlsx", "csv"})
+MAX_UPLOAD_BYTES = int(os.environ.get("MAX_DOCUMENT_UPLOAD_BYTES", str(50 * 1024 * 1024)))
+
 
 def _require_safe_filename(filename: str | None) -> str:
     if filename is None:
@@ -59,6 +62,7 @@ def get_document_chunks_for_summarization(*args, **kwargs):
 def upload_document(
     file: UploadFile = File(...),
     user_id: str = Form(...),
+    document_id: str = Form(""),
 ):
     """
     Endpoint for uploading and processing a document into vector embeddings.
@@ -71,13 +75,35 @@ def upload_document(
 
     file_id = str(uuid.uuid4())
     safe_filename = _require_safe_filename(file.filename)
+    ext = safe_filename.rsplit(".", 1)[-1].lower() if "." in safe_filename else ""
+    if ext not in ALLOWED_EXTENSIONS:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Tipe file .{ext} tidak didukung. Gunakan: {', '.join(sorted(ALLOWED_EXTENSIONS))}",
+        )
     temp_file_path = os.path.join(temp_dir, f"{file_id}_{safe_filename}")
 
     try:
         with open(temp_file_path, "wb") as buffer:
-            shutil.copyfileobj(file.file, buffer)
+            written = 0
+            while True:
+                chunk_data = file.file.read(1024 * 1024)
+                if not chunk_data:
+                    break
+                written += len(chunk_data)
+                if written > MAX_UPLOAD_BYTES:
+                    raise HTTPException(
+                        status_code=413,
+                        detail=f"File melebihi batas maksimum {MAX_UPLOAD_BYTES // (1024 * 1024)} MB.",
+                    )
+                buffer.write(chunk_data)
 
-        success, message = run_document_process(temp_file_path, safe_filename, user_id)
+        success, message = run_document_process(
+            temp_file_path,
+            safe_filename,
+            user_id,
+            document_id=document_id,
+        )
 
         if success:
             return {"status": "success", "message": message, "filename": safe_filename}
@@ -97,8 +123,13 @@ def upload_document(
 async def delete_document(
     filename: str,
     user_id: str = Query(..., min_length=1),
+    document_id: str = Query(""),
 ):
-    success, message = delete_document_vectors(filename, user_id=user_id)
+    success, message = delete_document_vectors(
+        filename,
+        user_id=user_id,
+        document_id=document_id if document_id else None,
+    )
     if success:
         return {"status": "success", "message": message}
     raise HTTPException(status_code=500, detail=message)
@@ -107,6 +138,7 @@ async def delete_document(
 class SummarizeRequest(BaseModel):
     filename: str
     user_id: str
+    document_id: str = ""
 
 
 class ExportRequest(BaseModel):
@@ -216,6 +248,7 @@ def summarize_document_endpoint(request: SummarizeRequest):
     success, batches, total_chunks = get_document_chunks_for_summarization(
         request.filename,
         user_id=request.user_id,
+        document_id=request.document_id if request.document_id else None,
         max_tokens=8000,
     )
 

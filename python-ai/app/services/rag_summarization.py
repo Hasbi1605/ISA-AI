@@ -15,7 +15,12 @@ def get_max_summarize_chunks() -> int:
     return get_env_int("MAX_SUMMARIZE_CHUNKS", 500)
 
 
-def get_document_chunks_for_summarization(filename: str, user_id: str = None, max_tokens: int = 8000) -> Tuple[bool, List[str], int]:
+def get_document_chunks_for_summarization(
+    filename: str,
+    user_id: str = None,
+    document_id: str | None = None,
+    max_tokens: int = 8000,
+) -> Tuple[bool, List[str], int]:
     try:
         logger.info(f"=== Getting chunks for summarization: {filename} ===")
 
@@ -33,7 +38,12 @@ def get_document_chunks_for_summarization(filename: str, user_id: str = None, ma
             persist_directory=CHROMA_PATH
         )
 
-        docs = vectorstore.get(where={"$and": [{"filename": filename}, {"user_id": str(user_id)}]})
+        if document_id:
+            where_filter = {"$and": [{"document_id": str(document_id)}, {"user_id": str(user_id)}]}
+        else:
+            where_filter = {"$and": [{"filename": filename}, {"user_id": str(user_id)}]}
+
+        docs = vectorstore.get(where=where_filter)
 
         if not docs or not docs.get("documents"):
             return False, [], 0

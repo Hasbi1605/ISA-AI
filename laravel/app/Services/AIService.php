@@ -142,15 +142,16 @@ class AIService
      * @param string|null $user_id User ID for authorization
      * @return array
      */
-    public function summarizeDocument(string $filename, ?string $user_id = null): array
+    public function summarizeDocument(string $filename, ?string $user_id = null, string $documentId = ''): array
     {
         try {
             $payload = [
                 'filename' => $filename,
+                'user_id' => $user_id,
             ];
 
-            if ($user_id !== null) {
-                $payload['user_id'] = $user_id;
+            if ($documentId !== '') {
+                $payload['document_id'] = $documentId;
             }
 
             $response = $this->client->post($this->documentBaseUrl . '/api/documents/summarize', [

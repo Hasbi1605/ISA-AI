@@ -24,7 +24,12 @@ from app.services.lightweight_text_splitter import LightweightRecursiveTextSplit
 logger = logging.getLogger(__name__)
 
 
-def process_document(file_path: str, filename: str, user_id: str = "unknown"):
+def process_document(
+    file_path: str,
+    filename: str,
+    user_id: str = "unknown",
+    document_id: str | None = None,
+):
     try:
         logger.info(f"=== Processing document: {filename} ===")
         logger.info(f"File path: {file_path}")
@@ -34,7 +39,7 @@ def process_document(file_path: str, filename: str, user_id: str = "unknown"):
             logger.info(f"File size: {file_size:,} bytes ({file_size / 1024 / 1024:.2f} MB)")
 
         logger.info("Cleaning up existing vectors before re-ingest for filename='%s', user_id='%s'", filename, user_id)
-        delete_document_vectors(filename, user_id)
+        delete_document_vectors(filename, user_id, document_id=document_id)
 
         import time as _time
         _load_start = _time.time()
@@ -103,6 +108,8 @@ def process_document(file_path: str, filename: str, user_id: str = "unknown"):
                     "parent_id": parent_id,
                     "parent_index": p_idx,
                 }
+                if document_id:
+                    parent_meta["document_id"] = str(document_id)
                 pdr_parent_docs.append((parent_id, parent.page_content, parent_meta))
 
                 children = child_splitter.split_documents([parent])
@@ -159,6 +166,8 @@ def process_document(file_path: str, filename: str, user_id: str = "unknown"):
             chunk.metadata["user_id"]  = str(user_id)
             chunk.metadata["embedding_model"] = provider_name
             chunk.metadata["chunk_index"] = idx
+            if document_id:
+                chunk.metadata["document_id"] = str(document_id)
             if idx == 0:
                 logger.info("🔍 INGEST: Storing chunk metadata - filename='%s', user_id='%s'", filename, str(user_id))
 
@@ -359,7 +368,11 @@ def process_document(file_path: str, filename: str, user_id: str = "unknown"):
         return False, str(e)
 
 
-def delete_document_vectors(filename: str, user_id: str | None = None):
+def delete_document_vectors(
+    filename: str,
+    user_id: str | None = None,
+    document_id: str | None = None,
+):
     try:
         from app.services.rag_config import (
             CHROMA_PATH,
@@ -380,7 +393,10 @@ def delete_document_vectors(filename: str, user_id: str | None = None):
             persist_directory=CHROMA_PATH
         )
 
-        scoped_filter = {"$and": [{"filename": filename}, {"user_id": str(user_id)}]}
+        if document_id:
+            scoped_filter = {"$and": [{"document_id": str(document_id)}, {"user_id": str(user_id)}]}
+        else:
+            scoped_filter = {"$and": [{"filename": filename}, {"user_id": str(user_id)}]}
         vectorstore.delete(where=scoped_filter)
 
         try:
@@ -389,13 +405,23 @@ def delete_document_vectors(filename: str, user_id: str | None = None):
                 persist_directory=CHROMA_PATH,
             )
             raw_col = parent_store._collection
-            raw_col.delete(where={
-                "$and": [
-                    {"filename": filename},
-                    {"user_id": str(user_id)},
-                    {"chunk_type": "parent"},
-                ],
-            })
+            if document_id:
+                parent_filter = {
+                    "$and": [
+                        {"document_id": str(document_id)},
+                        {"user_id": str(user_id)},
+                        {"chunk_type": "parent"},
+                    ],
+                }
+            else:
+                parent_filter = {
+                    "$and": [
+                        {"filename": filename},
+                        {"user_id": str(user_id)},
+                        {"chunk_type": "parent"},
+                    ],
+                }
+            raw_col.delete(where=parent_filter)
             logger.info("✅ PDR parent chunks for %s deleted for user_id=%s", filename, user_id)
         except Exception as pe:
             logger.debug("PDR parent delete skipped (mungkin non-PDR dokumen): %s", pe)

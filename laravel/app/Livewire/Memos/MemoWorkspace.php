@@ -450,10 +450,11 @@ class MemoWorkspace extends Component
         $laravelInternalUrl = rtrim((string) config('services.onlyoffice.laravel_internal_url', config('app.url')), '/');
         $ttlMinutes = max(1, (int) config('services.onlyoffice.signed_url_ttl_minutes', 30));
         $versionId = $version?->id;
+        $ooToken = app(MemoDocumentKey::class)->generateFileToken($memo, $versionId, $ttlMinutes);
         $documentPath = URL::temporarySignedRoute('memos.file.signed', now()->addMinutes($ttlMinutes), array_filter([
             'memo' => $memo,
             'version_id' => $versionId,
-            'viewer_user_id' => Auth::id(),
+            'oo_token' => $ooToken,
         ], fn ($value) => filled($value)), false);
         $callbackPath = route('onlyoffice.callback', array_filter([
             'memo' => $memo,

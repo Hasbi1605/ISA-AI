@@ -21,7 +21,7 @@ def _parse_result_payload(stdout: str) -> Dict[str, Any]:
     raise ValueError("Subprocess did not return a valid JSON payload.")
 
 
-def run_document_process(file_path: str, filename: str, user_id: str) -> Tuple[bool, str]:
+def run_document_process(file_path: str, filename: str, user_id: str, document_id: str = "") -> Tuple[bool, str]:
     timeout_seconds = get_env_int("DOCUMENT_PROCESS_SUBPROCESS_TIMEOUT", 3600)
     app_dir = os.path.dirname(os.path.dirname(__file__))
 
@@ -34,6 +34,7 @@ def run_document_process(file_path: str, filename: str, user_id: str) -> Tuple[b
             file_path,
             filename,
             user_id,
+            document_id,
         ],
         cwd=app_dir,
         capture_output=True,
