@@ -134,11 +134,11 @@ class MemoWorkspace extends Component
 
     public function generateConfiguredMemo(): void
     {
-        $this->enforceRateLimit('generateConfiguredMemo', 5, 60, 'Terlalu banyak generate memo. Coba lagi sebentar.');
-
         if (! $this->validateMemoConfiguration()) {
             return;
         }
+
+        $this->enforceRateLimit('generateConfiguredMemo', 5, 60, 'Terlalu banyak generate memo. Coba lagi sebentar.');
 
         $this->memoChatMessages[] = [
             'role' => 'user',

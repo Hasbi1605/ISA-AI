@@ -1017,4 +1017,30 @@ class ChatUiTest extends TestCase
             ->assertSet('conversationDocuments', [])
             ->assertDispatched('conversation-documents-preview');
     }
+
+    public function test_load_conversations_uses_id_desc_as_tiebreaker_for_same_updated_at(): void
+    {
+        $user = User::factory()->create(['email_verified_at' => now()]);
+
+        $sameTimestamp = now()->subMinutes(5);
+
+        $conv1 = Conversation::create(['user_id' => $user->id, 'title' => 'Conv 1']);
+        $conv2 = Conversation::create(['user_id' => $user->id, 'title' => 'Conv 2']);
+        $conv3 = Conversation::create(['user_id' => $user->id, 'title' => 'Conv 3']);
+
+        // Set all three to the same updated_at — without tiebreaker, order is non-deterministic
+        Conversation::withoutTimestamps(function () use ($conv1, $conv2, $conv3, $sameTimestamp) {
+            $conv1->forceFill(['updated_at' => $sameTimestamp])->save();
+            $conv2->forceFill(['updated_at' => $sameTimestamp])->save();
+            $conv3->forceFill(['updated_at' => $sameTimestamp])->save();
+        });
+
+        $component = Livewire::actingAs($user)->test(ChatIndex::class);
+        $conversations = $component->get('conversations');
+
+        // With id desc tiebreaker, conv3 (highest id) must come first
+        $ids = $conversations->pluck('id')->values()->all();
+        $this->assertSame([(int) $conv3->id, (int) $conv2->id, (int) $conv1->id], $ids,
+            'Conversations with same updated_at must be ordered by id desc as tiebreaker');
+    }
 }

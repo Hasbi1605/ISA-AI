@@ -52,6 +52,33 @@ class MemoWorkspaceTest extends TestCase
         Http::assertNothingSent();
     }
 
+    public function test_generate_configured_memo_invalid_input_does_not_consume_rate_limit(): void
+    {
+        Http::fake([
+            '*' => fn () => throw new \RuntimeException('HTTP should not be called on invalid input.'),
+        ]);
+
+        $user = User::factory()->create(['email_verified_at' => now()]);
+        $key = MemoWorkspace::class.':generateConfiguredMemo:user-'.$user->id.':127.0.0.1';
+
+        // Submit with empty required fields 5 times — should NOT consume rate limit
+        for ($i = 0; $i < 5; $i++) {
+            Livewire::actingAs($user)
+                ->test(MemoWorkspace::class)
+                ->set('memoNumber', '')  // invalid — required
+                ->set('memoRecipient', '')
+                ->set('title', '')
+                ->set('memoDate', '')
+                ->set('memoContent', '')
+                ->call('generateConfiguredMemo')
+                ->assertHasErrors(['memoNumber']);
+        }
+
+        // Rate limiter counter must still be 0
+        $this->assertSame(0, RateLimiter::attempts($key));
+        Http::assertNothingSent();
+    }
+
     public function test_workspace_renders_parent_driven_toggle_and_home_link(): void
     {
         $user = User::factory()->create(['email_verified_at' => now()]);
