@@ -67,8 +67,24 @@ class ProcessDocument implements ShouldQueue
 
         $this->document = $fresh;
 
-        // 1. Update status to processing
-        $this->document->update(['status' => 'processing']);
+        // ── Stale-job guard: atomic status claim ─────────────────────────────
+        // Use an atomic WHERE-based update so only the first job that finds the
+        // document in `pending` state can proceed. If the document was already
+        // claimed by another worker, or if it was reprocessed (reset to pending
+        // again and claimed by a newer job), this job exits without overwriting
+        // any progress.
+        $claimed = Document::where('id', $fresh->id)
+            ->where('status', 'pending')
+            ->update(['status' => 'processing']);
+
+        if ($claimed === 0) {
+            logger()->info('ProcessDocument: skipped — document is no longer pending', [
+                'document_id' => $fresh->id,
+                'current_status' => $fresh->refresh()?->status ?? 'deleted',
+            ]);
+
+            return;
+        }
 
             // 2. Prepare file - Try both private and public paths
             $filePath = Storage::disk('local')->path($this->document->file_path);
@@ -123,9 +139,30 @@ class ProcessDocument implements ShouldQueue
                 return;
             }
 
-            // 4. Update status to ready
-            $freshDocument->update(['status' => 'ready']);
-            $this->document = $freshDocument;
+            // ── Stale-job guard: post-success status update ───────────────────
+            // Only transition to `ready` if the document is still in the
+            // `processing` state claimed by this job. If another action (e.g.,
+            // user-initiated reprocess) has already moved the document out of
+            // `processing`, we treat this job as stale and clean up the vectors
+            // it just ingested to avoid orphaning them.
+            $saved = Document::where('id', $freshDocument->id)
+                ->where('status', 'processing')
+                ->update(['status' => 'ready']);
+
+            if ($saved === 0) {
+                logger()->info('ProcessDocument: stale — document status changed while processing; discarding ingested vectors', [
+                    'document_id' => $freshDocument->id,
+                ]);
+
+                try {
+                    $this->deleteVectorsForDocument($freshDocument);
+                } catch (\Throwable $ignored) {
+                }
+
+                return;
+            }
+
+            $this->document = $freshDocument->refresh() ?? $freshDocument;
 
                 // 5. Dispatch preview rendering job as a fallback if the
                 // eager upload-time dispatch has not already completed it.

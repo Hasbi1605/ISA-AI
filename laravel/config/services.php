@@ -74,6 +74,7 @@ return [
         'oauth_client_secret' => env('GOOGLE_DRIVE_OAUTH_CLIENT_SECRET'),
         'oauth_redirect_uri' => env('GOOGLE_DRIVE_OAUTH_REDIRECT_URI'),
         'oauth_setup_key' => env('GOOGLE_DRIVE_OAUTH_SETUP_KEY'),
+        'oauth_admin_emails' => env('GOOGLE_DRIVE_OAUTH_ADMIN_EMAILS'),
     ],
 
 ];

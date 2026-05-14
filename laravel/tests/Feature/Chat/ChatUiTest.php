@@ -1204,4 +1204,77 @@ class ChatUiTest extends TestCase
         $this->assertSame([(int) $conv3->id, (int) $conv2->id, (int) $conv1->id], $ids,
             'Conversations with same updated_at must be ordered by id desc as tiebreaker');
     }
+
+    // -------------------------------------------------------------------------
+    // Double-submit / race-condition guard
+    // -------------------------------------------------------------------------
+
+    public function test_double_submit_on_conversation_with_pending_response_is_blocked(): void
+    {
+        Queue::fake();
+
+        $user = User::factory()->create();
+
+        $conversation = Conversation::create([
+            'user_id' => $user->id,
+            'title' => 'Double-submit test',
+        ]);
+
+        // Simulate a user message already sent (pending AI response).
+        Message::create([
+            'conversation_id' => $conversation->id,
+            'role' => 'user',
+            'content' => 'Pesan pertama',
+            'created_at' => now(),
+        ]);
+
+        $component = Livewire::actingAs($user)->test(ChatIndex::class);
+        $component->set('currentConversationId', $conversation->id);
+
+        // Second submission while a pending response exists: must be blocked.
+        $component->set('prompt', 'Pesan kedua')->call('sendMessage');
+
+        // No additional user message should have been created.
+        $this->assertDatabaseCount('messages', 1);
+
+        // No AI job should be dispatched for the blocked submission.
+        Queue::assertNotPushed(GenerateChatResponse::class);
+    }
+
+    public function test_first_submit_creates_message_and_dispatches_job_when_no_pending_response(): void
+    {
+        Queue::fake();
+
+        $user = User::factory()->create();
+
+        // Conversation has no pending response (latest message is from assistant).
+        $conversation = Conversation::create([
+            'user_id' => $user->id,
+            'title' => 'Clean conversation',
+        ]);
+
+        Message::create([
+            'conversation_id' => $conversation->id,
+            'role' => 'assistant',
+            'content' => 'Jawaban AI sebelumnya.',
+            'created_at' => now()->subMinutes(5),
+        ]);
+
+        $component = Livewire::actingAs($user)->test(ChatIndex::class);
+        $component->set('currentConversationId', $conversation->id);
+        $component->set('prompt', 'Pertanyaan baru')->call('sendMessage');
+
+        // User message must have been created.
+        $this->assertDatabaseHas('messages', [
+            'conversation_id' => $conversation->id,
+            'role' => 'user',
+            'content' => 'Pertanyaan baru',
+        ]);
+
+        // AI job must have been dispatched.
+        Queue::assertPushed(GenerateChatResponse::class, function (GenerateChatResponse $job) use ($conversation, $user) {
+            return $job->conversationId === (int) $conversation->id
+                && $job->userId === (int) $user->id;
+        });
+    }
 }

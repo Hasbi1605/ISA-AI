@@ -137,20 +137,24 @@ class DocumentLifecycleService
                     wrapInTransaction: false,
                 );
 
-                CloudStorageFile::create([
-                    'user_id' => $user->id,
-                    'provider' => $provider,
-                    'direction' => CloudStorageFile::DIRECTION_IMPORT,
-                    'local_type' => Document::class,
-                    'local_id' => $document->id,
-                    'external_id' => $externalId,
-                    'name' => $originalName,
-                    'mime_type' => $mimeType,
-                    'web_view_link' => $download['web_view_link'] ?? null,
-                    'folder_external_id' => $download['folder_external_id'] ?? null,
-                    'size_bytes' => $download['size_bytes'] ?? null,
-                    'synced_at' => $sourceSyncedAt,
-                ]);
+                CloudStorageFile::updateOrCreate(
+                    [
+                        'user_id' => $user->id,
+                        'provider' => $provider,
+                        'external_id' => $externalId,
+                    ],
+                    [
+                        'direction' => CloudStorageFile::DIRECTION_IMPORT,
+                        'local_type' => Document::class,
+                        'local_id' => $document->id,
+                        'name' => $originalName,
+                        'mime_type' => $mimeType,
+                        'web_view_link' => $download['web_view_link'] ?? null,
+                        'folder_external_id' => $download['folder_external_id'] ?? null,
+                        'size_bytes' => $download['size_bytes'] ?? null,
+                        'synced_at' => $sourceSyncedAt,
+                    ]
+                );
 
                 return $document;
             });

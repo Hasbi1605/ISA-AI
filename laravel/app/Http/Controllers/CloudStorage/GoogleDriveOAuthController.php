@@ -19,14 +19,18 @@ class GoogleDriveOAuthController extends Controller
             abort(403, 'Setup key Google Drive tidak valid.');
         }
 
+        /** @var User $user */
+        $user = Auth::user();
+
+        if (! $oauthService->isAllowedAdminUser($user)) {
+            abort(403, 'Hanya admin yang diizinkan menghubungkan Google Drive pusat.');
+        }
+
         if (RateLimiter::tooManyAttempts('gdrive-connect:'.Auth::id(), 3)) {
             abort(429, 'Terlalu banyak percobaan. Coba lagi nanti.');
         }
 
         RateLimiter::hit('gdrive-connect:'.Auth::id(), 3600);
-
-        /** @var User $user */
-        $user = Auth::user();
 
         return redirect()->away($oauthService->authorizationUrl($user));
     }
@@ -35,6 +39,10 @@ class GoogleDriveOAuthController extends Controller
     {
         /** @var User $user */
         $user = Auth::user();
+
+        if (! $oauthService->isAllowedAdminUser($user)) {
+            abort(403, 'Hanya admin yang diizinkan menghubungkan Google Drive pusat.');
+        }
 
         $request->validate([
             'code' => ['required', 'string'],

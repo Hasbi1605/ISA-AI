@@ -318,4 +318,140 @@ class ProcessDocumentTest extends TestCase
         // Preview job must NOT have been dispatched.
         Queue::assertNotPushed(RenderDocumentPreview::class);
     }
+
+    // -------------------------------------------------------------------------
+    // Stale-job guard: ProcessDocument
+    // -------------------------------------------------------------------------
+
+    public function test_job_is_skipped_when_document_is_already_processing(): void
+    {
+        Storage::fake('local');
+        Http::fake();
+
+        $user = User::factory()->create();
+        $filePath = 'documents/'.$user->id.'/already-processing.pdf';
+        Storage::disk('local')->put($filePath, '%PDF-1.4 fake');
+
+        // Document is already in 'processing' state — another worker grabbed it first.
+        $document = Document::create([
+            'user_id' => $user->id,
+            'filename' => 'already-processing.pdf',
+            'original_name' => 'already-processing.pdf',
+            'file_path' => $filePath,
+            'mime_type' => 'application/pdf',
+            'file_size_bytes' => 123,
+            'status' => 'processing',
+        ]);
+
+        (new ProcessDocument($document))->handle();
+
+        // Status must remain 'processing' — the stale job must not reset it to ready.
+        $this->assertSame('processing', $document->fresh()->status);
+        // No HTTP call should have been made for the duplicate job.
+        Http::assertNothingSent();
+    }
+
+    public function test_job_is_skipped_when_document_is_already_ready(): void
+    {
+        Storage::fake('local');
+        Http::fake();
+
+        $user = User::factory()->create();
+        $filePath = 'documents/'.$user->id.'/already-ready.pdf';
+        Storage::disk('local')->put($filePath, '%PDF-1.4 fake');
+
+        // Document already successfully processed by another job.
+        $document = Document::create([
+            'user_id' => $user->id,
+            'filename' => 'already-ready.pdf',
+            'original_name' => 'already-ready.pdf',
+            'file_path' => $filePath,
+            'mime_type' => 'application/pdf',
+            'file_size_bytes' => 123,
+            'status' => 'ready',
+        ]);
+
+        (new ProcessDocument($document))->handle();
+
+        $this->assertSame('ready', $document->fresh()->status);
+        Http::assertNothingSent();
+    }
+
+    public function test_stale_job_does_not_set_ready_when_document_reprocessed_mid_flight(): void
+    {
+        Storage::fake('local');
+        Queue::fake();
+        config()->set('services.ai_document_service.url', 'http://python-ai-docs:8002');
+        config()->set('services.ai_document_service.token', 'internal-token');
+
+        $user = User::factory()->create();
+        $filePath = 'documents/'.$user->id.'/reprocessed.pdf';
+        Storage::disk('local')->put($filePath, '%PDF-1.4 fake');
+
+        $document = Document::create([
+            'user_id' => $user->id,
+            'filename' => 'reprocessed.pdf',
+            'original_name' => 'reprocessed.pdf',
+            'file_path' => $filePath,
+            'mime_type' => 'application/pdf',
+            'file_size_bytes' => 123,
+            'status' => 'pending',
+        ]);
+
+        // While this job was running (HTTP call in flight), a new reprocess
+        // was triggered which reset the document status back to 'pending'
+        // (simulated by modifying status inside the HTTP fake callback).
+        Http::fake([
+            '*/api/documents/process' => function () use ($document) {
+                // Simulate another worker or admin resetting the document to pending.
+                Document::where('id', $document->id)->update(['status' => 'pending']);
+
+                return Http::response(['message' => 'success'], 200);
+            },
+            '*/api/documents/*' => Http::response(['message' => 'deleted'], 200),
+        ]);
+
+        (new ProcessDocument($document))->handle();
+
+        // The post-success guard detected the status change and did NOT set 'ready'.
+        // The document should remain in 'pending' so the newer job can claim it.
+        $this->assertSame('pending', $document->fresh()->status);
+    }
+
+    // -------------------------------------------------------------------------
+    // Stale-job guard: RenderDocumentPreview
+    // -------------------------------------------------------------------------
+
+    public function test_render_preview_job_skips_document_whose_preview_is_already_ready(): void
+    {
+        $user = User::factory()->create();
+
+        $document = Document::create([
+            'user_id' => $user->id,
+            'filename' => 'preview-ready.pdf',
+            'original_name' => 'preview-ready.pdf',
+            'file_path' => 'documents/'.$user->id.'/preview-ready.pdf',
+            'mime_type' => 'application/pdf',
+            'file_size_bytes' => 123,
+            'status' => 'ready',
+            'preview_status' => Document::PREVIEW_STATUS_READY,
+            'preview_html_path' => 'previews/preview-ready.html',
+        ]);
+
+        $rendererCalled = false;
+        $renderer = new class($rendererCalled) extends \App\Services\Documents\DocumentPreviewRenderer
+        {
+            public function __construct(private bool &$called) {}
+
+            public function render(\App\Models\Document $document): void
+            {
+                $this->called = true;
+            }
+        };
+
+        $job = new \App\Jobs\RenderDocumentPreview($document);
+        $job->handle($renderer);
+
+        $this->assertFalse($rendererCalled, 'Renderer must not be called when preview is already ready.');
+    }
 }

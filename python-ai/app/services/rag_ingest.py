@@ -39,7 +39,14 @@ def process_document(
             logger.info(f"File size: {file_size:,} bytes ({file_size / 1024 / 1024:.2f} MB)")
 
         logger.info("Cleaning up existing vectors before re-ingest for filename='%s', user_id='%s'", filename, user_id)
-        _del_ok, _del_msg = delete_document_vectors(filename, user_id, document_id=document_id, cleanup_legacy=True)
+        # Use cleanup_legacy=False for pre-ingest so that only vectors keyed to
+        # this specific document_id are removed. Legacy filename-only vectors are
+        # left intact. This preserves existing retrieval context for the user if
+        # the new ingest subsequently fails — the old chunks remain queryable
+        # rather than being silently erased before any new data is written.
+        # Legacy cleanup (cleanup_legacy=True) is reserved for the permanent
+        # user-initiated delete path where the document is being retired entirely.
+        _del_ok, _del_msg = delete_document_vectors(filename, user_id, document_id=document_id, cleanup_legacy=False)
         if not _del_ok:
             logger.warning(
                 "Pre-ingest cleanup failed for '%s' (user=%s, document_id=%s): %s — "
