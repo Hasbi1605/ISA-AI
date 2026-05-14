@@ -51,12 +51,15 @@ class ProcessDocument implements ShouldQueue
     public function handle(): void
     {
         // Fresh-check the document to detect race with user deletion.
-        // If the document was soft-deleted (or hard-deleted) before the worker
-        // started, skip silently instead of logging a spurious "file not found"
-        // error and writing status='error' on a trashed row.
+        // If the document was hard-deleted before the worker started,
+        // skip silently instead of logging a spurious "file not found" error.
+        // Note: Document no longer uses SoftDeletes (issue #159), so we only
+        // need to check for null (hard-deleted). The $deleteWhenMissingModels
+        // property handles the case where the model is missing during
+        // unserialization.
         $fresh = $this->document->fresh();
 
-        if ($fresh === null || $fresh->trashed()) {
+        if ($fresh === null) {
             logger()->info("ProcessDocument skipped: document {$this->document->id} was deleted before processing started.");
 
             return;

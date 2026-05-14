@@ -214,7 +214,7 @@ class ProcessDocumentTest extends TestCase
         });
     }
 
-    public function test_job_skips_silently_when_document_is_soft_deleted_before_processing(): void
+    public function test_job_skips_silently_when_document_is_deleted_before_processing(): void
     {
         Storage::fake('local');
         Http::fake();
@@ -233,17 +233,17 @@ class ProcessDocumentTest extends TestCase
             'status' => 'pending',
         ]);
 
-        // Simulate user soft-deleting the document before worker starts
+        $documentId = $document->id;
+
+        // Simulate user deleting the document before worker starts.
+        // Document now uses hard delete (issue #159), so delete() removes the row.
         $document->delete();
 
         $job = new ProcessDocument($document);
         $job->handle();
 
-        // Status should NOT be changed to 'error' — row is trashed, skip silently
-        $this->assertSoftDeleted($document);
-        $this->assertSame('pending', Document::withTrashed()->find($document->id)->status);
-
-        // Python service should not be called
+        // Row is gone — job should skip silently, no error written, no HTTP call
+        $this->assertDatabaseMissing('documents', ['id' => $documentId]);
         Http::assertNothingSent();
     }
 
