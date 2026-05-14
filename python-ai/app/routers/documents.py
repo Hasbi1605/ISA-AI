@@ -124,11 +124,13 @@ async def delete_document(
     filename: str,
     user_id: str = Query(..., min_length=1),
     document_id: str = Query(""),
+    cleanup_legacy: bool = Query(False),
 ):
     success, message = delete_document_vectors(
         filename,
         user_id=user_id,
         document_id=document_id if document_id else None,
+        cleanup_legacy=cleanup_legacy,
     )
     if success:
         return {"status": "success", "message": message}

@@ -123,3 +123,101 @@ def test_process_document_returns_false_on_partial_batch_failure(monkeypatch, tm
     assert success is False, f"Expected False but got True with message: {message}"
     # The message should mention chunks failing.
     assert any(kw in message.lower() for kw in ("chunk", "gagal", "partial", "fail", "ingest"))
+
+
+def test_strict_delete_does_not_delete_by_filename(monkeypatch):
+    """
+    Regression for H3/H4: when delete_document_vectors is called with
+    document_id but cleanup_legacy=False (default / strict mode), only the
+    document_id-based filter should be applied.
+    The filename-based filter must NOT be sent — it would otherwise delete
+    vectors belonging to a newly uploaded document with the same filename.
+
+    This covers the skenario:
+    - Old 'agenda.pdf' (document_id=5) is being processed.
+    - User deletes it; user re-uploads 'agenda.pdf' (document_id=9).
+    - Old ProcessDocument job finishes and calls deleteVectorsForDocument
+      (strict = cleanup_legacy omitted / False).
+    - Only document_id=5 chunks must be removed; document_id=9 must survive.
+    """
+    from app.services.rag_ingest import delete_document_vectors
+
+    delete_calls: list = []
+
+    class FakeCollection:
+        def delete(self, where):
+            delete_calls.append({"type": "parent", "where": where})
+
+    class FakeChroma:
+        def __init__(self, collection_name, **kwargs):
+            self.collection_name = collection_name
+            self._collection = FakeCollection()
+
+        def delete(self, where):
+            delete_calls.append({"type": "main", "where": where})
+
+    monkeypatch.setattr("app.services.rag_ingest.Chroma", FakeChroma)
+    monkeypatch.setattr(
+        "app.services.rag_ingest.get_embeddings_with_fallback",
+        lambda *a, **kw: (object(), "fake", 0),
+    )
+
+    delete_document_vectors(
+        "agenda.pdf",
+        user_id="user-1",
+        document_id="5",
+        cleanup_legacy=False,   # strict mode — simulates ProcessDocument job
+    )
+
+    # Exactly one main delete call should have been issued.
+    main_deletes = [c for c in delete_calls if c["type"] == "main"]
+    assert len(main_deletes) == 1, f"Expected 1 main delete call, got {len(main_deletes)}"
+
+    # The single delete must filter by document_id, NOT by filename.
+    filter_where = str(main_deletes[0]["where"])
+    assert "document_id" in filter_where, "Delete must include document_id filter"
+    assert "filename" not in filter_where, \
+        "Strict delete must NOT filter by filename — would delete new document's vectors"
+
+
+def test_legacy_cleanup_delete_removes_both_new_and_legacy_chunks(monkeypatch):
+    """
+    Regression: when cleanup_legacy=True (user-initiated delete), both
+    document_id-based AND filename-based filters must be applied to clean
+    up legacy chunks that pre-date document_id tracking.
+    """
+    from app.services.rag_ingest import delete_document_vectors
+
+    delete_calls: list = []
+
+    class FakeCollection:
+        def delete(self, where):
+            delete_calls.append({"type": "parent", "where": where})
+
+    class FakeChroma:
+        def __init__(self, collection_name, **kwargs):
+            self.collection_name = collection_name
+            self._collection = FakeCollection()
+
+        def delete(self, where):
+            delete_calls.append({"type": "main", "where": where})
+
+    monkeypatch.setattr("app.services.rag_ingest.Chroma", FakeChroma)
+    monkeypatch.setattr(
+        "app.services.rag_ingest.get_embeddings_with_fallback",
+        lambda *a, **kw: (object(), "fake", 0),
+    )
+
+    delete_document_vectors(
+        "agenda.pdf",
+        user_id="user-1",
+        document_id="5",
+        cleanup_legacy=True,    # full cleanup — simulates user-initiated delete
+    )
+
+    main_deletes = [c for c in delete_calls if c["type"] == "main"]
+    assert len(main_deletes) == 2, f"Expected 2 main delete calls (new + legacy), got {len(main_deletes)}"
+
+    filters_str = " ".join(str(c["where"]) for c in main_deletes)
+    assert "document_id" in filters_str, "One pass must delete by document_id"
+    assert "filename" in filters_str, "One pass must delete by filename for legacy cleanup"

@@ -332,7 +332,7 @@ def test_documents_extract_content_route_supports_csv_for_file_conversion():
 def test_documents_delete_route_requires_user_scope(monkeypatch):
     captured = {}
 
-    def fake_delete_document_vectors(filename, user_id=None, document_id=None):
+    def fake_delete_document_vectors(filename, user_id=None, document_id=None, cleanup_legacy=False):
         captured["filename"] = filename
         captured["user_id"] = user_id
         return True, "deleted"

@@ -39,7 +39,7 @@ def process_document(
             logger.info(f"File size: {file_size:,} bytes ({file_size / 1024 / 1024:.2f} MB)")
 
         logger.info("Cleaning up existing vectors before re-ingest for filename='%s', user_id='%s'", filename, user_id)
-        _del_ok, _del_msg = delete_document_vectors(filename, user_id, document_id=document_id)
+        _del_ok, _del_msg = delete_document_vectors(filename, user_id, document_id=document_id, cleanup_legacy=True)
         if not _del_ok:
             logger.warning(
                 "Pre-ingest cleanup failed for '%s' (user=%s, document_id=%s): %s — "
@@ -378,6 +378,7 @@ def delete_document_vectors(
     filename: str,
     user_id: str | None = None,
     document_id: str | None = None,
+    cleanup_legacy: bool = False,
 ):
     try:
         from app.services.rag_config import (
@@ -400,13 +401,16 @@ def delete_document_vectors(
         )
 
         if document_id:
-            # Two-pass delete:
-            # 1. Delete new-style chunks (have document_id in metadata).
-            # 2. Delete legacy chunks (ingested before document_id was tracked;
-            #    only have filename+user_id). Without this second pass, legacy
-            #    chunks accumulate silently and pollute future retrievals.
+            # Always delete new-style chunks by document_id (strict).
             vectorstore.delete(where={"$and": [{"document_id": str(document_id)}, {"user_id": str(user_id)}]})
-            vectorstore.delete(where={"$and": [{"filename": filename}, {"user_id": str(user_id)}]})
+            if cleanup_legacy:
+                # Also delete legacy chunks (only have filename+user_id, no document_id).
+                # Only safe when the caller KNOWS the filename is being permanently
+                # retired (user-initiated delete or pre-ingest cleanup).
+                # Must NOT be used from ProcessDocument job cleanup — that job runs
+                # after the old document was deleted and a new document with the same
+                # filename may already have been uploaded.
+                vectorstore.delete(where={"$and": [{"filename": filename}, {"user_id": str(user_id)}]})
         else:
             vectorstore.delete(where={"$and": [{"filename": filename}, {"user_id": str(user_id)}]})
 
@@ -417,13 +421,13 @@ def delete_document_vectors(
             )
             raw_col = parent_store._collection
             if document_id:
-                # Two-pass: new-style (document_id) then legacy (filename).
                 raw_col.delete(where={
                     "$and": [{"document_id": str(document_id)}, {"user_id": str(user_id)}, {"chunk_type": "parent"}],
                 })
-                raw_col.delete(where={
-                    "$and": [{"filename": filename}, {"user_id": str(user_id)}, {"chunk_type": "parent"}],
-                })
+                if cleanup_legacy:
+                    raw_col.delete(where={
+                        "$and": [{"filename": filename}, {"user_id": str(user_id)}, {"chunk_type": "parent"}],
+                    })
             else:
                 raw_col.delete(where={
                     "$and": [{"filename": filename}, {"user_id": str(user_id)}, {"chunk_type": "parent"}],

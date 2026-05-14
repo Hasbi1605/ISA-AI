@@ -313,11 +313,17 @@ class DocumentLifecycleService
 
     private function deleteDocumentVectors(Document $document): void
     {
+        // User-initiated delete: the document's filename is being permanently retired
+        // so it is safe to also clean up legacy Chroma chunks that pre-date document_id
+        // tracking (cleanup_legacy=true). This is distinct from ProcessDocument job
+        // cleanup, which must NOT use legacy cleanup to avoid deleting a re-uploaded
+        // same-filename document's vectors.
         $pythonUrl = rtrim((string) config('services.ai_document_service.url', config('services.ai_service.url', 'http://127.0.0.1:8001')), '/')
             .'/api/documents/'.urlencode($document->original_name)
             .'?'.http_build_query([
                 'user_id' => (string) $document->user_id,
                 'document_id' => (string) $document->id,
+                'cleanup_legacy' => 'true',
             ]);
         $token = config('services.ai_document_service.token', config('services.ai_service.token'));
 
