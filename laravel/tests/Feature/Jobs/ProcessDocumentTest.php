@@ -213,4 +213,59 @@ class ProcessDocumentTest extends TestCase
             return $job->document->id === $document->id;
         });
     }
+
+    public function test_job_skips_silently_when_document_is_soft_deleted_before_processing(): void
+    {
+        Storage::fake('local');
+        Http::fake();
+
+        $user = User::factory()->create();
+        $filePath = 'documents/'.$user->id.'/race.pdf';
+        Storage::disk('local')->put($filePath, 'dummy content');
+
+        $document = Document::create([
+            'user_id' => $user->id,
+            'filename' => 'race.pdf',
+            'original_name' => 'race.pdf',
+            'file_path' => $filePath,
+            'mime_type' => 'application/pdf',
+            'file_size_bytes' => 123,
+            'status' => 'pending',
+        ]);
+
+        // Simulate user soft-deleting the document before worker starts
+        $document->delete();
+
+        $job = new ProcessDocument($document);
+        $job->handle();
+
+        // Status should NOT be changed to 'error' — row is trashed, skip silently
+        $this->assertSoftDeleted($document);
+        $this->assertSame('pending', Document::withTrashed()->find($document->id)->status);
+
+        // Python service should not be called
+        Http::assertNothingSent();
+    }
+
+    public function test_job_has_delete_when_missing_models_set_to_true(): void
+    {
+        // When a document is hard-deleted before the worker picks up the job,
+        // Laravel's SerializesModels will fail to restore the model.
+        // $deleteWhenMissingModels = true tells the queue to silently discard
+        // the job instead of throwing a ModelNotFoundException.
+        $user = User::factory()->create();
+        $document = Document::create([
+            'user_id' => $user->id,
+            'filename' => 'missing.pdf',
+            'original_name' => 'missing.pdf',
+            'file_path' => 'documents/'.$user->id.'/missing.pdf',
+            'mime_type' => 'application/pdf',
+            'file_size_bytes' => 123,
+            'status' => 'pending',
+        ]);
+
+        $job = new ProcessDocument($document);
+
+        $this->assertTrue($job->deleteWhenMissingModels);
+    }
 }

@@ -27,6 +27,17 @@ class ProcessDocument implements ShouldQueue
     public $timeout = 900; // 15 minutes timeout
 
     /**
+     * If the Document model is hard-deleted before the worker picks up the
+     * job, Laravel will fail to unserialize it. Setting this to true tells
+     * the queue to silently discard the job instead of throwing an exception.
+     *
+     * Soft-deleted documents are handled inside handle() via fresh()->trashed().
+     *
+     * @var bool
+     */
+    public bool $deleteWhenMissingModels = true;
+
+    /**
      * Create a new job instance.
      */
     public function __construct(public Document $document)
@@ -39,6 +50,20 @@ class ProcessDocument implements ShouldQueue
      */
     public function handle(): void
     {
+        // Fresh-check the document to detect race with user deletion.
+        // If the document was soft-deleted (or hard-deleted) before the worker
+        // started, skip silently instead of logging a spurious "file not found"
+        // error and writing status='error' on a trashed row.
+        $fresh = $this->document->fresh();
+
+        if ($fresh === null || $fresh->trashed()) {
+            logger()->info("ProcessDocument skipped: document {$this->document->id} was deleted before processing started.");
+
+            return;
+        }
+
+        $this->document = $fresh;
+
         // 1. Update status to processing
         $this->document->update(['status' => 'processing']);
 
