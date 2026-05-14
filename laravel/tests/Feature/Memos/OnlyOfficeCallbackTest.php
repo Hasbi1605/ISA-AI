@@ -463,10 +463,11 @@ class OnlyOfficeCallbackTest extends TestCase
     }
 
     // -------------------------------------------------------------------------
-    // Anti-replay: identical callback must be rejected the second time
+    // Anti-replay: identical callback (same key+status+url) must be rejected
+    //              after a successful save, but retries after failures allowed
     // -------------------------------------------------------------------------
 
-    public function test_callback_replay_is_rejected(): void
+    public function test_callback_replay_is_rejected_after_successful_save(): void
     {
         config([
             'services.onlyoffice.jwt_secret' => 'callback-secret',
@@ -490,17 +491,122 @@ class OnlyOfficeCallbackTest extends TestCase
 
         $payload = ['status' => 2, 'key' => $key, 'url' => $url, 'token' => $token];
 
-        // First call: must succeed.
+        // First call: must succeed and mark the replay guard.
         $this->postJson(route('onlyoffice.callback', $memo), $payload)
             ->assertOk()
             ->assertJson(['error' => 0]);
 
-        // Re-open editor key for the second call (simulates a fresh cache state).
-        // We need a *new* key because the replay guard is keyed on key+status.
-        // To test replay, we verify that the SAME key+status combination is blocked.
-        // Second call with identical payload: must be rejected as replay.
+        // Second call with identical payload (same key+status+url): the replay
+        // guard was marked after the successful save, so this must be rejected.
         $this->postJson(route('onlyoffice.callback', $memo), $payload)
             ->assertConflict();
+    }
+
+    public function test_callback_retry_is_allowed_when_first_attempt_failed_before_write(): void
+    {
+        config([
+            'services.onlyoffice.jwt_secret' => 'callback-secret',
+            'services.onlyoffice.internal_url' => 'https://onlyoffice.test',
+        ]);
+        Storage::fake('local');
+
+        $user = User::factory()->create(['email_verified_at' => now()]);
+        $memo = $this->createMemo($user);
+        $key = $this->callbackKey($memo);
+        $url = 'https://onlyoffice.test/transient-file.docx';
+        $token = (new JwtSigner('callback-secret'))->sign([
+            'status' => 2,
+            'key' => $key,
+            'url' => $url,
+            'exp' => time() + 60,
+        ]);
+
+        $callCount = 0;
+        Http::fake([
+            'https://onlyoffice.test/transient-file.docx' => function () use (&$callCount) {
+                $callCount++;
+                // First attempt: OnlyOffice returns a transient non-DOCX error page
+                // (e.g., a 200 HTML error from a temporarily overloaded server).
+                // Second attempt: the real DOCX is available.
+                return $callCount === 1
+                    ? Http::response('<html>Service Unavailable</html>', 200)
+                    : Http::response(self::fakeDocxBytes(), 200);
+            },
+        ]);
+
+        $payload = ['status' => 2, 'key' => $key, 'url' => $url, 'token' => $token];
+
+        // First attempt: rejected at DOCX validation — file is not written,
+        // replay marker must NOT be set.
+        $this->postJson(route('onlyoffice.callback', $memo), $payload)
+            ->assertStatus(502);
+
+        Storage::disk('local')->assertMissing($memo->file_path);
+
+        // Second attempt (retry): the replay guard was never marked, so this
+        // must succeed and write the DOCX.
+        $this->postJson(route('onlyoffice.callback', $memo), $payload)
+            ->assertOk()
+            ->assertJson(['error' => 0]);
+
+        Storage::disk('local')->assertExists($memo->refresh()->file_path);
+    }
+
+    public function test_two_distinct_saves_in_same_session_are_not_blocked_as_replay(): void
+    {
+        config([
+            'services.onlyoffice.jwt_secret' => 'callback-secret',
+            'services.onlyoffice.internal_url' => 'https://onlyoffice.test',
+        ]);
+        Storage::fake('local');
+        Http::fake([
+            'https://onlyoffice.test/save-v1.docx' => Http::response(self::fakeDocxBytes('v1'), 200),
+            'https://onlyoffice.test/save-v2.docx' => Http::response(self::fakeDocxBytes('v2'), 200),
+        ]);
+
+        $user = User::factory()->create(['email_verified_at' => now()]);
+        $memo = $this->createMemo($user);
+        $key = $this->callbackKey($memo);
+
+        // First save: same key + status but URL is unique per save (OnlyOffice behaviour).
+        $token1 = (new JwtSigner('callback-secret'))->sign([
+            'status' => 2,
+            'key' => $key,
+            'url' => 'https://onlyoffice.test/save-v1.docx',
+            'exp' => time() + 60,
+        ]);
+
+        $this->postJson(route('onlyoffice.callback', $memo), [
+            'status' => 2,
+            'key' => $key,
+            'url' => 'https://onlyoffice.test/save-v1.docx',
+            'token' => $token1,
+        ])->assertOk()->assertJson(['error' => 0]);
+
+        // Invalidate the editor key so the second save (with the same key cached
+        // at editor-open time) is still accepted by validateFreshDocumentKey.
+        // In real sessions OnlyOffice would use the same cached editor key.
+        // We just need to test that the replay guard uses key+status+url.
+
+        // Second save in the same session: same key + status, but different URL
+        // (OnlyOffice generates a new download URL for each save output).
+        // Fingerprint is key:status:url — since URL differs this is NOT a replay.
+        $token2 = (new JwtSigner('callback-secret'))->sign([
+            'status' => 2,
+            'key' => $key,
+            'url' => 'https://onlyoffice.test/save-v2.docx',
+            'exp' => time() + 60,
+        ]);
+
+        $this->postJson(route('onlyoffice.callback', $memo), [
+            'status' => 2,
+            'key' => $key,
+            'url' => 'https://onlyoffice.test/save-v2.docx',
+            'token' => $token2,
+        ])->assertOk()->assertJson(['error' => 0]);
+
+        // Both saves must have been written — no 409 from the replay guard.
+        $this->assertSame(Memo::STATUS_EDITED, $memo->refresh()->status);
     }
 
     // -------------------------------------------------------------------------

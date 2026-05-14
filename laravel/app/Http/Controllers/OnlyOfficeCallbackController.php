@@ -47,7 +47,6 @@ class OnlyOfficeCallbackController extends Controller
 
         $callback = $this->normalizeSignedCallbackPayload($request, $payload);
         $this->validateSignedCallbackPayload($memo, $callback);
-        $this->checkAndMarkCallbackReplay($callback);
         $version = $this->resolveMemoVersion($request, $memo, $callback);
         $this->validateFreshDocumentKey($memo, $version, $callback);
         $status = (int) $callback['status'];
@@ -101,6 +100,16 @@ class OnlyOfficeCallbackController extends Controller
             abort_if($url === '', Response::HTTP_BAD_REQUEST, 'URL file OnlyOffice kosong.');
             abort_unless($this->isTrustedOnlyOfficeUrl($url), Response::HTTP_FORBIDDEN, 'URL file OnlyOffice tidak dipercaya.');
 
+            // Fast-path replay guard: reject immediately if an identical callback
+            // has already been successfully processed (cache key present).
+            // The mark is only set AFTER a successful save (inside the lock
+            // below), so retries triggered by network errors or transient
+            // failures before the write are never blocked.
+            $replayCacheKey = $this->callbackReplayCacheKey($callback);
+            if (Cache::has($replayCacheKey)) {
+                abort(Response::HTTP_CONFLICT, 'Callback OnlyOffice sudah diproses (anti-replay).');
+            }
+
             $response = Http::timeout(60)->get($url);
             abort_unless($response->successful(), Response::HTTP_BAD_GATEWAY, 'Gagal mengunduh file dari OnlyOffice.');
 
@@ -114,7 +123,13 @@ class OnlyOfficeCallbackController extends Controller
             $lockKey = 'oo_save_lock:'.$memo->id.':'.($version?->id ?? 'base');
             $lock = Cache::lock($lockKey, 30);
 
-            $lock->block(10, function () use ($memo, $version, $path, $response) {
+            $lock->block(10, function () use ($memo, $version, $path, $response, $callback, $replayCacheKey) {
+                // Re-check replay inside the lock to guard against a concurrent
+                // thread that passed the fast-path check above.
+                if (Cache::has($replayCacheKey)) {
+                    abort(Response::HTTP_CONFLICT, 'Callback OnlyOffice sudah diproses (anti-replay).');
+                }
+
                 Storage::disk('local')->put($path, $response->body());
 
                 // Extract fresh searchable text from the newly saved DOCX so that
@@ -163,6 +178,13 @@ class OnlyOfficeCallbackController extends Controller
                         ])->save();
                     }
                 }
+
+                // Mark the callback as successfully processed only after the
+                // file has been written and all DB updates committed.
+                // This ensures that retries triggered by transient failures
+                // before this point (network errors, DOCX validation, lock
+                // contention) are never incorrectly blocked as replays.
+                $this->markCallbackProcessed($replayCacheKey, $callback);
             });
         }
 
@@ -208,37 +230,46 @@ class OnlyOfficeCallbackController extends Controller
     }
 
     /**
-     * Protect against callback replay attacks.
+     * Build the cache key used for replay detection on a successfully-saved
+     * status-2/6 callback.
      *
-     * Uses the `jti` claim if present in the callback payload; otherwise falls
-     * back to a fingerprint of `key` + `status` so that identical save callbacks
-     * (which OnlyOffice may retry on network failures) are deduplicated within
-     * a short grace window.
-     *
-     * The grace TTL is capped at 5 minutes regardless of `exp` so a long-lived
-     * but replayed token is still rejected within a bounded window.
+     * Uses `jti` when present (globally unique per OnlyOffice JWT), otherwise
+     * falls back to a fingerprint of `key` + `status` + `url`. Including the
+     * URL means two consecutive saves in the same editor session (same key +
+     * status) each produce distinct fingerprints and are therefore not blocked
+     * as replays — OnlyOffice generates a new file URL for every save.
      *
      * @param  array<string, mixed>  $callback
      */
-    protected function checkAndMarkCallbackReplay(array $callback): void
+    protected function callbackReplayCacheKey(array $callback): string
     {
         $jti = isset($callback['jti']) && is_string($callback['jti']) && $callback['jti'] !== ''
             ? $callback['jti']
             : null;
 
         if ($jti !== null) {
-            $cacheKey = 'oo_jti:'.hash('sha256', $jti);
-        } else {
-            $key = (string) ($callback['key'] ?? '');
-            $status = (int) ($callback['status'] ?? 0);
-            $cacheKey = 'oo_cb:'.hash('sha256', $key.':'.$status);
+            return 'oo_jti:'.hash('sha256', $jti);
         }
 
-        if (Cache::has($cacheKey)) {
-            abort(Response::HTTP_CONFLICT, 'Callback OnlyOffice sudah diproses (anti-replay).');
-        }
+        $key = (string) ($callback['key'] ?? '');
+        $status = (int) ($callback['status'] ?? 0);
+        $url = (string) ($callback['url'] ?? '');
 
-        // Use remaining exp time capped at 5 minutes as the replay guard TTL.
+        return 'oo_cb:'.hash('sha256', $key.':'.$status.':'.$url);
+    }
+
+    /**
+     * Persist the replay-guard marker for a cache key after a callback has
+     * been successfully processed.
+     *
+     * The TTL is capped at 5 minutes so very long-lived tokens are still
+     * rejected within a bounded replay window, while allowing the natural
+     * expiry to clean up the cache automatically.
+     *
+     * @param  array<string, mixed>  $callback
+     */
+    protected function markCallbackProcessed(string $cacheKey, array $callback): void
+    {
         $exp = isset($callback['exp']) && is_numeric($callback['exp'])
             ? (int) $callback['exp']
             : (time() + 300);
