@@ -900,7 +900,7 @@ class MemoWorkspaceTest extends TestCase
             ->assertSee('Konfigurasi Memo', false)
             ->assertDontSee('data-memo-history-id="'.$memo->id.'"', false);
 
-        $this->assertSoftDeleted('memos', ['id' => $memo->id]);
+        $this->assertDatabaseMissing('memos', ['id' => $memo->id]);
     }
 
     public function test_loading_memo_merges_stale_cached_thread_and_restores_revision_prompt(): void

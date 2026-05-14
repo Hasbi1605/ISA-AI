@@ -5,6 +5,7 @@ namespace App\Livewire\Memos;
 use App\Models\Memo;
 use App\Models\MemoVersion;
 use App\Services\Memo\MemoGenerationService;
+use App\Services\Memo\MemoLifecycleService;
 use App\Services\OnlyOffice\JwtSigner;
 use App\Services\OnlyOffice\MemoDocumentKey;
 use App\Support\UserFacingError;
@@ -392,24 +393,22 @@ class MemoWorkspace extends Component
 
     public function deleteMemo(int $memoId): void
     {
-        $memo = Memo::where('id', $memoId)
+        $memo = Memo::with('versions')
+            ->where('id', $memoId)
             ->where('user_id', Auth::id())
             ->first();
 
         if (! $memo) {
-            $this->memoStatusMessage = 'Memo tidak ditemukan atau sudah dihapus.';
-            $this->addSystemMessage('Memo tidak ditemukan atau sudah dihapus.');
             return;
         }
 
         $wasActiveMemo = (int) $this->activeMemoId === (int) $memo->id;
 
         unset($this->memoChatThreads[$this->threadKey($memo->id)]);
-        $memo->delete();
+
+        app(MemoLifecycleService::class)->deleteMemo($memo);
 
         if (! $wasActiveMemo) {
-            $this->memoStatusMessage = "Memo \"{$memo->title}\" berhasil dihapus.";
-            $this->addSystemMessage('Memo berhasil dihapus dari history.');
             return;
         }
 
@@ -420,7 +419,6 @@ class MemoWorkspace extends Component
         $this->isGenerating = false;
         $this->resetMemoConfiguration();
         $this->showMemoConfiguration = true;
-        $this->memoStatusMessage = "Memo \"{$memo->title}\" berhasil dihapus. Anda bisa membuat memo baru.";
         $this->addSystemMessage('Memo berhasil dihapus dari history. Lengkapi konfigurasi untuk membuat memo baru.');
     }
 
