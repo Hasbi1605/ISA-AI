@@ -49,6 +49,109 @@ class ChatOrchestrationServiceTest extends TestCase
         ], $history);
     }
 
+    public function test_build_history_drops_leading_assistant_after_truncation(): void
+    {
+        // When window boundary falls mid-pair, result must not start with assistant
+        $service = new class extends ChatOrchestrationService {
+            protected function maxHistoryMessages(): int { return 4; }
+        };
+
+        // 6 messages: u1 a1 u2 a2 u3 a3
+        // After slice(-4): a2 u3 a3 u4 — wait, let's build a clear case:
+        // u1 a1 u2 a2 u3 a3 u4 a4 u5 a5 (10 messages)
+        // slice(-4) = a4 u5 a5 u6... let's use explicit messages
+        $messages = [
+            ['role' => 'user',      'content' => 'u1'],
+            ['role' => 'assistant', 'content' => 'a1'],
+            ['role' => 'user',      'content' => 'u2'],
+            ['role' => 'assistant', 'content' => 'a2'],
+            ['role' => 'user',      'content' => 'u3'],
+            ['role' => 'assistant', 'content' => 'a3'],
+        ];
+
+        // slice(-4) = [a2, u3, a3, u4] — but we only have 6 messages
+        // slice(-4) = [u2, a2, u3, a3] — starts with user, no drop needed
+        // Let's use 5 messages where slice(-4) starts with assistant:
+        // u1 a1 u2 a2 u3 → slice(-4) = [a1, u2, a2, u3] — starts with assistant
+        $messages = [
+            ['role' => 'user',      'content' => 'u1'],
+            ['role' => 'assistant', 'content' => 'a1'],
+            ['role' => 'user',      'content' => 'u2'],
+            ['role' => 'assistant', 'content' => 'a2'],
+            ['role' => 'user',      'content' => 'u3'],
+        ];
+
+        $history = $service->buildHistory($messages);
+
+        // slice(-4) = [a1, u2, a2, u3] → drop leading a1 → [u2, a2, u3]
+        $this->assertSame('user', $history[0]['role'],
+            'History must not start with an assistant message after truncation');
+        $this->assertSame('u2', $history[0]['content']);
+        $this->assertSame('u3', end($history)['content']);
+    }
+
+    public function test_build_history_does_not_drop_leading_user_message(): void
+    {
+        $service = new class extends ChatOrchestrationService {
+            protected function maxHistoryMessages(): int { return 4; }
+        };
+
+        $messages = [
+            ['role' => 'user',      'content' => 'u1'],
+            ['role' => 'assistant', 'content' => 'a1'],
+            ['role' => 'user',      'content' => 'u2'],
+            ['role' => 'assistant', 'content' => 'a2'],
+            ['role' => 'user',      'content' => 'u3'],
+            ['role' => 'assistant', 'content' => 'a3'],
+        ];
+
+        // slice(-4) = [u2, a2, u3, a3] — starts with user, nothing dropped
+        $history = $service->buildHistory($messages);
+
+        $this->assertCount(4, $history);
+        $this->assertSame('user', $history[0]['role']);
+        $this->assertSame('u2', $history[0]['content']);
+    }
+
+    public function test_build_history_truncates_to_max_messages_keeping_most_recent(): void
+    {
+        // Use anonymous subclass to override maxHistoryMessages() without config()
+        $service = new class extends ChatOrchestrationService {
+            protected function maxHistoryMessages(): int { return 4; }
+        };
+
+        $messages = [];
+        for ($i = 1; $i <= 10; $i++) {
+            $messages[] = ['role' => $i % 2 === 0 ? 'assistant' : 'user', 'content' => "Pesan ke-{$i}"];
+        }
+
+        $history = $service->buildHistory($messages);
+
+        // Only last 4 messages should be returned
+        $this->assertCount(4, $history);
+        $this->assertSame('Pesan ke-7', $history[0]['content']);
+        $this->assertSame('Pesan ke-8', $history[1]['content']);
+        $this->assertSame('Pesan ke-9', $history[2]['content']);
+        $this->assertSame('Pesan ke-10', $history[3]['content']);
+    }
+
+    public function test_build_history_does_not_truncate_when_within_limit(): void
+    {
+        $service = new class extends ChatOrchestrationService {
+            protected function maxHistoryMessages(): int { return 20; }
+        };
+
+        $messages = [
+            ['role' => 'user', 'content' => 'Pesan 1'],
+            ['role' => 'assistant', 'content' => 'Jawaban 1'],
+            ['role' => 'user', 'content' => 'Pesan 2'],
+        ];
+
+        $history = $service->buildHistory($messages);
+
+        $this->assertCount(3, $history);
+    }
+
     public function test_single_document_source_uses_compact_reference_footer(): void
     {
         $service = new ChatOrchestrationService();

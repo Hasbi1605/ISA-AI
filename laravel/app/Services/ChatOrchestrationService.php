@@ -53,8 +53,34 @@ class ChatOrchestrationService
         return $userMessage->toArray();
     }
 
+    /**
+     * Build the message history payload for the AI service.
+     *
+     * Applies a sliding window to prevent context-window overflow and
+     * unbounded token costs on long conversations. The window size is
+     * configurable via services.ai_service.max_history_messages (default 20).
+     * Only the most recent N messages are sent; older messages are dropped.
+     *
+     * After slicing, any leading assistant messages are dropped so the
+     * payload always starts with a user message — required by providers
+     * that enforce strict user/assistant turn ordering (e.g. Bedrock Converse).
+     */
     public function buildHistory(array $messages): array
     {
+        $maxMessages = $this->maxHistoryMessages();
+
+        // Keep only the most recent N messages (sliding window)
+        if (count($messages) > $maxMessages) {
+            $messages = array_slice($messages, -$maxMessages);
+        }
+
+        // Drop leading assistant messages so the payload always starts
+        // with a user turn. This can happen when the window boundary
+        // falls in the middle of a user/assistant pair.
+        while (! empty($messages) && ($messages[0]['role'] ?? '') === 'assistant') {
+            array_shift($messages);
+        }
+
         return array_map(
             fn (array $msg) => [
                 'role' => (string) ($msg['role'] ?? ''),
@@ -62,6 +88,40 @@ class ChatOrchestrationService
             ],
             $messages
         );
+    }
+
+    protected function maxHistoryMessages(): int
+    {
+        try {
+            $raw = config('services.ai_service.max_history_messages', 20);
+
+            return max(1, (int) $this->normalizeIntConfig($raw, 20));
+        } catch (\Throwable) {
+            return 20;
+        }
+    }
+
+    /**
+     * Normalize a config value that may arrive as a quoted string at runtime.
+     * e.g. ' "20" ' → 20, '20' → 20, 20 → 20.
+     */
+    private function normalizeIntConfig(mixed $value, int $default): int
+    {
+        if ($value === null) {
+            return $default;
+        }
+
+        $normalized = trim((string) $value);
+
+        // Strip surrounding quotes (single or double)
+        if (strlen($normalized) >= 2) {
+            $quote = $normalized[0];
+            if (($quote === '"' || $quote === "'") && $normalized[strlen($normalized) - 1] === $quote) {
+                $normalized = substr($normalized, 1, -1);
+            }
+        }
+
+        return is_numeric($normalized) ? (int) $normalized : $default;
     }
 
     public function getDocumentFilenames(array $conversationDocuments): ?array

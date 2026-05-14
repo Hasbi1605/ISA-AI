@@ -691,6 +691,30 @@ class ChatUiTest extends TestCase
         ]);
     }
 
+    public function test_build_history_normalizes_quoted_max_history_messages_config(): void
+    {
+        // Simulate runtime config with quoted value (e.g. from .env parsing quirk).
+        // Without normalization, (int)' "4" ' = 0, max(1,0) = 1 — chat would be
+        // truncated to 1 message, losing almost all context.
+        config()->set('services.ai_service.max_history_messages', ' "4" ');
+
+        $service = new ChatOrchestrationService();
+
+        $messages = [];
+        for ($i = 1; $i <= 10; $i++) {
+            $messages[] = ['role' => $i % 2 === 0 ? 'assistant' : 'user', 'content' => "Pesan ke-{$i}"];
+        }
+
+        $history = $service->buildHistory($messages);
+
+        // Should truncate to 4 (or fewer after leading-assistant drop), not 1
+        $this->assertGreaterThan(1, count($history),
+            'Quoted config value should normalize to 4, not 1');
+        $this->assertLessThanOrEqual(4, count($history));
+        $this->assertSame('user', $history[0]['role'],
+            'History must start with a user message');
+    }
+
     public function test_loading_conversation_dispatches_active_history_event(): void
     {
         $user = User::factory()->create();
