@@ -44,12 +44,12 @@ class LangSearchService:
     def _normalize_cache_query(self, query: str) -> str:
         return " ".join((query or "").strip().lower().split())
 
-    def _cache_key(self, query: str, time_bucket: int) -> Tuple[str, int]:
-        return (self._normalize_cache_query(query), time_bucket)
+    def _cache_key(self, query: str, time_bucket: int, freshness: str = "oneWeek", count: int = 5) -> Tuple[str, int, str, int]:
+        return (self._normalize_cache_query(query), time_bucket, freshness, count)
 
-    def _get_cached_result(self, query: str, time_bucket: int) -> Optional[List[Dict]]:
+    def _get_cached_result(self, query: str, time_bucket: int, freshness: str = "oneWeek", count: int = 5) -> Optional[List[Dict]]:
         """Get cached search result if not expired."""
-        key = self._cache_key(query, time_bucket)
+        key = self._cache_key(query, time_bucket, freshness, count)
         now = time.time()
         with self._cache_lock:
             if key in self._search_cache:
@@ -62,9 +62,9 @@ class LangSearchService:
                 del self._search_cache[key]
         return None
     
-    def _cache_result(self, query: str, time_bucket: int, results: List[Dict]):
+    def _cache_result(self, query: str, time_bucket: int, results: List[Dict], freshness: str = "oneWeek", count: int = 5):
         """Cache search result with timestamp."""
-        key = self._cache_key(query, time_bucket)
+        key = self._cache_key(query, time_bucket, freshness, count)
         with self._cache_lock:
             self._search_cache[key] = (results, time.time())
             self._search_cache.move_to_end(key)
@@ -94,7 +94,7 @@ class LangSearchService:
         
         # Check cache first (cache per 5 minutes)
         time_bucket = self._get_time_bucket()
-        cached = self._get_cached_result(query, time_bucket)
+        cached = self._get_cached_result(query, time_bucket, freshness, count)
         if cached is not None:
             return cached
         
@@ -186,7 +186,7 @@ class LangSearchService:
         )
         
         # Cache the result
-        self._cache_result(query, time_bucket, formatted_results)
+        self._cache_result(query, time_bucket, formatted_results, freshness, count)
         
         return formatted_results
     
