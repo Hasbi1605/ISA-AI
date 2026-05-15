@@ -279,6 +279,7 @@ retrieval:
     mode: smart      # Tuning #192: always → smart. Rollback: ubah ke always
     max_tokens: 100  # jawaban hipotetis singkat (100 token = ~2-3 kalimat)
     timeout: 3       # detik — timeout ketat: jika lambat, skip gracefully
+    max_attempts: 1  # Tuning #192: 2→1 agar HyDE gagal cepat, fallback ke query asli. Rollback: ubah ke 2
 
 
 # ============================================
