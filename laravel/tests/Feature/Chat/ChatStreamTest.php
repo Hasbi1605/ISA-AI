@@ -624,6 +624,143 @@ class ChatStreamTest extends TestCase
     }
 
     // -------------------------------------------------------------------------
+    // Single-runner claim: stream skip AI jika job sudah selesai duluan
+    // -------------------------------------------------------------------------
+
+    public function test_stream_skips_ai_call_if_job_already_answered(): void
+    {
+        $user = User::factory()->create();
+        $conversation = Conversation::create([
+            'user_id' => $user->id,
+            'title' => 'Single-runner claim test',
+        ]);
+
+        Message::create([
+            'conversation_id' => $conversation->id,
+            'role' => 'user',
+            'content' => 'Pertanyaan',
+        ]);
+
+        // Job sudah menyimpan assistant message sebelum stream dimulai
+        Message::create([
+            'conversation_id' => $conversation->id,
+            'role' => 'assistant',
+            'content' => 'Jawaban dari job.',
+        ]);
+
+        $aiCalled = false;
+        $this->app->bind(AIService::class, function () use (&$aiCalled) {
+            return new class($aiCalled) extends AIService
+            {
+                public function __construct(private bool &$called)
+                {
+                    parent::__construct();
+                }
+
+                public function sendChat(
+                    array $messages,
+                    ?array $document_filenames = null,
+                    ?string $user_id = null,
+                    bool $force_web_search = false,
+                    ?string $source_policy = null,
+                    bool $allow_auto_realtime_web = true,
+                    ?array $document_ids = null,
+                ): \Generator {
+                    $this->called = true;
+                    yield 'Chunk yang tidak boleh dikirim.';
+                }
+            };
+        });
+
+        $body = $this->runExecuteStream($user, $conversation);
+
+        // AI tidak boleh dipanggil sama sekali
+        $this->assertFalse($aiCalled, 'Stream tidak boleh memanggil AI jika job sudah menjawab');
+
+        // Stream harus langsung kirim done tanpa chunk
+        $this->assertStringContainsString('event: done', $body);
+        $this->assertStringNotContainsString('event: chunk', $body);
+
+        // Hanya satu assistant message
+        $this->assertSame(1, Message::where('conversation_id', $conversation->id)
+            ->where('role', 'assistant')->count());
+    }
+
+    // -------------------------------------------------------------------------
+    // Error recovery: stream error tidak menimpa jawaban sukses dari job
+    // -------------------------------------------------------------------------
+
+    public function test_stream_error_does_not_overwrite_successful_job_answer(): void
+    {
+        $user = User::factory()->create();
+        $conversation = Conversation::create([
+            'user_id' => $user->id,
+            'title' => 'Error recovery test',
+        ]);
+
+        Message::create([
+            'conversation_id' => $conversation->id,
+            'role' => 'user',
+            'content' => 'Pertanyaan',
+        ]);
+
+        // Job sudah menyimpan jawaban sukses
+        Message::create([
+            'conversation_id' => $conversation->id,
+            'role' => 'assistant',
+            'content' => 'Jawaban sukses dari job.',
+            'is_error' => false,
+        ]);
+
+        // Stream error — saveErrorMessage harus skip karena job sudah simpan
+        $orchestrator = app(ChatOrchestrationService::class);
+        $this->actingAs($user);
+        $result = $orchestrator->saveErrorMessage($conversation->id, 'Error dari stream.', $user->id);
+
+        $this->assertNull($result, 'saveErrorMessage harus skip jika job sudah menyimpan jawaban');
+
+        // Hanya satu assistant message (jawaban sukses dari job)
+        $this->assertSame(1, Message::where('conversation_id', $conversation->id)
+            ->where('role', 'assistant')->count());
+
+        $this->assertDatabaseHas('messages', [
+            'conversation_id' => $conversation->id,
+            'role' => 'assistant',
+            'content' => 'Jawaban sukses dari job.',
+            'is_error' => false,
+        ]);
+    }
+
+    public function test_save_error_message_is_idempotent_when_called_twice(): void
+    {
+        $user = User::factory()->create();
+        $conversation = Conversation::create([
+            'user_id' => $user->id,
+            'title' => 'Error idempotency test',
+        ]);
+
+        Message::create([
+            'conversation_id' => $conversation->id,
+            'role' => 'user',
+            'content' => 'Pertanyaan',
+        ]);
+
+        $orchestrator = app(ChatOrchestrationService::class);
+        $this->actingAs($user);
+
+        // Panggil saveErrorMessage dua kali (stream dan job keduanya error)
+        $first = $orchestrator->saveErrorMessage($conversation->id, 'Error pertama.', $user->id);
+        $second = $orchestrator->saveErrorMessage($conversation->id, 'Error kedua.', $user->id);
+
+        $this->assertNotNull($first, 'Panggilan pertama harus berhasil menyimpan');
+        $this->assertNull($second, 'Panggilan kedua harus skip (idempotensi)');
+
+        // Hanya satu error message
+        $this->assertSame(1, Message::where('conversation_id', $conversation->id)
+            ->where('role', 'assistant')->count());
+    }
+
+    // -------------------------------------------------------------------------
     // Helper
     // -------------------------------------------------------------------------
 

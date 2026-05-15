@@ -44,7 +44,7 @@ Browser                    Laravel                      Python AI
   |                           |                              |
   |-- GET /chat/stream/{id} ->|                              |
   |   (EventSource)           |-- POST /api/chat ----------->|
-  |                           |<-- SSE chunks ---------------| 
+  |                           |<-- SSE chunks ---------------|
   |<-- SSE: chunk ----------- |                              |
   |<-- SSE: chunk ----------- |                              |
   |<-- SSE: done ------------ |                              |

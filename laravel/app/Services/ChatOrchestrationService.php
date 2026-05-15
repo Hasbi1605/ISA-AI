@@ -270,6 +270,33 @@ class ChatOrchestrationService
         return trim($cleanContent);
     }
 
+    /**
+     * Check whether an assistant message (normal or error) already exists after
+     * the latest user message in this conversation.
+     *
+     * Used by ChatStreamController as a single-runner claim: if the background
+     * job already answered, the stream should skip calling AI entirely to avoid
+     * sending different chunks to the UI than what ends up in the DB.
+     */
+    public function assistantAlreadyAnswered(int $conversationId): bool
+    {
+        $latestUserMessage = Message::query()
+            ->where('conversation_id', $conversationId)
+            ->where('role', 'user')
+            ->latest('id')
+            ->first();
+
+        if ($latestUserMessage === null) {
+            return false;
+        }
+
+        return Message::query()
+            ->where('conversation_id', $conversationId)
+            ->where('role', 'assistant')
+            ->where('id', '>', $latestUserMessage->id)
+            ->exists();
+    }
+
     public function saveAssistantMessage(int $conversationId, string $content, int $userId): ?Message
     {
         if (! $this->conversationExists($conversationId, $userId)) {
@@ -320,12 +347,37 @@ class ChatOrchestrationService
         }
 
         try {
-            return Message::create([
-                'conversation_id' => $conversationId,
-                'role' => 'assistant',
-                'content' => $content,
-                'is_error' => true,
-            ]);
+            // Idempotensi: gunakan DB transaction + lockForUpdate agar error message
+            // tidak duplikat jika stream dan job keduanya gagal bersamaan.
+            // Jika sudah ada assistant message (normal atau error) setelah user message
+            // terakhir, skip — ini mencegah error stream menimpa jawaban sukses dari job.
+            return \Illuminate\Support\Facades\DB::transaction(function () use ($conversationId, $content) {
+                $latestUserMessage = \App\Models\Message::query()
+                    ->where('conversation_id', $conversationId)
+                    ->where('role', 'user')
+                    ->latest('id')
+                    ->lockForUpdate()
+                    ->first();
+
+                if ($latestUserMessage !== null) {
+                    $alreadyExists = \App\Models\Message::query()
+                        ->where('conversation_id', $conversationId)
+                        ->where('role', 'assistant')
+                        ->where('id', '>', $latestUserMessage->id)
+                        ->exists();
+
+                    if ($alreadyExists) {
+                        return null;
+                    }
+                }
+
+                return Message::create([
+                    'conversation_id' => $conversationId,
+                    'role' => 'assistant',
+                    'content' => $content,
+                    'is_error' => true,
+                ]);
+            });
         } catch (QueryException $e) {
             if ($this->isConversationFkViolation($e)) {
                 return null;

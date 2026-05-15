@@ -121,6 +121,14 @@ class ChatStreamController extends Controller
         Conversation $conversation,
         \App\Models\User $user,
     ): void {
+        // Single-runner claim: jika assistant message sudah ada untuk user message
+        // terakhir (job selesai duluan), stream tidak perlu memanggil AI sama sekali.
+        // Ini mencegah user melihat chunk dari jawaban berbeda lalu final DB berubah.
+        if ($orchestrator->assistantAlreadyAnswered($conversationId)) {
+            $this->sendSseEvent('done', '1');
+            return;
+        }
+
         $fullResponse = '';
         $streamBuffer = '';
         $sources = [];
