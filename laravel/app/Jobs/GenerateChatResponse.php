@@ -18,7 +18,7 @@ class GenerateChatResponse implements ShouldQueue
 {
     use Dispatchable, InteractsWithQueue, Queueable, SerializesModels;
 
-    public int $tries = 1;
+    public int $tries = 5;
 
     public int $timeout = 180;
 
@@ -55,8 +55,10 @@ class GenerateChatResponse implements ShouldQueue
         $allowAutoRealtimeWeb = $orchestrator->shouldAllowAutoRealtimeWeb($documentFilenames);
 
         // Jika stream sedang memegang claim untuk latest user message,
-        // job tidak boleh menjalankan AI runner paralel.
+        // job jangan ikut menjadi runner paralel. Requeue sebagai fallback
+        // tertunda agar tetap bisa recover bila stream gagal sebelum persist.
         if ($orchestrator->hasActiveStreamClaim($this->conversationId)) {
+            $this->release(5);
             return;
         }
 

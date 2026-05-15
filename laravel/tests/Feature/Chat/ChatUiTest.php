@@ -16,6 +16,7 @@ use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Database\QueryException;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\Facades\RateLimiter;
 use Livewire\Livewire;
@@ -788,6 +789,7 @@ class ChatUiTest extends TestCase
     public function test_send_message_dispatches_ack_and_queues_response_with_conversation_id_payload(): void
     {
         Queue::fake();
+        Cache::flush();
 
         $user = User::factory()->create();
 
@@ -815,6 +817,10 @@ class ChatUiTest extends TestCase
             return $job->conversationId === $conversationId
                 && $job->userId === (int) $user->id;
         });
+
+        $claimKey = app(ChatOrchestrationService::class)->streamClaimKeyForLatestUserMessage($conversationId);
+        $this->assertNotNull($claimKey);
+        $this->assertTrue(Cache::has($claimKey), 'Claim stream harus dibuat saat sendMessage agar fallback job deterministik.');
     }
 
     public function test_save_assistant_message_returns_null_when_create_hits_conversation_fk_race(): void
