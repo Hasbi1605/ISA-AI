@@ -13,6 +13,7 @@ use Illuminate\Queue\InteractsWithQueue;
 use Illuminate\Queue\SerializesModels;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Str;
 
 class GenerateChatResponse implements ShouldQueue
 {
@@ -32,6 +33,7 @@ class GenerateChatResponse implements ShouldQueue
         public readonly array $history,
         public readonly array $conversationDocuments = [],
         public readonly bool $webSearchMode = false,
+        public readonly ?string $requestId = null,
     ) {
         $this->onQueue('default');
     }
@@ -40,6 +42,13 @@ class GenerateChatResponse implements ShouldQueue
     {
         Auth::loginUsingId($this->userId);
         set_time_limit($this->timeout);
+
+        $requestId = $this->requestId ?? (string) Str::uuid();
+        $jobStartMs = microtime(true) * 1000;
+
+        $this->logLatency('job_start', 0, $requestId, [
+            'conversation_id' => $this->conversationId,
+        ]);
 
         if (! $this->conversationStillExists()) {
             return;
@@ -58,6 +67,8 @@ class GenerateChatResponse implements ShouldQueue
         $streamBuffer = '';
         $sources = [];
 
+        $pythonCallStart = microtime(true) * 1000;
+
         foreach (
             $aiService->sendChat(
                 $this->history,
@@ -66,7 +77,8 @@ class GenerateChatResponse implements ShouldQueue
                 $this->webSearchMode,
                 $sourcePolicy,
                 $allowAutoRealtimeWeb,
-                $documentIds
+                $documentIds,
+                $requestId,
             ) as $chunk
         ) {
             [$chunk, $streamBuffer, $_modelName, $parsedSources] = $orchestrator->extractStreamMetadata(
@@ -85,9 +97,13 @@ class GenerateChatResponse implements ShouldQueue
             }
         }
 
+        $pythonCallEnd = microtime(true) * 1000;
+        $this->logLatency('python_call_end', $pythonCallEnd - $pythonCallStart, $requestId, [
+            'conversation_id' => $this->conversationId,
+            'response_len' => strlen($fullResponse),
+        ]);
+
         // Detect sentinel prefix injected by AIService on network/service errors.
-        // Store these as is_error=true so the UI can show a distinct error bubble
-        // instead of treating the fallback message as a normal AI answer.
         if (str_starts_with($fullResponse, AIService::ERROR_SENTINEL)) {
             $errorContent = substr($fullResponse, strlen(AIService::ERROR_SENTINEL));
             $errorContent = trim($errorContent) !== '' ? trim($errorContent) : 'Maaf, ISTA AI gagal merespon. Silakan coba lagi.';
@@ -98,6 +114,11 @@ class GenerateChatResponse implements ShouldQueue
                     ->where('user_id', $this->userId)
                     ->touch();
             }
+
+            $this->logLatency('job_total', microtime(true) * 1000 - $jobStartMs, $requestId, [
+                'conversation_id' => $this->conversationId,
+                'outcome' => 'error_sentinel',
+            ]);
 
             return;
         }
@@ -112,12 +133,24 @@ class GenerateChatResponse implements ShouldQueue
             $cleanContent = 'Maaf, ISTA AI belum menerima jawaban yang bisa ditampilkan. Silakan coba lagi.';
         }
 
-        if ($orchestrator->saveAssistantMessage($this->conversationId, $cleanContent, $this->userId) !== null) {
+        $dbSaveStart = microtime(true) * 1000;
+        $saved = $orchestrator->saveAssistantMessage($this->conversationId, $cleanContent, $this->userId);
+        $this->logLatency('db_save', microtime(true) * 1000 - $dbSaveStart, $requestId, [
+            'conversation_id' => $this->conversationId,
+            'saved' => $saved !== null,
+        ]);
+
+        if ($saved !== null) {
             Conversation::query()
                 ->whereKey($this->conversationId)
                 ->where('user_id', $this->userId)
                 ->touch();
         }
+
+        $this->logLatency('job_total', microtime(true) * 1000 - $jobStartMs, $requestId, [
+            'conversation_id' => $this->conversationId,
+            'outcome' => 'success',
+        ]);
     }
 
     public function failed(?\Throwable $exception): void
@@ -154,4 +187,23 @@ class GenerateChatResponse implements ShouldQueue
             ->where('user_id', $this->userId)
             ->exists();
     }
+
+    /**
+     * Emit a structured latency log line.
+     * Only logs metadata — never logs query content, document content, or secrets.
+     *
+     * @param  array<string, mixed>  $extra
+     */
+    private function logLatency(string $stage, float $durationMs, string $requestId, array $extra = []): void
+    {
+        $extraJson = json_encode($extra, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+        Log::info(sprintf(
+            '[LATENCY] stage=%s request_id=%s duration_ms=%.1f extra=%s',
+            $stage,
+            $requestId,
+            $durationMs,
+            $extraJson,
+        ));
+    }
 }
+

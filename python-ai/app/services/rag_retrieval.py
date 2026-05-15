@@ -19,6 +19,7 @@ from app.services.rag_hybrid import (
     _resolve_pdr_parents,
 )
 from app.services.rag_policy import get_langsearch_service
+from app.services.latency_logger import LatencyTracker
 
 logger = logging.getLogger(__name__)
 
@@ -58,9 +59,12 @@ def _bm25_child_fallback(
     return fallback_docs
 
 
-def search_relevant_chunks(query: str, filenames: List[str] = None, top_k: int = 5, user_id: str = None, document_ids: List[str] = None) -> Tuple[List[Dict], bool]:
+def search_relevant_chunks(query: str, filenames: List[str] = None, top_k: int = 5, user_id: str = None, document_ids: List[str] = None, request_id: str = None) -> Tuple[List[Dict], bool]:
+    tracker = LatencyTracker(request_id=request_id)
     try:
+        tracker.start("embedding")
         embeddings, provider_name, _ = get_embeddings_with_fallback()
+        tracker.end("embedding", extra={"provider": provider_name})
 
         if embeddings is None:
             return [], False
@@ -99,12 +103,16 @@ def search_relevant_chunks(query: str, filenames: List[str] = None, top_k: int =
         search_query = query
         if hyde_enabled:
             if hyde_mode == 'always':
+                tracker.start("hyde")
                 search_query = _generate_hyde_query(query, timeout=hyde_timeout, max_tokens=hyde_max_tokens)
+                tracker.end("hyde", extra={"mode": "always"})
                 logger.info("🔮 HyDE: mode=always — query dienhance")
             elif hyde_mode == 'smart':
                 use_hyde, hyde_reason = _should_use_hyde(query)
                 if use_hyde:
+                    tracker.start("hyde")
                     search_query = _generate_hyde_query(query, timeout=hyde_timeout, max_tokens=hyde_max_tokens)
+                    tracker.end("hyde", extra={"mode": "smart", "reason": hyde_reason})
                     logger.info("🔮 HyDE: mode=smart — AKTIF (%s)", hyde_reason)
                 else:
                     logger.debug("🔮 HyDE: mode=smart — skip (%s)", hyde_reason)
@@ -275,12 +283,14 @@ def search_relevant_chunks(query: str, filenames: List[str] = None, top_k: int =
 
         if rerank_enabled and len(docs) >= 2:
             documents = [doc.page_content for doc, _ in docs]
+            tracker.start("doc_rerank")
             rerank_results = langsearch_service.rerank_documents(
                 query=query,
                 documents=documents,
                 top_n=doc_top_n,
                 return_documents=False
             )
+            tracker.end("doc_rerank", extra={"candidates": len(documents), "top_n": doc_top_n})
 
             if rerank_results:
                 reranked_chunks = []

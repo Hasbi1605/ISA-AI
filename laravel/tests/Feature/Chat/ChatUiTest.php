@@ -37,7 +37,7 @@ class ChatUiTest extends TestCase
 
         $this->app->bind(AIService::class, fn () => new class extends AIService
         {
-            public function sendChat(array $messages, ?array $document_filenames = null, ?string $user_id = null, bool $force_web_search = false, ?string $source_policy = null, bool $allow_auto_realtime_web = true, ?array $document_ids = null): \Generator
+            public function sendChat(array $messages, ?array $document_filenames = null, ?string $user_id = null, bool $force_web_search = false, ?string $source_policy = null, bool $allow_auto_realtime_web = true, ?array $document_ids = null, ?string $request_id = null): \Generator
             {
                 throw new \RuntimeException('AIService should not be called when rate-limited.');
             }
@@ -319,6 +319,7 @@ class ChatUiTest extends TestCase
                     ?string $source_policy = null,
                     bool $allow_auto_realtime_web = true,
                     ?array $document_ids = null,
+                    ?string $request_id = null,
                 ): \Generator {
                     $this->captured->documentIds = $document_ids;
                     $this->captured->filenames = $document_filenames;
@@ -349,7 +350,7 @@ class ChatUiTest extends TestCase
 
         $this->app->bind(AIService::class, fn () => new class extends AIService
         {
-            public function sendChat(array $messages, ?array $document_filenames = null, ?string $user_id = null, bool $force_web_search = false, ?string $source_policy = null, bool $allow_auto_realtime_web = true, ?array $document_ids = null): \Generator
+            public function sendChat(array $messages, ?array $document_filenames = null, ?string $user_id = null, bool $force_web_search = false, ?string $source_policy = null, bool $allow_auto_realtime_web = true, ?array $document_ids = null, ?string $request_id = null): \Generator
             {
                 throw new \RuntimeException('AIService should not be called for invalid prompt.');
             }
@@ -374,7 +375,7 @@ class ChatUiTest extends TestCase
 
         $this->app->bind(AIService::class, fn () => new class extends AIService
         {
-            public function sendChat(array $messages, ?array $document_filenames = null, ?string $user_id = null, bool $force_web_search = false, ?string $source_policy = null, bool $allow_auto_realtime_web = true, ?array $document_ids = null): \Generator
+            public function sendChat(array $messages, ?array $document_filenames = null, ?string $user_id = null, bool $force_web_search = false, ?string $source_policy = null, bool $allow_auto_realtime_web = true, ?array $document_ids = null, ?string $request_id = null): \Generator
             {
                 throw new \RuntimeException('AIService should not be called for unauthorized conversation access.');
             }
@@ -657,7 +658,7 @@ class ChatUiTest extends TestCase
 
         $this->app->bind(AIService::class, fn () => new class extends AIService
         {
-            public function sendChat(array $messages, ?array $document_filenames = null, ?string $user_id = null, bool $force_web_search = false, ?string $source_policy = null, bool $allow_auto_realtime_web = true, ?array $document_ids = null): \Generator
+            public function sendChat(array $messages, ?array $document_filenames = null, ?string $user_id = null, bool $force_web_search = false, ?string $source_policy = null, bool $allow_auto_realtime_web = true, ?array $document_ids = null, ?string $request_id = null): \Generator
             {
                 throw new \RuntimeException('AIService should not be called for deleted conversation.');
             }
@@ -693,7 +694,7 @@ class ChatUiTest extends TestCase
 
         $this->app->bind(AIService::class, fn () => new class extends AIService
         {
-            public function sendChat(array $messages, ?array $document_filenames = null, ?string $user_id = null, bool $force_web_search = false, ?string $source_policy = null, bool $allow_auto_realtime_web = true, ?array $document_ids = null): \Generator
+            public function sendChat(array $messages, ?array $document_filenames = null, ?string $user_id = null, bool $force_web_search = false, ?string $source_policy = null, bool $allow_auto_realtime_web = true, ?array $document_ids = null, ?string $request_id = null): \Generator
             {
                 yield AIService::ERROR_SENTINEL.'❌ Kesalahan sistem saat menghubungi otak AI. Silakan coba lagi nanti.';
             }
@@ -764,7 +765,7 @@ class ChatUiTest extends TestCase
 
         $this->app->bind(AIService::class, fn () => new class extends AIService
         {
-            public function sendChat(array $messages, ?array $document_filenames = null, ?string $user_id = null, bool $force_web_search = false, ?string $source_policy = null, bool $allow_auto_realtime_web = true, ?array $document_ids = null): \Generator
+            public function sendChat(array $messages, ?array $document_filenames = null, ?string $user_id = null, bool $force_web_search = false, ?string $source_policy = null, bool $allow_auto_realtime_web = true, ?array $document_ids = null, ?string $request_id = null): \Generator
             {
                 yield 'Jawaban AI dari background job.';
             }
@@ -793,7 +794,7 @@ class ChatUiTest extends TestCase
 
         $this->app->bind(AIService::class, fn () => new class extends AIService
         {
-            public function sendChat(array $messages, ?array $document_filenames = null, ?string $user_id = null, bool $force_web_search = false, ?string $source_policy = null, bool $allow_auto_realtime_web = true, ?array $document_ids = null): \Generator
+            public function sendChat(array $messages, ?array $document_filenames = null, ?string $user_id = null, bool $force_web_search = false, ?string $source_policy = null, bool $allow_auto_realtime_web = true, ?array $document_ids = null, ?string $request_id = null): \Generator
             {
                 yield 'Jawaban AI untuk payload event.';
             }

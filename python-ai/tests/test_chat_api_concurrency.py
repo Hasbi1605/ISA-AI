@@ -30,6 +30,22 @@ def _collect_stream(it):
     return _collect_iter(it)
 
 
+def _make_fake_http_request(request_id: str = "test-rid-001"):
+    """Buat mock FastAPI Request dengan header X-Request-ID."""
+    class _FakeHeaders:
+        def __init__(self, data):
+            self._data = data
+
+        def get(self, key, default=None):
+            return self._data.get(key, default)
+
+    class _FakeRequest:
+        def __init__(self):
+            self.headers = _FakeHeaders({"X-Request-ID": request_id})
+
+    return _FakeRequest()
+
+
 def test_chat_api_parallel_doc_and_web(monkeypatch):
     class Req(chat_api.ChatRequest):
         pass
@@ -69,7 +85,7 @@ def test_chat_api_parallel_doc_and_web(monkeypatch):
     monkeypatch.setattr(chat_api, "_get_chat_streamers", fake_streamers)
     monkeypatch.setattr(chat_api, "_get_rag_document_helpers", fake_doc_helpers)
 
-    response = asyncio.run(chat_api.chat_stream(req))
+    response = asyncio.run(chat_api.chat_stream(req, _make_fake_http_request()))
     chunks = _collect_stream(response.body_iterator)
 
     assert response.media_type == "text/event-stream"
@@ -117,7 +133,7 @@ def test_chat_api_no_prefetch_web_on_empty_doc_fallback(monkeypatch):
     monkeypatch.setattr(chat_api, "_get_chat_streamers", fake_streamers)
     monkeypatch.setattr(chat_api, "_get_rag_document_helpers", fake_doc_helpers)
 
-    response = asyncio.run(chat_api.chat_stream(req))
+    response = asyncio.run(chat_api.chat_stream(req, _make_fake_http_request()))
     chunks = _collect_stream(response.body_iterator)
 
     assert chunks == ["fallback"]
@@ -165,8 +181,9 @@ def test_chat_api_no_prefetch_web_on_retrieval_failure(monkeypatch):
     monkeypatch.setattr(chat_api, "_get_chat_streamers", fake_streamers)
     monkeypatch.setattr(chat_api, "_get_rag_document_helpers", fake_doc_helpers)
 
-    response = asyncio.run(chat_api.chat_stream(req))
+    response = asyncio.run(chat_api.chat_stream(req, _make_fake_http_request()))
     chunks = _collect_stream(response.body_iterator)
 
     assert chunks == ["fallback"]
     assert policy_calls["count"] == 0
+
