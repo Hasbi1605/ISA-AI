@@ -857,6 +857,57 @@ class ChatStreamTest extends TestCase
         $orchestrator->releaseStreamClaim($claimKey);
     }
 
+    public function test_execute_stream_acquires_claim_before_ai_call(): void
+    {
+        $user = User::factory()->create();
+        $conversation = Conversation::create([
+            'user_id' => $user->id,
+            'title' => 'Claim lifecycle test',
+        ]);
+
+        Message::create([
+            'conversation_id' => $conversation->id,
+            'role' => 'user',
+            'content' => 'Pertanyaan claim lifecycle',
+        ]);
+
+        $claimWasActiveInsideSendChat = false;
+
+        $this->app->bind(AIService::class, function () use ($conversation, &$claimWasActiveInsideSendChat) {
+            return new class($conversation, $claimWasActiveInsideSendChat) extends AIService
+            {
+                public function __construct(
+                    private Conversation $conversation,
+                    private bool &$claimWasActiveInsideSendChat,
+                ) {
+                    parent::__construct();
+                }
+
+                public function sendChat(
+                    array $messages,
+                    ?array $document_filenames = null,
+                    ?string $user_id = null,
+                    bool $force_web_search = false,
+                    ?string $source_policy = null,
+                    bool $allow_auto_realtime_web = true,
+                    ?array $document_ids = null,
+                ): \Generator {
+                    $orchestrator = app(ChatOrchestrationService::class);
+                    $this->claimWasActiveInsideSendChat = $orchestrator->hasActiveStreamClaim((int) $this->conversation->id);
+                    yield 'Chunk dengan claim aktif';
+                }
+            };
+        });
+
+        $body = $this->runExecuteStream($user, $conversation);
+
+        $this->assertTrue($claimWasActiveInsideSendChat, 'Claim harus aktif saat sendChat() dipanggil');
+        $this->assertStringContainsString('event: done', $body);
+
+        $orchestrator = app(ChatOrchestrationService::class);
+        $this->assertFalse($orchestrator->hasActiveStreamClaim($conversation->id), 'Claim harus dilepas setelah stream selesai');
+    }
+
     // -------------------------------------------------------------------------
     // Helper
     // -------------------------------------------------------------------------

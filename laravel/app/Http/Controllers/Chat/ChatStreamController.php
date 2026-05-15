@@ -121,6 +121,14 @@ class ChatStreamController extends Controller
         Conversation $conversation,
         \App\Models\User $user,
     ): void {
+        $streamClaimKey = $orchestrator->acquireStreamClaim($conversationId);
+        if ($streamClaimKey === null) {
+            // Runner lain (job/stream lain) sudah claim latest user message.
+            $this->sendSseEvent('done', '1');
+            return;
+        }
+
+        try {
         // Single-runner claim: jika assistant message sudah ada untuk user message
         // terakhir (job selesai duluan), stream tidak perlu memanggil AI sama sekali.
         // Ini mencegah user melihat chunk dari jawaban berbeda lalu final DB berubah.
@@ -217,6 +225,9 @@ class ChatStreamController extends Controller
         }
 
         $this->sendSseEvent('done', '1');
+        } finally {
+            $orchestrator->releaseStreamClaim($streamClaimKey);
+        }
     }
 
     /**
