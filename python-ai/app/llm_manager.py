@@ -94,6 +94,7 @@ def get_llm_stream(
     allow_auto_realtime_web: bool = True,
     documents_active: bool = False,
     explicit_web_request: bool = False,
+    request_id: str | None = None,
 ) -> Generator[str, None, None]:
     """
     Generator yang yield token dari LLM terbaik yang tersedia.
@@ -122,6 +123,7 @@ def get_llm_stream(
                 allow_auto_realtime_web=allow_auto_realtime_web,
                 documents_active=documents_active,
                 explicit_web_request=explicit_web_request,
+                request_id=request_id,
             )
             search_context = context_data.get("search_context", "")
             web_sources = extract_web_sources(context_data)

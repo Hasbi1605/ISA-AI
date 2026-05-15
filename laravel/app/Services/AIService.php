@@ -61,7 +61,8 @@ class AIService
         bool $force_web_search = false,
         ?string $source_policy = null,
         bool $allow_auto_realtime_web = true,
-        ?array $document_ids = null
+        ?array $document_ids = null,
+        ?string $request_id = null
     ) {
         $payload = [
             'messages' => $messages,
@@ -87,12 +88,18 @@ class AIService
 
         for ($attempt = 1; $attempt <= $this->maxRetries; $attempt++) {
             try {
+                $headers = [
+                    'Authorization' => 'Bearer ' . $this->token,
+                    'Accept' => 'text/event-stream',
+                    'Content-Type' => 'application/json',
+                ];
+
+                if ($request_id !== null && $request_id !== '') {
+                    $headers['X-Request-ID'] = $request_id;
+                }
+
                 $response = $this->client->post($this->baseUrl . '/api/chat', [
-                    'headers' => [
-                        'Authorization' => 'Bearer ' . $this->token,
-                        'Accept' => 'text/event-stream',
-                        'Content-Type' => 'application/json',
-                    ],
+                    'headers' => $headers,
                     'json' => $payload,
                     'stream' => true,
                 ]);

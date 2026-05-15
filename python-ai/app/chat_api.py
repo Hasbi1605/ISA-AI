@@ -4,11 +4,12 @@ import os
 from typing import Dict, List, Optional, Tuple
 
 from dotenv import load_dotenv
-from fastapi import Depends, FastAPI, Response
+from fastapi import Depends, FastAPI, Request, Response
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
 from app.api_shared import HealthResponse, build_health_payload, build_ready_payload, verify_token
+from app.services.latency_logger import LatencyTracker
 
 # Load .env from the project root (python-ai/.env)
 load_dotenv(os.path.join(os.path.dirname(os.path.dirname(__file__)), ".env"))
@@ -134,7 +135,12 @@ async def ready_check(response: Response):
 
 
 @app.post("/api/chat", dependencies=[Depends(verify_token)])
-async def chat_stream(request: ChatRequest):
+async def chat_stream(request: ChatRequest, http_request: Request):
+    # Extract correlation ID from Laravel (X-Request-ID header)
+    request_id: Optional[str] = http_request.headers.get("X-Request-ID") or None
+    tracker = LatencyTracker(request_id=request_id)
+    tracker.event("request_received", extra={"docs_active": bool(request.document_filenames)})
+
     (
         detect_explicit_web_request,
         should_use_web_search,
@@ -167,6 +173,7 @@ async def chat_stream(request: ChatRequest):
     if documents_active and query:
         search_relevant_chunks, build_rag_prompt = _get_rag_document_helpers()
         if should_web_search:
+            tracker.start("retrieval")
             chunks, success = await asyncio.to_thread(
                 search_relevant_chunks,
                 query,
@@ -174,9 +181,13 @@ async def chat_stream(request: ChatRequest):
                 _get_rag_top_k(),
                 request.user_id,
                 request.document_ids,
+                tracker.request_id,
             )
+            tracker.end("retrieval", extra={"chunks": len(chunks), "success": success})
+
             web_context = ""
             if success and chunks:
+                tracker.start("web_search")
                 context_data = await asyncio.to_thread(
                     get_context_for_query,
                     query,
@@ -184,9 +195,12 @@ async def chat_stream(request: ChatRequest):
                     allow_auto_realtime_web,
                     True,
                     explicit_web_request,
+                    tracker.request_id,
                 )
+                tracker.end("web_search", extra={"reason": reason_code})
                 web_context = context_data.get("search_context", "") if isinstance(context_data, dict) else ""
         else:
+            tracker.start("retrieval")
             chunks, success = await asyncio.to_thread(
                 search_relevant_chunks,
                 query,
@@ -194,30 +208,43 @@ async def chat_stream(request: ChatRequest):
                 _get_rag_top_k(),
                 request.user_id,
                 request.document_ids,
+                tracker.request_id,
             )
+            tracker.end("retrieval", extra={"chunks": len(chunks), "success": success})
             web_context = ""
 
         if success and chunks:
             rag_prompt, sources = build_rag_prompt(query, chunks, web_context=web_context)
 
             messages_with_rag = [{"role": "system", "content": rag_prompt}] + request.messages
+            tracker.end_total("request_routed", extra={"mode": "rag_with_sources"})
             return StreamingResponse(
-                get_llm_stream_with_sources(messages_with_rag, sources),
+                _wrap_stream_with_ttft(
+                    get_llm_stream_with_sources(messages_with_rag, sources),
+                    tracker,
+                ),
                 media_type="text/event-stream",
             )
 
         if success and not chunks:
             if should_web_search:
+                tracker.end_total("request_routed", extra={"mode": "web_search_fallback"})
                 return StreamingResponse(
-                    get_llm_stream(
-                        request.messages,
-                        force_web_search=request.force_web_search,
-                        allow_auto_realtime_web=allow_auto_realtime_web,
-                        documents_active=True,
-                        explicit_web_request=explicit_web_request,
+                    _wrap_stream_with_ttft(
+                        get_llm_stream(
+                            request.messages,
+                            force_web_search=request.force_web_search,
+                            allow_auto_realtime_web=allow_auto_realtime_web,
+                            documents_active=True,
+                            explicit_web_request=explicit_web_request,
+                            request_id=tracker.request_id,
+                        ),
+                        tracker,
                     ),
                     media_type="text/event-stream",
                 )
+
+            tracker.end_total("request_routed", extra={"mode": "doc_not_found"})
 
             def document_not_found_stream():
                 yield _document_permission_message()
@@ -225,29 +252,76 @@ async def chat_stream(request: ChatRequest):
             return StreamingResponse(document_not_found_stream(), media_type="text/event-stream")
 
         if should_web_search:
+            tracker.end_total("request_routed", extra={"mode": "web_search_error_fallback"})
             return StreamingResponse(
-                get_llm_stream(
-                    request.messages,
-                    force_web_search=request.force_web_search,
-                    allow_auto_realtime_web=allow_auto_realtime_web,
-                    documents_active=True,
-                    explicit_web_request=explicit_web_request,
+                _wrap_stream_with_ttft(
+                    get_llm_stream(
+                        request.messages,
+                        force_web_search=request.force_web_search,
+                        allow_auto_realtime_web=allow_auto_realtime_web,
+                        documents_active=True,
+                        explicit_web_request=explicit_web_request,
+                        request_id=tracker.request_id,
+                    ),
+                    tracker,
                 ),
                 media_type="text/event-stream",
             )
+
+        tracker.end_total("request_routed", extra={"mode": "doc_error"})
 
         def document_error_stream():
             yield _document_context_error_message()
 
         return StreamingResponse(document_error_stream(), media_type="text/event-stream")
 
+    tracker.end_total("request_routed", extra={"mode": "general_chat", "reason": reason_code})
     return StreamingResponse(
-        get_llm_stream(
-            request.messages,
-            force_web_search=request.force_web_search,
-            allow_auto_realtime_web=allow_auto_realtime_web,
-            documents_active=False,
-            explicit_web_request=explicit_web_request,
+        _wrap_stream_with_ttft(
+            get_llm_stream(
+                request.messages,
+                force_web_search=request.force_web_search,
+                allow_auto_realtime_web=allow_auto_realtime_web,
+                documents_active=False,
+                explicit_web_request=explicit_web_request,
+                request_id=tracker.request_id,
+            ),
+            tracker,
         ),
         media_type="text/event-stream",
+    )
+
+
+def _wrap_stream_with_ttft(
+    generator,
+    tracker: LatencyTracker,
+):
+    """
+    Wrap generator LLM untuk mengukur TTFT (time to first token) dan total LLM duration.
+    Tidak log isi token — hanya timing metadata.
+    Hanya mendukung sync generator — get_llm_stream dan get_llm_stream_with_sources
+    keduanya bertipe Generator[str, None, None] sehingga path async tidak diperlukan.
+    """
+    import time
+
+    from app.services.latency_logger import log_latency
+
+    first_chunk = True
+    t_llm_start = time.perf_counter()
+    chunk_count = 0
+
+    for chunk in generator:
+        if first_chunk:
+            ttft_ms = (time.perf_counter() - t_llm_start) * 1000.0
+            log_latency("llm_first_chunk", ttft_ms, request_id=tracker.request_id)
+            first_chunk = False
+        chunk_count += 1
+        yield chunk
+
+    llm_total_ms = (time.perf_counter() - t_llm_start) * 1000.0
+    log_latency(
+        "llm_stream_end",
+        llm_total_ms,
+        request_id=tracker.request_id,
+        extra={"chunks": chunk_count},
     )

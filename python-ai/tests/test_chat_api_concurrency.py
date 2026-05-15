@@ -30,6 +30,22 @@ def _collect_stream(it):
     return _collect_iter(it)
 
 
+def _make_fake_http_request(request_id: str = "test-rid-001"):
+    """Buat mock FastAPI Request dengan header X-Request-ID."""
+    class _FakeHeaders:
+        def __init__(self, data):
+            self._data = data
+
+        def get(self, key, default=None):
+            return self._data.get(key, default)
+
+    class _FakeRequest:
+        def __init__(self):
+            self.headers = _FakeHeaders({"X-Request-ID": request_id})
+
+    return _FakeRequest()
+
+
 def test_chat_api_parallel_doc_and_web(monkeypatch):
     class Req(chat_api.ChatRequest):
         pass
@@ -49,7 +65,8 @@ def test_chat_api_parallel_doc_and_web(monkeypatch):
             lambda *args, **kwargs: {"search_context": "WEB"},
         )
 
-    async def fake_stream_with_sources(messages, sources):
+    def fake_stream_with_sources(messages, sources):
+        # sync generator — _wrap_stream_with_ttft hanya mendukung sync
         yield "ok"
 
     def fake_streamers():
@@ -69,7 +86,7 @@ def test_chat_api_parallel_doc_and_web(monkeypatch):
     monkeypatch.setattr(chat_api, "_get_chat_streamers", fake_streamers)
     monkeypatch.setattr(chat_api, "_get_rag_document_helpers", fake_doc_helpers)
 
-    response = asyncio.run(chat_api.chat_stream(req))
+    response = asyncio.run(chat_api.chat_stream(req, _make_fake_http_request()))
     chunks = _collect_stream(response.body_iterator)
 
     assert response.media_type == "text/event-stream"
@@ -117,11 +134,153 @@ def test_chat_api_no_prefetch_web_on_empty_doc_fallback(monkeypatch):
     monkeypatch.setattr(chat_api, "_get_chat_streamers", fake_streamers)
     monkeypatch.setattr(chat_api, "_get_rag_document_helpers", fake_doc_helpers)
 
-    response = asyncio.run(chat_api.chat_stream(req))
+    response = asyncio.run(chat_api.chat_stream(req, _make_fake_http_request()))
     chunks = _collect_stream(response.body_iterator)
 
     assert chunks == ["fallback"]
     assert policy_calls["count"] == 0
+
+
+def test_request_id_propagated_to_search_relevant_chunks(monkeypatch):
+    """request_id dari X-Request-ID header harus diteruskan ke search_relevant_chunks."""
+    captured = {}
+
+    req = chat_api.ChatRequest(
+        messages=[{"role": "user", "content": "dokumen apa ini"}],
+        document_filenames=["doc.pdf"],
+        user_id="u1",
+        force_web_search=False,
+        explicit_web_request=False,
+    )
+
+    def fake_policy_helpers():
+        return (
+            lambda q: False,
+            lambda **kwargs: (False, "DOC_NO_WEB", "low"),
+            lambda *args, **kwargs: {"search_context": ""},
+        )
+
+    def fake_streamers():
+        def _stream(*args, **kwargs):
+            yield "ok"
+
+        async def _with_sources(*args, **kwargs):
+            yield "ok"
+
+        return _stream, _with_sources
+
+    def fake_doc_helpers():
+        def search_relevant_chunks(*args, **kwargs):
+            captured["request_id"] = kwargs.get("request_id") or (args[5] if len(args) > 5 else None)
+            return ([{"filename": "doc.pdf", "content": "DOC"}], True)
+
+        def build_rag_prompt(query, chunks, web_context=""):
+            return "PROMPT", [{"filename": "doc.pdf"}]
+
+        return search_relevant_chunks, build_rag_prompt
+
+    monkeypatch.setattr(chat_api, "StreamingResponse", _DummyStreamingResponse)
+    monkeypatch.setattr(chat_api, "_get_rag_policy_helpers", fake_policy_helpers)
+    monkeypatch.setattr(chat_api, "_get_chat_streamers", fake_streamers)
+    monkeypatch.setattr(chat_api, "_get_rag_document_helpers", fake_doc_helpers)
+
+    asyncio.run(chat_api.chat_stream(req, _make_fake_http_request("rid-propagation-test")))
+
+    assert captured.get("request_id") == "rid-propagation-test", (
+        f"request_id tidak dipropagasi ke search_relevant_chunks, got: {captured.get('request_id')}"
+    )
+
+
+def test_request_id_propagated_to_get_context_for_query(monkeypatch):
+    """request_id harus diteruskan ke get_context_for_query saat doc+web path aktif."""
+    captured = {}
+
+    req = chat_api.ChatRequest(
+        messages=[{"role": "user", "content": "cek berita terbaru"}],
+        document_filenames=["doc.pdf"],
+        user_id="u1",
+        force_web_search=False,
+        explicit_web_request=True,
+    )
+
+    def fake_policy_helpers():
+        def _ctx(*args, **kwargs):
+            captured["request_id"] = kwargs.get("request_id") or (args[5] if len(args) > 5 else None)
+            return {"search_context": "WEB"}
+
+        return (
+            lambda q: True,
+            lambda **kwargs: (True, "DOC_WEB_EXPLICIT", "high"),
+            _ctx,
+        )
+
+    def fake_streamers():
+        def _stream(*args, **kwargs):
+            yield "ok"
+
+        async def _with_sources(*args, **kwargs):
+            yield "ok"
+
+        return _stream, _with_sources
+
+    def fake_doc_helpers():
+        def search_relevant_chunks(*args, **kwargs):
+            return ([{"filename": "doc.pdf", "content": "DOC"}], True)
+
+        def build_rag_prompt(query, chunks, web_context=""):
+            return "PROMPT", [{"filename": "doc.pdf"}]
+
+        return search_relevant_chunks, build_rag_prompt
+
+    monkeypatch.setattr(chat_api, "StreamingResponse", _DummyStreamingResponse)
+    monkeypatch.setattr(chat_api, "_get_rag_policy_helpers", fake_policy_helpers)
+    monkeypatch.setattr(chat_api, "_get_chat_streamers", fake_streamers)
+    monkeypatch.setattr(chat_api, "_get_rag_document_helpers", fake_doc_helpers)
+
+    asyncio.run(chat_api.chat_stream(req, _make_fake_http_request("rid-ctx-test")))
+
+    assert captured.get("request_id") == "rid-ctx-test", (
+        f"request_id tidak dipropagasi ke get_context_for_query, got: {captured.get('request_id')}"
+    )
+
+
+def test_request_id_propagated_to_get_llm_stream(monkeypatch):
+    """request_id harus diteruskan ke get_llm_stream pada jalur general chat."""
+    captured = {}
+
+    req = chat_api.ChatRequest(
+        messages=[{"role": "user", "content": "halo"}],
+        document_filenames=None,
+        user_id="u1",
+    )
+
+    def fake_policy_helpers():
+        return (
+            lambda q: False,
+            lambda **kwargs: (False, "NO_WEB", "low"),
+            lambda *args, **kwargs: {"search_context": ""},
+        )
+
+    def fake_streamers():
+        def _stream(*args, **kwargs):
+            captured["request_id"] = kwargs.get("request_id")
+            yield "ok"
+
+        async def _with_sources(*args, **kwargs):
+            yield "ok"
+
+        return _stream, _with_sources
+
+    monkeypatch.setattr(chat_api, "StreamingResponse", _DummyStreamingResponse)
+    monkeypatch.setattr(chat_api, "_get_rag_policy_helpers", fake_policy_helpers)
+    monkeypatch.setattr(chat_api, "_get_chat_streamers", fake_streamers)
+
+    response = asyncio.run(chat_api.chat_stream(req, _make_fake_http_request("rid-llm-test")))
+    _collect_stream(response.body_iterator)  # consume generator so _stream is actually called
+
+    assert captured.get("request_id") == "rid-llm-test", (
+        f"request_id tidak dipropagasi ke get_llm_stream, got: {captured.get('request_id')}"
+    )
 
 
 def test_chat_api_no_prefetch_web_on_retrieval_failure(monkeypatch):
@@ -165,7 +324,7 @@ def test_chat_api_no_prefetch_web_on_retrieval_failure(monkeypatch):
     monkeypatch.setattr(chat_api, "_get_chat_streamers", fake_streamers)
     monkeypatch.setattr(chat_api, "_get_rag_document_helpers", fake_doc_helpers)
 
-    response = asyncio.run(chat_api.chat_stream(req))
+    response = asyncio.run(chat_api.chat_stream(req, _make_fake_http_request()))
     chunks = _collect_stream(response.body_iterator)
 
     assert chunks == ["fallback"]

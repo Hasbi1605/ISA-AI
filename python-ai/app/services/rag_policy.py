@@ -13,6 +13,7 @@ from app.services.rag_config import (
     SCORE_QUERY_KEYWORDS,
     CANONICAL_TEAM_GROUPS,
 )
+from app.services.latency_logger import LatencyTracker
 
 logger = logging.getLogger(__name__)
 
@@ -237,7 +238,9 @@ def get_context_for_query(
     allow_auto_realtime_web: bool = True,
     documents_active: bool = False,
     explicit_web_request: bool = False,
+    request_id: Optional[str] = None,
 ) -> Dict:
+    tracker = LatencyTracker(request_id=request_id)
     langsearch = get_langsearch_service()
     search_results = []
 
@@ -251,12 +254,17 @@ def get_context_for_query(
 
     if should_search:
         logger.info("🌐 Web search enabled (%s, %s)", reason_code, _query_log_meta(query))
+
+        tracker.start("web_search")
         search_results = langsearch.search(query)
+        tracker.end("web_search", extra={"results": len(search_results), "reason": reason_code})
 
         score_signal = extract_match_score_signal(query, search_results)
         if _is_score_query(query) and score_signal is None:
             focused_query = f"{query} final score"
+            tracker.start("web_search_score_retry")
             focused_results = langsearch.search(focused_query)
+            tracker.end("web_search_score_retry", extra={"results": len(focused_results)})
             search_results = _merge_search_results(search_results, focused_results)
 
         try:
@@ -281,12 +289,14 @@ def get_context_for_query(
                     doc_text = f"{title}. {snippet}" if snippet else title
                     documents.append(doc_text)
 
+                tracker.start("web_rerank")
                 rerank_results = langsearch.rerank_documents(
                     query=query,
                     documents=documents,
                     top_n=web_top_n,
                     return_documents=False
                 )
+                tracker.end("web_rerank", extra={"candidates": len(candidates), "top_n": web_top_n})
 
                 if rerank_results:
                     reranked_search_results = []
