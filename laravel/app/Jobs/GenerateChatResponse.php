@@ -18,7 +18,7 @@ class GenerateChatResponse implements ShouldQueue
 {
     use Dispatchable, InteractsWithQueue, Queueable, SerializesModels;
 
-    public int $tries = 5;
+    public int $tries = 10;
 
     public int $timeout = 180;
 
@@ -58,7 +58,10 @@ class GenerateChatResponse implements ShouldQueue
         // job jangan ikut menjadi runner paralel. Requeue sebagai fallback
         // tertunda agar tetap bisa recover bila stream gagal sebelum persist.
         if ($orchestrator->hasActiveStreamClaim($this->conversationId)) {
-            $this->release(5);
+            // Stream claim aktif (intent atau active) — defer 30 detik.
+            // Dengan tries=10 dan release(30), job punya ~300 detik coverage
+            // untuk menunggu claim TTL (240 detik) stale sebelum fallback jalan.
+            $this->release(30);
             return;
         }
 

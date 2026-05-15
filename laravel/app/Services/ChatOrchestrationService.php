@@ -314,6 +314,20 @@ class ChatOrchestrationService
         return sprintf('chat:stream-claim:conversation:%d:user-message:%d', $conversationId, (int) $latestUserMessage->id);
     }
 
+    /**
+     * Acquire or adopt a stream claim for the latest user message.
+     *
+     * Two-state claim lifecycle:
+     *   - 'intent'  : created by sendMessage() before EventSource opens.
+     *                 Signals to the fallback job that a stream is expected.
+     *   - 'active'  : upgraded by executeStream() when it adopts the intent.
+     *                 Duplicate streams that see 'active' are rejected.
+     *
+     * sendMessage() always calls this to create an 'intent' claim.
+     * executeStream() calls this to adopt 'intent' → 'active', or create
+     * 'active' directly if no prior intent exists.
+     * If the claim is already 'active' (duplicate stream), returns null.
+     */
     public function acquireStreamClaim(int $conversationId): ?string
     {
         $claimKey = $this->streamClaimKeyForLatestUserMessage($conversationId);
@@ -321,13 +335,22 @@ class ChatOrchestrationService
             return null;
         }
 
-        if (Cache::has($claimKey)) {
+        $current = Cache::get($claimKey);
+
+        if ($current === null) {
+            // No claim yet — create intent (sendMessage path) or active (direct stream).
+            Cache::add($claimKey, 'intent', now()->addSeconds(self::STREAM_CLAIM_TTL_SECONDS));
             return $claimKey;
         }
 
-        Cache::add($claimKey, 'stream', now()->addSeconds(self::STREAM_CLAIM_TTL_SECONDS));
+        if ($current === 'intent') {
+            // Adopt intent → upgrade to active (stream runner path).
+            Cache::put($claimKey, 'active', now()->addSeconds(self::STREAM_CLAIM_TTL_SECONDS));
+            return $claimKey;
+        }
 
-        return $claimKey;
+        // Already 'active' — duplicate stream, reject.
+        return null;
     }
 
     public function releaseStreamClaim(?string $claimKey): void
@@ -339,10 +362,19 @@ class ChatOrchestrationService
         Cache::forget($claimKey);
     }
 
+    /**
+     * Returns true if a stream claim (intent or active) exists for the latest
+     * user message. The fallback job defers in both states.
+     */
     public function hasActiveStreamClaim(int $conversationId): bool
     {
         $claimKey = $this->streamClaimKeyForLatestUserMessage($conversationId);
-        return $claimKey !== null && Cache::has($claimKey);
+        if ($claimKey === null) {
+            return false;
+        }
+
+        $value = Cache::get($claimKey);
+        return $value === 'intent' || $value === 'active';
     }
 
     public function saveAssistantMessage(int $conversationId, string $content, int $userId): ?Message

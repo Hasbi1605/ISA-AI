@@ -960,6 +960,112 @@ class ChatStreamTest extends TestCase
     }
 
     // -------------------------------------------------------------------------
+    // Duplicate stream adoption rejected
+    // -------------------------------------------------------------------------
+
+    public function test_duplicate_stream_adoption_is_rejected(): void
+    {
+        $user = User::factory()->create();
+        $conversation = Conversation::create([
+            'user_id' => $user->id,
+            'title' => 'Duplicate stream test',
+        ]);
+
+        Message::create([
+            'conversation_id' => $conversation->id,
+            'role' => 'user',
+            'content' => 'Pertanyaan duplikat stream',
+        ]);
+
+        $orchestrator = app(ChatOrchestrationService::class);
+
+        // First: intent claim (sendMessage path)
+        $intentKey = $orchestrator->acquireStreamClaim($conversation->id);
+        $this->assertNotNull($intentKey, 'Intent claim harus berhasil');
+
+        // Second: stream adopts intent → active
+        $activeKey = $orchestrator->acquireStreamClaim($conversation->id);
+        $this->assertNotNull($activeKey, 'Stream pertama harus bisa adopt intent');
+        $this->assertSame($intentKey, $activeKey);
+
+        // Third: duplicate stream tries to adopt active → rejected
+        $duplicateKey = $orchestrator->acquireStreamClaim($conversation->id);
+        $this->assertNull($duplicateKey, 'Stream duplikat harus ditolak saat claim sudah active');
+
+        $orchestrator->releaseStreamClaim($activeKey);
+    }
+
+    // -------------------------------------------------------------------------
+    // No-stream fallback: intent claim stale, job runs AI
+    // -------------------------------------------------------------------------
+
+    public function test_job_runs_ai_after_intent_claim_expires(): void
+    {
+        $user = User::factory()->create();
+        $conversation = Conversation::create([
+            'user_id' => $user->id,
+            'title' => 'No-stream fallback test',
+        ]);
+
+        Message::create([
+            'conversation_id' => $conversation->id,
+            'role' => 'user',
+            'content' => 'Pertanyaan fallback no-stream',
+        ]);
+
+        $orchestrator = app(ChatOrchestrationService::class);
+
+        // Simulate sendMessage() creating intent claim
+        $claimKey = $orchestrator->acquireStreamClaim($conversation->id);
+        $this->assertNotNull($claimKey);
+        $this->assertTrue($orchestrator->hasActiveStreamClaim($conversation->id));
+
+        // Simulate claim expiry (stream never connected)
+        $orchestrator->releaseStreamClaim($claimKey);
+        $this->assertFalse($orchestrator->hasActiveStreamClaim($conversation->id));
+
+        // Job should now run AI since claim is gone
+        $aiCalled = false;
+        $this->app->bind(AIService::class, function () use (&$aiCalled) {
+            return new class($aiCalled) extends AIService
+            {
+                public function __construct(private bool &$called)
+                {
+                    parent::__construct();
+                }
+
+                public function sendChat(
+                    array $messages,
+                    ?array $document_filenames = null,
+                    ?string $user_id = null,
+                    bool $force_web_search = false,
+                    ?string $source_policy = null,
+                    bool $allow_auto_realtime_web = true,
+                    ?array $document_ids = null,
+                ): \Generator {
+                    $this->called = true;
+                    yield 'Jawaban fallback dari job.';
+                }
+            };
+        });
+
+        $this->actingAs($user);
+        $job = new GenerateChatResponse(
+            conversationId: (int) $conversation->id,
+            userId: (int) $user->id,
+            history: [['role' => 'user', 'content' => 'Pertanyaan fallback no-stream']],
+        );
+        $job->handle(app(AIService::class), $orchestrator);
+
+        $this->assertTrue($aiCalled, 'Job harus memanggil AI setelah claim stale/expired');
+        $this->assertDatabaseHas('messages', [
+            'conversation_id' => $conversation->id,
+            'role' => 'assistant',
+            'content' => 'Jawaban fallback dari job.',
+        ]);
+    }
+
+    // -------------------------------------------------------------------------
     // Helper
     // -------------------------------------------------------------------------
 
