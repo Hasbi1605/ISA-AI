@@ -7,10 +7,12 @@ use App\Models\Message;
 use App\Models\Document;
 use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Database\QueryException;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Auth;
 
 class ChatOrchestrationService
 {
+    private const STREAM_CLAIM_TTL_SECONDS = 240;
     private const SANITIZE_REPLACEMENTS = [
         '/\bchunks?\b/i' => 'bagian dokumen',
         '/\bchunk(?:ing|ed)?\b/i' => 'bagian dokumen',
@@ -295,6 +297,47 @@ class ChatOrchestrationService
             ->where('role', 'assistant')
             ->where('id', '>', $latestUserMessage->id)
             ->exists();
+    }
+
+    public function streamClaimKeyForLatestUserMessage(int $conversationId): ?string
+    {
+        $latestUserMessage = Message::query()
+            ->where('conversation_id', $conversationId)
+            ->where('role', 'user')
+            ->latest('id')
+            ->first();
+
+        if ($latestUserMessage === null) {
+            return null;
+        }
+
+        return sprintf('chat:stream-claim:conversation:%d:user-message:%d', $conversationId, (int) $latestUserMessage->id);
+    }
+
+    public function acquireStreamClaim(int $conversationId): ?string
+    {
+        $claimKey = $this->streamClaimKeyForLatestUserMessage($conversationId);
+        if ($claimKey === null) {
+            return null;
+        }
+
+        $acquired = Cache::add($claimKey, 'stream', now()->addSeconds(self::STREAM_CLAIM_TTL_SECONDS));
+        return $acquired ? $claimKey : null;
+    }
+
+    public function releaseStreamClaim(?string $claimKey): void
+    {
+        if ($claimKey === null) {
+            return;
+        }
+
+        Cache::forget($claimKey);
+    }
+
+    public function hasActiveStreamClaim(int $conversationId): bool
+    {
+        $claimKey = $this->streamClaimKeyForLatestUserMessage($conversationId);
+        return $claimKey !== null && Cache::has($claimKey);
     }
 
     public function saveAssistantMessage(int $conversationId, string $content, int $userId): ?Message

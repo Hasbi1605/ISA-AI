@@ -54,6 +54,12 @@ class GenerateChatResponse implements ShouldQueue
         $sourcePolicy = $orchestrator->getSourcePolicy($documentFilenames);
         $allowAutoRealtimeWeb = $orchestrator->shouldAllowAutoRealtimeWeb($documentFilenames);
 
+        // Jika stream sedang memegang claim untuk latest user message,
+        // job tidak boleh menjalankan AI runner paralel.
+        if ($orchestrator->hasActiveStreamClaim($this->conversationId)) {
+            return;
+        }
+
         $fullResponse = '';
         $streamBuffer = '';
         $sources = [];

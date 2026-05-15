@@ -799,6 +799,64 @@ class ChatStreamTest extends TestCase
         $this->assertSame('Jawaban sukses dari job.', $assistantMessages->first()->content);
     }
 
+    public function test_job_skips_ai_when_stream_claim_is_active(): void
+    {
+        $user = User::factory()->create();
+        $conversation = Conversation::create([
+            'user_id' => $user->id,
+            'title' => 'Mid-stream claim test',
+        ]);
+
+        Message::create([
+            'conversation_id' => $conversation->id,
+            'role' => 'user',
+            'content' => 'Pertanyaan mid-stream',
+        ]);
+
+        $orchestrator = app(ChatOrchestrationService::class);
+        $claimKey = $orchestrator->acquireStreamClaim($conversation->id);
+        $this->assertNotNull($claimKey);
+
+        $aiCalled = false;
+        $this->app->bind(AIService::class, function () use (&$aiCalled) {
+            return new class($aiCalled) extends AIService
+            {
+                public function __construct(private bool &$called)
+                {
+                    parent::__construct();
+                }
+
+                public function sendChat(
+                    array $messages,
+                    ?array $document_filenames = null,
+                    ?string $user_id = null,
+                    bool $force_web_search = false,
+                    ?string $source_policy = null,
+                    bool $allow_auto_realtime_web = true,
+                    ?array $document_ids = null,
+                ): \Generator {
+                    $this->called = true;
+                    yield 'Tidak boleh dipanggil saat stream claim aktif';
+                }
+            };
+        });
+
+        $job = new GenerateChatResponse(
+            conversationId: (int) $conversation->id,
+            userId: (int) $user->id,
+            history: [['role' => 'user', 'content' => 'Pertanyaan mid-stream']],
+        );
+        $job->handle(app(AIService::class), $orchestrator);
+
+        $this->assertFalse($aiCalled, 'Job harus skip AI call saat stream claim aktif');
+        $this->assertSame(0, Message::query()
+            ->where('conversation_id', $conversation->id)
+            ->where('role', 'assistant')
+            ->count());
+
+        $orchestrator->releaseStreamClaim($claimKey);
+    }
+
     // -------------------------------------------------------------------------
     // Helper
     // -------------------------------------------------------------------------
