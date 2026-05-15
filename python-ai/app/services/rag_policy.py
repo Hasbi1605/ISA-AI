@@ -3,6 +3,7 @@ import hashlib
 import unicodedata
 import logging
 import threading
+from concurrent.futures import ThreadPoolExecutor
 from typing import List, Tuple, Dict, Optional
 
 from app.env_utils import get_env_bool, get_env_int
@@ -17,6 +18,13 @@ from app.services.rag_config import (
 logger = logging.getLogger(__name__)
 
 SCORE_PATTERN = re.compile(r"\b(\d{1,2})\s*[-:]\s*(\d{1,2})\b")
+
+# Freshness mapping berdasarkan realtime intent
+_FRESHNESS_BY_INTENT = {
+    "high": "oneDay",    # Berita/skor hari ini — butuh data paling segar
+    "medium": "oneWeek", # Default
+    "low": "oneWeek",    # Default
+}
 
 _langsearch_service = None
 _langsearch_service_lock = threading.Lock()
@@ -252,16 +260,30 @@ def get_context_for_query(
     if should_search:
         logger.info("🌐 Web search enabled (%s, %s)", reason_code, _query_log_meta(query))
 
-        _freshness_map = {"high": "oneDay", "medium": "oneWeek", "low": "oneWeek"}
-        freshness = _freshness_map.get(realtime_intent, "oneWeek")
+        # Freshness adaptif: gunakan oneDay untuk realtime_intent=high
+        freshness = _FRESHNESS_BY_INTENT.get(realtime_intent, "oneWeek")
+        if freshness != "oneWeek":
+            logger.info("🌐 Web search: freshness=%s (realtime_intent=%s)", freshness, realtime_intent)
 
-        search_results = langsearch.search(query, freshness=freshness)
+        is_score = _is_score_query(query)
 
-        score_signal = extract_match_score_signal(query, search_results)
-        if _is_score_query(query) and score_signal is None:
+        if is_score:
+            # Paralel: jalankan search utama dan focused score search bersamaan
+            # agar tidak menunggu search pertama selesai sebelum memulai yang kedua.
             focused_query = f"{query} final score"
-            focused_results = langsearch.search(focused_query, freshness=freshness)
-            search_results = _merge_search_results(search_results, focused_results)
+            logger.info("⚡ Web search: paralel score query + focused search")
+            with ThreadPoolExecutor(max_workers=2) as executor:
+                f_main = executor.submit(langsearch.search, query, freshness)
+                f_focused = executor.submit(langsearch.search, focused_query, freshness)
+            main_results = f_main.result()
+            focused_results = f_focused.result()
+            search_results = _merge_search_results(main_results, focused_results)
+            logger.info(
+                "⚡ Web search: paralel score query selesai — main=%d focused=%d merged=%d",
+                len(main_results), len(focused_results), len(search_results),
+            )
+        else:
+            search_results = langsearch.search(query, freshness)
 
         try:
             from app.config_loader import get_rerank_config as _get_rc
