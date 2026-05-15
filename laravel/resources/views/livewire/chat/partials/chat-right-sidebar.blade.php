@@ -37,7 +37,10 @@
         @endif
     </div>
 
-    <div class="flex-1 overflow-y-auto px-4 pt-4" @if($hasDocumentsInProgress) wire:poll.3s="loadAvailableDocuments" @else wire:poll.20s="loadAvailableDocuments" @endif>
+    {{-- Polling interval: 5s saat ada dokumen processing (turun dari 3s), 20s saat idle.
+         Preview generation memakan 5-15 detik, poll 3s terlalu agresif.
+         Rollback: ubah wire:poll.5s kembali ke wire:poll.3s --}}
+    <div class="flex-1 overflow-y-auto px-4 pt-4" @if($hasDocumentsInProgress) wire:poll.5s="loadAvailableDocuments" @else wire:poll.20s="loadAvailableDocuments" @endif>
           <div class="mb-4">
               @php
                   $readyDocumentIds = $availableDocuments->where('status', 'ready')->pluck('id')->map(fn ($id) => (int) $id)->toArray();
