@@ -10,6 +10,7 @@ from app.services.rag_embeddings import (
     GITHUB_MODELS_BASE_URL,
     BedrockTitanEmbeddings,
     GithubOpenAIEmbeddings,
+    clear_embedding_cache,
 )
 
 
@@ -251,3 +252,124 @@ def test_get_embeddings_falls_back_to_bedrock_titan_when_github_fails(monkeypatc
     assert isinstance(embeddings, FakeBedrockEmbedding)
     assert embeddings.kwargs["api_key"] == "bedrock-token"
     assert embeddings.kwargs["dimensions"] == 1024
+
+
+# ---------------------------------------------------------------------------
+# Cache embedding provider (quick win #191)
+# ---------------------------------------------------------------------------
+
+def _make_fake_models(probe_call_counter: dict):
+    """Helper: buat EMBEDDING_MODELS fake dengan counter probe calls."""
+    class FakeEmbedding(GithubOpenAIEmbeddings):
+        def __init__(self, **kwargs):
+            super().__init__(client=_FakeClient([[0.1, 0.2]]), **kwargs)
+
+        def embed_query(self, text):
+            probe_call_counter["count"] += 1
+            return [0.1] * MAX_EMBEDDING_DIM
+
+    return FakeEmbedding, [{
+        "name": "cached-model",
+        "provider": "github",
+        "model": "text-embedding-3-small",
+        "api_key_env": "GITHUB_TOKEN",
+        "tpm_limit": 500000,
+        "dimensions": 1536,
+    }]
+
+
+def test_embedding_cache_skips_probe_on_second_call(monkeypatch):
+    """Probe embed_query('test') tidak dipanggil ulang jika cache masih valid."""
+    clear_embedding_cache()
+    probe_calls = {"count": 0}
+    FakeEmbedding, fake_models = _make_fake_models(probe_calls)
+
+    monkeypatch.setattr(rag_embeddings, "GithubOpenAIEmbeddings", FakeEmbedding)
+    monkeypatch.setattr(rag_embeddings, "get_env", lambda name, default=None: "test-token")
+    monkeypatch.setattr(rag_embeddings, "EMBEDDING_MODELS", fake_models)
+    monkeypatch.setattr(rag_embeddings, "_EMBEDDING_CACHE_TTL", 300)
+
+    # Panggil pertama — probe harus dipanggil
+    emb1, provider1, idx1 = rag_embeddings.get_embeddings_with_fallback()
+    assert probe_calls["count"] == 1
+    assert provider1 == "cached-model"
+
+    # Panggil kedua — probe tidak boleh dipanggil lagi (cache hit)
+    emb2, provider2, idx2 = rag_embeddings.get_embeddings_with_fallback()
+    assert probe_calls["count"] == 1, "Probe tidak boleh dipanggil ulang saat cache valid"
+    assert provider2 == "cached-model"
+    assert idx2 == idx1
+
+    clear_embedding_cache()
+
+
+def test_embedding_cache_disabled_when_ttl_zero(monkeypatch):
+    """Jika EMBEDDING_CACHE_TTL=0, probe selalu dipanggil."""
+    clear_embedding_cache()
+    probe_calls = {"count": 0}
+    FakeEmbedding, fake_models = _make_fake_models(probe_calls)
+
+    monkeypatch.setattr(rag_embeddings, "GithubOpenAIEmbeddings", FakeEmbedding)
+    monkeypatch.setattr(rag_embeddings, "get_env", lambda name, default=None: "test-token")
+    monkeypatch.setattr(rag_embeddings, "EMBEDDING_MODELS", fake_models)
+    monkeypatch.setattr(rag_embeddings, "_EMBEDDING_CACHE_TTL", 0)
+
+    rag_embeddings.get_embeddings_with_fallback()
+    rag_embeddings.get_embeddings_with_fallback()
+
+    assert probe_calls["count"] == 2, "Dengan TTL=0, probe harus dipanggil setiap kali"
+
+    clear_embedding_cache()
+
+
+def test_embedding_cache_invalidated_on_probe_failure(monkeypatch):
+    """Jika probe gagal, cache entry harus dihapus dan tidak dipakai."""
+    clear_embedding_cache()
+    call_count = {"count": 0}
+
+    class FailingEmbedding(GithubOpenAIEmbeddings):
+        def __init__(self, **kwargs):
+            super().__init__(client=_FakeClient([[0.1]]), **kwargs)
+
+        def embed_query(self, text):
+            call_count["count"] += 1
+            raise RuntimeError("probe gagal")
+
+    monkeypatch.setattr(rag_embeddings, "GithubOpenAIEmbeddings", FailingEmbedding)
+    monkeypatch.setattr(rag_embeddings, "get_env", lambda name, default=None: "test-token")
+    monkeypatch.setattr(rag_embeddings, "EMBEDDING_MODELS", [{
+        "name": "failing-model",
+        "provider": "github",
+        "model": "text-embedding-3-small",
+        "api_key_env": "GITHUB_TOKEN",
+        "tpm_limit": 500000,
+        "dimensions": 1536,
+    }])
+    monkeypatch.setattr(rag_embeddings, "_EMBEDDING_CACHE_TTL", 300)
+
+    result, provider, idx = rag_embeddings.get_embeddings_with_fallback()
+
+    assert result is None
+    assert provider == "none"
+    # Cache tidak boleh menyimpan entry yang gagal
+    assert len(rag_embeddings._embedding_cache) == 0
+
+    clear_embedding_cache()
+
+
+def test_clear_embedding_cache_removes_all_entries(monkeypatch):
+    """clear_embedding_cache() harus menghapus semua entry."""
+    clear_embedding_cache()
+    probe_calls = {"count": 0}
+    FakeEmbedding, fake_models = _make_fake_models(probe_calls)
+
+    monkeypatch.setattr(rag_embeddings, "GithubOpenAIEmbeddings", FakeEmbedding)
+    monkeypatch.setattr(rag_embeddings, "get_env", lambda name, default=None: "test-token")
+    monkeypatch.setattr(rag_embeddings, "EMBEDDING_MODELS", fake_models)
+    monkeypatch.setattr(rag_embeddings, "_EMBEDDING_CACHE_TTL", 300)
+
+    rag_embeddings.get_embeddings_with_fallback()
+    assert len(rag_embeddings._embedding_cache) == 1
+
+    clear_embedding_cache()
+    assert len(rag_embeddings._embedding_cache) == 0
