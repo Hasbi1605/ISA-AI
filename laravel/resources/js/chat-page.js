@@ -347,7 +347,7 @@ const registerChatPageData = (Alpine) => {
         chatMutationObserver: null,
         wireListeners: [],
         windowListeners: [],
-        activeEventSource: null,
+        activeEventSources: {},
         _chatStreamHandler: null,
 
         getConversationMeta() {
@@ -463,12 +463,16 @@ const registerChatPageData = (Alpine) => {
             this.registerWireListener('assistant-sources', (data) => {
                 this.sources = data[0] || [];
             });
-            this.registerWireListener('assistant-message-persisted', () => this.resetStreamingState());
             this.registerWireListener('assistant-message-persisted', (data) => {
                 const payload = normalizeWirePayload(data);
                 const ackConversationId = Number(payload.conversationId || 0);
                 const { conversationId } = this.getConversationMeta();
                 const targetConversationId = ackConversationId > 0 ? ackConversationId : conversationId;
+
+                if (targetConversationId && this.isActiveConversation(targetConversationId)) {
+                    this.resetStreamingState();
+                }
+
                 if (targetConversationId) this.clearConversationPending(targetConversationId);
             });
             this.registerWireListener('user-message-acked', () => {
@@ -503,15 +507,45 @@ const registerChatPageData = (Alpine) => {
             this.windowListeners.push(() => window.removeEventListener(event, callback));
         },
 
-        closeChatStream() {
-            if (this.activeEventSource) {
-                this.activeEventSource.close();
-                this.activeEventSource = null;
+        isActiveConversation(conversationId) {
+            const id = Number(conversationId || 0);
+            const { conversationId: activeConversationId } = this.getConversationMeta();
+
+            return id > 0 && Number(activeConversationId || 0) === id;
+        },
+
+        closeChatStream(conversationId = null) {
+            const id = Number(conversationId || 0);
+
+            if (id > 0) {
+                if (this.activeEventSources?.[id]) {
+                    this.activeEventSources[id].close();
+                    delete this.activeEventSources[id];
+                }
+
+                return;
             }
+
+            Object.values(this.activeEventSources || {}).forEach((eventSource) => {
+                eventSource?.close();
+            });
+            this.activeEventSources = {};
+        },
+
+        ensureVisibleStreamPlaceholder(conversationId, loadingContext = 'general') {
+            if (!this.isActiveConversation(conversationId)) {
+                return false;
+            }
+
+            if (!this.streaming) {
+                this.startStreamingPlaceholder(loadingContext);
+            }
+
+            return true;
         },
 
         openChatStream(conversationId, documentIds, webSearchMode, loadingContext) {
-            this.closeChatStream();
+            this.closeChatStream(conversationId);
 
             // History tidak dikirim via query string — server reconstruct dari DB
             // untuk menghindari URL terlalu panjang (414) dan konten chat bocor ke log.
@@ -522,18 +556,41 @@ const registerChatPageData = (Alpine) => {
 
             const url = `/chat/stream/${conversationId}?${params.toString()}`;
             const es = new EventSource(url);
-            this.activeEventSource = es;
+            this.activeEventSources = {
+                ...this.activeEventSources,
+                [conversationId]: es,
+            };
+            const streamState = {
+                finalText: null,
+                hasFirstAssistantChunk: false,
+                streamedAssistantMessageId: null,
+            };
 
             es.addEventListener('chunk', (e) => {
                 // Server menggunakan multi-line SSE framing — browser otomatis join dengan \n
-                this.handleAssistantChunk(e.data || '');
+                const text = e.data || '';
+                streamState.hasFirstAssistantChunk = streamState.hasFirstAssistantChunk || text !== '';
+
+                if (!this.ensureVisibleStreamPlaceholder(conversationId, loadingContext)) {
+                    return;
+                }
+
+                this.handleAssistantChunk(text);
             });
 
             es.addEventListener('model-name', (e) => {
+                if (!this.isActiveConversation(conversationId)) {
+                    return;
+                }
+
                 this.modelName = e.data || '';
             });
 
             es.addEventListener('sources', (e) => {
+                if (!this.isActiveConversation(conversationId)) {
+                    return;
+                }
+
                 try {
                     const parsed = JSON.parse(e.data || '');
                     if (Array.isArray(parsed)) {
@@ -546,43 +603,59 @@ const registerChatPageData = (Alpine) => {
 
             es.addEventListener('message-id', (e) => {
                 const messageId = Number(e.data || 0);
-                this.streamedAssistantMessageId = Number.isFinite(messageId) && messageId > 0 ? messageId : null;
+                streamState.streamedAssistantMessageId = Number.isFinite(messageId) && messageId > 0 ? messageId : null;
+
+                if (this.isActiveConversation(conversationId)) {
+                    this.streamedAssistantMessageId = streamState.streamedAssistantMessageId;
+                }
             });
 
             es.addEventListener('final-content', (e) => {
                 const content = e.data || '';
-                this.streamingFinalText = content !== '' ? content : null;
+                streamState.finalText = content !== '' ? content : null;
+
+                if (this.isActiveConversation(conversationId)) {
+                    this.streamingFinalText = streamState.finalText;
+                }
             });
 
             es.addEventListener('error', (e) => {
                 const msg = e.data || '';
-                if (msg) {
+                if (msg && this.isActiveConversation(conversationId)) {
                     this.stalePendingWarning = msg;
                 }
-                this.closeChatStream();
+                this.closeChatStream(conversationId);
                 // Polling will recover the final state from DB
             });
 
             es.addEventListener('done', () => {
-                this.closeChatStream();
-                const streamedMessageId = this.hasFirstAssistantChunk ? this.streamedAssistantMessageId : null;
-                this.afterStreamingTypewriterSettles(() => {
-                    this.applyFinalStreamingText();
-                    // Trigger wire refresh so Livewire loads the persisted message.
-                    // If this message already appeared via SSE, do not replay the
-                    // persisted DB copy through the final-message typewriter.
-                    if (this.$wire && typeof this.$wire.refreshPendingChatState === 'function') {
-                        if (streamedMessageId) {
-                            this.$wire.refreshPendingChatState(streamedMessageId);
-                        } else {
-                            this.$wire.refreshPendingChatState();
-                        }
+                this.closeChatStream(conversationId);
+                const streamedMessageId = streamState.streamedAssistantMessageId;
+
+                if (this.isActiveConversation(conversationId)) {
+                    if (streamState.finalText) {
+                        this.streamingQueue = '';
+                        this.clearStreamingTypewriter();
+                        this.streamingFinalText = streamState.finalText;
                     }
-                });
+                    this.applyFinalStreamingText();
+                }
+
+                // Trigger wire refresh so Livewire loads the persisted message
+                // only when relevant to the visible conversation. Inactive
+                // completions still clear pending/sidebar state via dispatched
+                // assistant-message-persisted events.
+                if (this.$wire && typeof this.$wire.refreshPendingChatState === 'function') {
+                    if (streamedMessageId) {
+                        this.$wire.refreshPendingChatState(streamedMessageId);
+                    } else {
+                        this.$wire.refreshPendingChatState();
+                    }
+                }
             });
 
             es.onerror = () => {
-                this.closeChatStream();
+                this.closeChatStream(conversationId);
             };
         },
 

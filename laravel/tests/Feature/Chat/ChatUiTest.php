@@ -458,6 +458,8 @@ class ChatUiTest extends TestCase
         $response = $this->actingAs($user)->get('/chat');
         $chatPageJs = file_get_contents(resource_path('js/chat-page.js'));
         $this->assertIsString($chatPageJs);
+        $appCss = file_get_contents(resource_path('css/app.css'));
+        $this->assertIsString($appCss);
         $this->assertStringContainsString('pendingConversationIds', $chatPageJs);
         $this->assertStringContainsString('completedConversationIds', $chatPageJs);
         $this->assertStringContainsString('normalizeWirePayload', $chatPageJs);
@@ -477,8 +479,17 @@ class ChatUiTest extends TestCase
         $this->assertStringContainsString('Tunggu jawaban sebelumnya selesai sebelum mengirim pesan baru.', $chatPageJs);
         $this->assertStringContainsString('syncPendingConversations', $chatPageJs);
         $this->assertStringContainsString('chat-pending-state-updated', $chatPageJs);
+        $this->assertStringContainsString('activeEventSources: {}', $chatPageJs);
+        $this->assertStringContainsString('isActiveConversation(conversationId)', $chatPageJs);
+        $this->assertStringContainsString('ensureVisibleStreamPlaceholder(conversationId, loadingContext)', $chatPageJs);
+        $this->assertStringContainsString('this.closeChatStream(conversationId)', $chatPageJs);
+        $this->assertStringContainsString('this.isActiveConversation(targetConversationId)', $chatPageJs);
+        $this->assertStringNotContainsString('activeEventSource: null', $chatPageJs);
+        $this->assertStringNotContainsString('this.activeEventSource = es', $chatPageJs);
         $this->assertStringNotContainsString('showAllHistory', $chatPageJs);
         $this->assertStringContainsString('sectionHasActivity', $chatPageJs);
+        $this->assertStringNotContainsString('.chat-form:focus-within', $appCss);
+        $this->assertStringContainsString('.chat-input:focus', $appCss);
 
         $response
             ->assertOk()
@@ -1196,6 +1207,62 @@ class ChatUiTest extends TestCase
                 return (int) ($payload['conversationId'] ?? 0) === (int) $conversation->id
                     && (int) ($payload['messageId'] ?? 0) === (int) $assistant->id;
             });
+    }
+
+    public function test_refresh_pending_chat_state_does_not_load_completed_inactive_conversation(): void
+    {
+        $user = User::factory()->create();
+        $pendingConversation = Conversation::create([
+            'user_id' => $user->id,
+            'title' => 'Inactive pending chat',
+        ]);
+        $activeConversation = Conversation::create([
+            'user_id' => $user->id,
+            'title' => 'Active visible chat',
+        ]);
+
+        Message::create([
+            'conversation_id' => $pendingConversation->id,
+            'role' => 'user',
+            'content' => 'Pertanyaan di chat lain.',
+        ]);
+        Message::create([
+            'conversation_id' => $activeConversation->id,
+            'role' => 'user',
+            'content' => 'Chat aktif tetap terlihat.',
+        ]);
+        Message::create([
+            'conversation_id' => $activeConversation->id,
+            'role' => 'assistant',
+            'content' => 'Jawaban chat aktif tetap terlihat.',
+        ]);
+
+        $component = Livewire::actingAs($user)
+            ->test(ChatIndex::class, ['id' => $activeConversation->id])
+            ->assertSet('currentConversationId', $activeConversation->id)
+            ->assertSet('pendingConversationIds', [$pendingConversation->id]);
+
+        $assistant = Message::create([
+            'conversation_id' => $pendingConversation->id,
+            'role' => 'assistant',
+            'content' => 'Jawaban chat lain tidak boleh muncul di chat aktif.',
+        ]);
+        $pendingConversation->touch();
+
+        $component
+            ->call('refreshPendingChatState', $assistant->id)
+            ->assertSet('currentConversationId', $activeConversation->id)
+            ->assertSet('pendingConversationIds', [])
+            ->assertDispatched('chat-pending-state-updated', pendingConversationIds: [])
+            ->assertDispatched('assistant-message-persisted', function (string $_event, array $payload) use ($pendingConversation, $assistant) {
+                return (int) ($payload['conversationId'] ?? 0) === (int) $pendingConversation->id
+                    && (int) ($payload['messageId'] ?? 0) === (int) $assistant->id;
+            });
+
+        $messages = collect($component->get('messages'));
+        $this->assertTrue($messages->contains(fn (array $message) => $message['content'] === 'Chat aktif tetap terlihat.'));
+        $this->assertTrue($messages->contains(fn (array $message) => $message['content'] === 'Jawaban chat aktif tetap terlihat.'));
+        $this->assertFalse($messages->contains(fn (array $message) => $message['content'] === 'Jawaban chat lain tidak boleh muncul di chat aktif.'));
     }
 
     public function test_streaming_answer_uses_final_answer_bubble_style(): void

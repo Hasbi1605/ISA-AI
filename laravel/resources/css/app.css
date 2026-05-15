@@ -2,7 +2,6 @@
 @tailwind components;
 @tailwind utilities;
 
-.chat-form:focus-within,
 .chat-input:focus,
 .chat-input:hover,
 .chat-input:focus-visible {
