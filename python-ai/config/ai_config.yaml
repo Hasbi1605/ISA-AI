@@ -230,10 +230,14 @@ retrieval:
     model: "langsearch-reranker-v1"
     timeout: 8
     # ── RAG document reranking ─────────────────────────────────────────────────
-    top_k: 8          # Chunk yang dikembalikan ke LLM setelah reranking
-    top_n: 8          # Alias top_k untuk kompatibilitas
+    # Tuning #192: top_k 8→5, top_n 8→5, doc_candidates 25→20
+    # Alasan: 5 chunk (~7.500 token dengan PDR) cukup untuk dokumen kantor,
+    # mengurangi context size dan mempercepat TTFT LLM.
+    # Rollback: ubah kembali ke top_k: 8, top_n: 8, doc_candidates: 25
+    top_k: 5          # Chunk yang dikembalikan ke LLM setelah reranking
+    top_n: 5          # Alias top_k untuk kompatibilitas
     # ⚠️ WAJIB: doc_candidates >= top_n (makin besar = makin akurat tapi lebih lambat)
-    doc_candidates: 25
+    doc_candidates: 20
     # ── Web search result reranking ────────────────────────────────────────────
     # Skala lebih kecil dari RAG karena hasil web sudah cukup relevan dari LangSearch
     web_candidates: 10  # Max hasil web yang dikirim ke reranker
@@ -261,18 +265,18 @@ retrieval:
   # Sebelum vector search, LLM membuat jawaban hipotetis singkat dari query.
   # Jawaban hipotetis + query asli diembed bersama untuk retrieval yang lebih kaya.
   #
-  # Untuk dokumen kantor/akademik: gunakan mode 'always' karena:
-  #   - Keakuratan > kecepatan untuk analisis dokumen
-  #   - User punya pola query beragam, tidak bisa diprediksi dengan keyword
-  #   - Timeout 3s: jika LLM lambat → fallback ke query asli (tanpa error)
-  #   - Actual overhead: ~300-600ms (bukan 2 detik, karena max_tokens=100)
+  # Tuning #192: mode always → smart
+  # Alasan: mode 'always' menambah ~300-600ms untuk SETIAP query dokumen,
+  # termasuk query sederhana (ringkasan, fakta langsung) yang tidak butuh HyDE.
+  # Mode 'smart' aktif hanya untuk query konseptual (mengapa, bagaimana, analisis, dll).
+  # Rollback: ubah mode: smart kembali ke mode: always
   #
-  # mode: always → DIREKOMENDASIKAN untuk dokumen kantor (+300-600ms, lebih akurat)
-  # mode: smart  → aktif hanya untuk pola konseptual tertentu (fragile)
+  # mode: always → aktif untuk semua query (+300-600ms, lebih akurat untuk query kompleks)
+  # mode: smart  → aktif hanya untuk pola konseptual tertentu (lebih cepat untuk query sederhana)
   # mode: off    → matikan sepenuhnya (tercepat, akurasi standar)
   hyde:
     enabled: true
-    mode: always     # 'always' | 'smart' | 'off'
+    mode: smart      # Tuning #192: always → smart. Rollback: ubah ke always
     max_tokens: 100  # jawaban hipotetis singkat (100 token = ~2-3 kalimat)
     timeout: 3       # detik — timeout ketat: jika lambat, skip gracefully
 

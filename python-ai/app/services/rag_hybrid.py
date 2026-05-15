@@ -72,7 +72,10 @@ def _generate_hyde_query(original_query: str, timeout: int = 5, max_tokens: int 
 
         sorted_models = sorted(models, key=_hyde_priority)
 
-        max_attempts = 2
+        # Tuning #192: max_attempts 2→1 agar HyDE gagal cepat dan fallback ke query asli.
+        # Dengan timeout=3s dan 2 attempts, worst case = 6s. Dengan 1 attempt = 3s max.
+        # Rollback: ubah kembali ke max_attempts = 2
+        max_attempts = 1
         attempts = 0
 
         for model in sorted_models:
