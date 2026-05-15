@@ -327,7 +327,7 @@ class ChatUiTest extends TestCase
             };
         });
 
-        $job = new \App\Jobs\GenerateChatResponse(
+        $job = new GenerateChatResponse(
             $conversation->id,
             $user->id,
             [['role' => 'user', 'content' => 'Halo']],
@@ -469,6 +469,10 @@ class ChatUiTest extends TestCase
         $this->assertStringContainsString('allHistorySectionsOpen', $chatPageJs);
         $this->assertStringContainsString('navigationToken', $chatPageJs);
         $this->assertStringContainsString('queueNavigationUntilMessageAck', $chatPageJs);
+        $this->assertStringContainsString('CHAT_MESSAGE_ACK_TIMEOUT_MS', $chatPageJs);
+        $this->assertStringContainsString('clearMessageAckWait', $chatPageJs);
+        $this->assertStringContainsString('user-message-rejected', $chatPageJs);
+        $this->assertStringContainsString('Tunggu jawaban sebelumnya selesai sebelum mengirim pesan baru.', $chatPageJs);
         $this->assertStringContainsString('syncPendingConversations', $chatPageJs);
         $this->assertStringContainsString('chat-pending-state-updated', $chatPageJs);
         $this->assertStringNotContainsString('showAllHistory', $chatPageJs);
@@ -605,6 +609,43 @@ class ChatUiTest extends TestCase
         ]);
     }
 
+    public function test_send_message_rejects_pending_conversation_with_explicit_frontend_signal(): void
+    {
+        Queue::fake();
+
+        $user = User::factory()->create();
+
+        $conversation = Conversation::create([
+            'user_id' => $user->id,
+            'title' => 'Conversation masih pending',
+        ]);
+
+        Message::create([
+            'conversation_id' => $conversation->id,
+            'role' => 'user',
+            'content' => 'Pertanyaan sebelumnya masih diproses',
+        ]);
+
+        Livewire::actingAs($user)
+            ->test(ChatIndex::class, ['id' => $conversation->id])
+            ->set('prompt', 'Pertanyaan kedua terlalu cepat')
+            ->call('sendMessage', aiService: app(AIService::class))
+            ->assertReturned([
+                'conversationId' => $conversation->id,
+                'messageId' => null,
+                'rejected' => true,
+                'reason' => 'pending_response',
+            ])
+            ->assertDispatched('user-message-rejected', conversationId: $conversation->id, reason: 'pending_response');
+
+        $this->assertDatabaseMissing('messages', [
+            'conversation_id' => $conversation->id,
+            'role' => 'user',
+            'content' => 'Pertanyaan kedua terlalu cepat',
+        ]);
+        Queue::assertNothingPushed();
+    }
+
     public function test_generate_chat_response_skips_assistant_persistence_when_origin_conversation_deleted_before_job_runs(): void
     {
         $user = User::factory()->create();
@@ -691,14 +732,14 @@ class ChatUiTest extends TestCase
             'title' => 'Cast test',
         ]);
 
-        $errorMessage = \App\Models\Message::create([
+        $errorMessage = Message::create([
             'conversation_id' => $conversation->id,
             'role' => 'assistant',
             'content' => 'Error message',
             'is_error' => true,
         ]);
 
-        $normalMessage = \App\Models\Message::create([
+        $normalMessage = Message::create([
             'conversation_id' => $conversation->id,
             'role' => 'assistant',
             'content' => 'Normal message',
@@ -859,7 +900,7 @@ class ChatUiTest extends TestCase
         // truncated to 1 message, losing almost all context.
         config()->set('services.ai_service.max_history_messages', ' "4" ');
 
-        $service = new ChatOrchestrationService();
+        $service = new ChatOrchestrationService;
 
         $messages = [];
         for ($i = 1; $i <= 10; $i++) {

@@ -8,6 +8,7 @@ const MEMO_HISTORY_SECTION_KEYS = ['seven', 'thirty', 'older'];
 const CHAT_PENDING_MARKER_TTL_MS = 10 * 60 * 1000;
 const CHAT_PENDING_RECENT_TTL_MS = 3 * 60 * 1000;
 const CHAT_PENDING_STALE_WARNING_MS = 45 * 1000;
+const CHAT_MESSAGE_ACK_TIMEOUT_MS = 10 * 1000;
 
 const normalizeWirePayload = (data) => (Array.isArray(data) ? (data[0] || {}) : (data || {}));
 
@@ -399,6 +400,22 @@ const registerChatPageData = (Alpine) => {
                 const detail = event?.detail || {};
                 this.markConversationPending(detail.conversationId, detail.loadingContext || 'general');
             });
+            this.registerWindowListener('user-message-rejected', (event) => {
+                this.optimisticUserMessage = '';
+
+                const detail = event?.detail || {};
+                const loadingContext = detail.loadingContext || this.loadingContext || 'general';
+                const { conversationId, hasPendingUserWithoutAssistant } = this.getConversationMeta();
+
+                if (conversationId && hasPendingUserWithoutAssistant) {
+                    this.startStreamingPlaceholder(loadingContext);
+                    this.scrollToBottom();
+
+                    return;
+                }
+
+                this.resetStreamingState();
+            });
             this.registerWireListener('assistant-output', (data) => {
                 this.streamingText += data[0] || '';
                 this.streaming = true;
@@ -645,6 +662,10 @@ const registerChatPageData = (Alpine) => {
         _assistantPersistedCleanup: null,
         _pendingStateCleanup: null,
         _userMessageAckedCleanup: null,
+        _userMessageAckedWindowHandler: null,
+        _userMessageRejectedCleanup: null,
+        _userMessageRejectedWindowHandler: null,
+        _messageAckTimeout: null,
 
         init() {
             this.$nextTick(() => this.syncActiveHistoryItem());
@@ -652,11 +673,10 @@ const registerChatPageData = (Alpine) => {
             this.markConversationRead(this.activeConversationId);
             window.chatHistoryNavigateToNewChat = (event) => this.navigateToNewChat(event);
             this._messageSendHandler = () => {
-                this.awaitingMessageAck = true;
+                this.startMessageAckWait();
             };
             this._messageCompleteHandler = () => {
-                this.awaitingMessageAck = false;
-                this.flushPendingNavigation();
+                this.clearMessageAckWait();
             };
             window.addEventListener('message-send', this._messageSendHandler);
             window.addEventListener('message-complete', this._messageCompleteHandler);
@@ -680,9 +700,19 @@ const registerChatPageData = (Alpine) => {
                 this.syncPendingConversations(payload.pendingConversationIds || []);
             });
             this._userMessageAckedCleanup = this.$wire.on('user-message-acked', () => {
-                this.awaitingMessageAck = false;
-                this.flushPendingNavigation();
+                this.clearMessageAckWait();
             });
+            this._userMessageAckedWindowHandler = () => {
+                this.clearMessageAckWait();
+            };
+            window.addEventListener('user-message-acked', this._userMessageAckedWindowHandler);
+            this._userMessageRejectedCleanup = this.$wire.on('user-message-rejected', () => {
+                this.clearMessageAckWait();
+            });
+            this._userMessageRejectedWindowHandler = () => {
+                this.clearMessageAckWait();
+            };
+            window.addEventListener('user-message-rejected', this._userMessageRejectedWindowHandler);
             window.addEventListener('chat-success-toast', (event) => {
                 this.flashMessage = event?.detail?.message || '';
                 if (!this.flashMessage) return;
@@ -692,6 +722,42 @@ const registerChatPageData = (Alpine) => {
                     }
                 }, 5000);
             });
+        },
+
+        startMessageAckWait() {
+            this.clearMessageAckTimeout();
+            this.awaitingMessageAck = true;
+            this._messageAckTimeout = window.setTimeout(() => {
+                this.releaseMessageAckWait(true);
+            }, CHAT_MESSAGE_ACK_TIMEOUT_MS);
+        },
+
+        clearMessageAckTimeout() {
+            if (this._messageAckTimeout) {
+                window.clearTimeout(this._messageAckTimeout);
+                this._messageAckTimeout = null;
+            }
+        },
+
+        clearMessageAckWait() {
+            this.releaseMessageAckWait(false);
+        },
+
+        releaseMessageAckWait(useHardNavigationFallback = false) {
+            this.clearMessageAckTimeout();
+            this.awaitingMessageAck = false;
+
+            if (useHardNavigationFallback && this.pendingNavigation?.href) {
+                const fallbackHref = this.pendingNavigation.href;
+                this.pendingNavigation = null;
+                this.isNavigating = false;
+                this.loadingConversationId = null;
+                window.location.assign(fallbackHref);
+
+                return;
+            }
+
+            this.flushPendingNavigation();
         },
 
         isActive(id) {
@@ -1108,6 +1174,19 @@ const registerChatPageData = (Alpine) => {
                 this._userMessageAckedCleanup();
                 this._userMessageAckedCleanup = null;
             }
+            if (this._userMessageAckedWindowHandler) {
+                window.removeEventListener('user-message-acked', this._userMessageAckedWindowHandler);
+                this._userMessageAckedWindowHandler = null;
+            }
+            if (typeof this._userMessageRejectedCleanup === 'function') {
+                this._userMessageRejectedCleanup();
+                this._userMessageRejectedCleanup = null;
+            }
+            if (this._userMessageRejectedWindowHandler) {
+                window.removeEventListener('user-message-rejected', this._userMessageRejectedWindowHandler);
+                this._userMessageRejectedWindowHandler = null;
+            }
+            this.clearMessageAckTimeout();
         },
     }));
 
@@ -1736,9 +1815,39 @@ const registerChatPageData = (Alpine) => {
             this.$wire.sendMessage(text)
                 .then((response) => {
                     const conversationId = Number(response?.conversationId || this.$wire.currentConversationId || 0);
+
+                    if (response?.rejected || !response?.messageId) {
+                        if (conversationId > 0) {
+                            this.markPendingConversation(conversationId, loadingContext);
+                        }
+
+                        this.promptDraft = text;
+                        this.autoResizeTextarea(this.$refs.chatInput);
+                        this.sendError = 'Tunggu jawaban sebelumnya selesai sebelum mengirim pesan baru.';
+                        window.dispatchEvent(new CustomEvent('user-message-rejected', {
+                            detail: {
+                                conversationId,
+                                loadingContext,
+                                reason: response?.reason || 'pending_response',
+                            },
+                        }));
+
+                        setTimeout(() => {
+                            this.sendError = '';
+                        }, 6000);
+
+                        return;
+                    }
+
                     if (conversationId > 0) {
                         this.markPendingConversation(conversationId, loadingContext);
                     }
+                    window.dispatchEvent(new CustomEvent('user-message-acked', {
+                        detail: {
+                            conversationId,
+                            messageId: response?.messageId || null,
+                        },
+                    }));
                 })
                 .catch(() => {
                     this.$dispatch('user-message-acked');

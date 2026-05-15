@@ -281,6 +281,7 @@ class ChatIndex extends Component
     {
         if ($this->isRateLimited('reprocessDocument:'.$documentId, 3, 300)) {
             session()->flash('error', 'Terlalu banyak percobaan proses ulang untuk dokumen ini. Coba lagi beberapa menit lagi.');
+
             return;
         }
 
@@ -288,11 +289,13 @@ class ChatIndex extends Component
 
         if (! $document) {
             session()->flash('error', 'Dokumen tidak ditemukan atau bukan milik Anda.');
+
             return;
         }
 
         if ($document->status !== 'error') {
             session()->flash('error', 'Hanya dokumen yang gagal diproses yang dapat dicoba ulang.');
+
             return;
         }
 
@@ -518,6 +521,7 @@ class ChatIndex extends Component
             ];
         } catch (\Throwable $e) {
             report($e);
+
             return [
                 'ok' => false,
                 'message' => UserFacingError::message($e, 'Upload ke Google Drive gagal. Coba lagi atau hubungi admin bila berulang.'),
@@ -595,7 +599,14 @@ class ChatIndex extends Component
         });
 
         if ($userMessageArray === null) {
-            return;
+            $this->dispatch('user-message-rejected', conversationId: $conversationIdForRequest, reason: 'pending_response');
+
+            return [
+                'conversationId' => $conversationIdForRequest,
+                'messageId' => null,
+                'rejected' => true,
+                'reason' => 'pending_response',
+            ];
         }
         $this->messages[] = $userMessageArray;
         $this->dispatch('user-message-acked', conversationId: $conversationIdForRequest, messageId: $userMessageArray['id'] ?? null);
