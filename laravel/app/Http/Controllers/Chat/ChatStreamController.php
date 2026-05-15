@@ -28,13 +28,26 @@ class ChatStreamController extends Controller
             abort(404);
         }
 
-        // Parse request parameters
-        $history = $this->parseHistory($request->input('history', '[]'));
+        // Parse only document IDs and web search mode from query string.
+        // History is reconstructed server-side from DB to avoid:
+        //   - URL length limits (414) with long conversations
+        //   - Chat content leaking into access logs / proxy logs
+        //   - Arbitrary history injection from client
         $documentIds = $this->parseDocumentIds($request->input('document_ids', '[]'));
         $webSearchMode = filter_var($request->input('web_search_mode', false), FILTER_VALIDATE_BOOLEAN);
 
         $aiService = app(AIService::class);
         $orchestrator = app(ChatOrchestrationService::class);
+
+        // Reconstruct history server-side from DB messages
+        $dbMessages = Message::query()
+            ->where('conversation_id', $conversationId)
+            ->orderBy('id', 'asc')
+            ->get(['role', 'content'])
+            ->map(fn ($m) => ['role' => (string) $m->role, 'content' => (string) $m->content])
+            ->all();
+
+        $history = $orchestrator->buildHistory($dbMessages);
 
         // Resolve document context (owned + ready only) — must run before closure
         // so Auth::id() is still set in the request context.
@@ -62,7 +75,8 @@ class ChatStreamController extends Controller
             @ini_set('zlib.output_compression', false);
             set_time_limit(180);
 
-            if (ob_get_level() > 0) {
+            // Flush all output buffer levels (handles PHP-FPM multi-level buffers)
+            while (ob_get_level() > 0) {
                 ob_end_flush();
             }
 
@@ -186,78 +200,32 @@ class ChatStreamController extends Controller
             $cleanContent = 'Maaf, ISTA AI belum menerima jawaban yang bisa ditampilkan. Silakan coba lagi.';
         }
 
-        // Persist final message — idempotent: only save if no assistant message
-        // exists after the latest user message (prevents duplicate on job+stream race)
-        if (! $this->assistantMessageAlreadyExists($conversationId)) {
-            $saved = $orchestrator->saveAssistantMessage($conversationId, $cleanContent, $user->id);
-            if ($saved !== null) {
-                $conversation->touch();
-                $this->sendSseEvent('message-id', (string) $saved->id);
-            }
+        // Persist final message via saveAssistantMessage which now enforces
+        // idempotency under DB lockForUpdate — safe against race with background job.
+        $saved = $orchestrator->saveAssistantMessage($conversationId, $cleanContent, $user->id);
+        if ($saved !== null) {
+            $conversation->touch();
+            $this->sendSseEvent('message-id', (string) $saved->id);
         }
 
         $this->sendSseEvent('done', '1');
     }
 
     /**
-     * Send a single SSE event to the browser.
+     * Send a single SSE event to the browser using multi-line SSE framing.
+     * Each line of data is sent as a separate "data:" line so the browser
+     * automatically joins them with newlines — no lossy escape/unescape needed.
      */
     private function sendSseEvent(string $event, string $data): void
     {
-        // Escape newlines in data so SSE framing is not broken
-        $escaped = str_replace(["\r\n", "\r", "\n"], '\\n', $data);
         echo "event: {$event}\n";
-        echo "data: {$escaped}\n\n";
+        // Split on newlines and emit each as a separate data: line.
+        // The SSE spec says the browser joins multiple data: lines with \n.
+        foreach (explode("\n", str_replace("\r\n", "\n", $data)) as $line) {
+            echo "data: {$line}\n";
+        }
+        echo "\n";
         flush();
-    }
-
-    /**
-     * Check whether an assistant message already exists after the latest user
-     * message in this conversation. Used to prevent duplicate persistence when
-     * both the SSE stream and the background job complete around the same time.
-     */
-    private function assistantMessageAlreadyExists(int $conversationId): bool
-    {
-        $latestUserMessage = Message::query()
-            ->where('conversation_id', $conversationId)
-            ->where('role', 'user')
-            ->latest('id')
-            ->first();
-
-        if ($latestUserMessage === null) {
-            return false;
-        }
-
-        return Message::query()
-            ->where('conversation_id', $conversationId)
-            ->where('role', 'assistant')
-            ->where('id', '>', $latestUserMessage->id)
-            ->exists();
-    }
-
-    /**
-     * Parse JSON history from query string.
-     *
-     * @return array<int, array{role: string, content: string}>
-     */
-    private function parseHistory(string $raw): array
-    {
-        try {
-            $decoded = json_decode($raw, true, 512, JSON_THROW_ON_ERROR);
-            if (! is_array($decoded)) {
-                return [];
-            }
-
-            return array_values(array_filter(
-                array_map(fn ($msg) => is_array($msg) ? [
-                    'role' => (string) ($msg['role'] ?? ''),
-                    'content' => (string) ($msg['content'] ?? ''),
-                ] : null, $decoded),
-                fn ($msg) => $msg !== null && $msg['role'] !== '' && $msg['content'] !== '',
-            ));
-        } catch (\Throwable) {
-            return [];
-        }
     }
 
     /**

@@ -277,7 +277,33 @@ class ChatOrchestrationService
         }
 
         try {
-            return $this->createAssistantMessage($conversationId, $content);
+            // Idempotensi: gunakan DB transaction + lockForUpdate pada user message
+            // terakhir agar baik SSE stream maupun background job tidak bisa
+            // menyimpan dua assistant message untuk satu user message yang sama.
+            // Ini adalah single source of truth untuk race condition di kedua jalur.
+            return \Illuminate\Support\Facades\DB::transaction(function () use ($conversationId, $content) {
+                $latestUserMessage = \App\Models\Message::query()
+                    ->where('conversation_id', $conversationId)
+                    ->where('role', 'user')
+                    ->latest('id')
+                    ->lockForUpdate()
+                    ->first();
+
+                // Jika sudah ada assistant message setelah user message terakhir, skip
+                if ($latestUserMessage !== null) {
+                    $alreadyExists = \App\Models\Message::query()
+                        ->where('conversation_id', $conversationId)
+                        ->where('role', 'assistant')
+                        ->where('id', '>', $latestUserMessage->id)
+                        ->exists();
+
+                    if ($alreadyExists) {
+                        return null;
+                    }
+                }
+
+                return $this->createAssistantMessage($conversationId, $content);
+            });
         } catch (QueryException $e) {
             if ($this->isConversationFkViolation($e)) {
                 return null;

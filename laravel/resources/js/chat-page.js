@@ -457,12 +457,11 @@ const registerChatPageData = (Alpine) => {
             this._chatStreamHandler = (event) => {
                 const detail = event?.detail || {};
                 const conversationId = Number(detail.conversationId || 0);
-                const history = detail.history || [];
                 const documentIds = detail.documentIds || [];
                 const webSearchMode = Boolean(detail.webSearchMode);
                 const loadingContext = detail.loadingContext || 'general';
                 if (conversationId > 0) {
-                    this.openChatStream(conversationId, history, documentIds, webSearchMode, loadingContext);
+                    this.openChatStream(conversationId, documentIds, webSearchMode, loadingContext);
                 }
             };
             window.addEventListener('chat-open-stream', this._chatStreamHandler);
@@ -489,11 +488,12 @@ const registerChatPageData = (Alpine) => {
             }
         },
 
-        openChatStream(conversationId, history, documentIds, webSearchMode, loadingContext) {
+        openChatStream(conversationId, documentIds, webSearchMode, loadingContext) {
             this.closeChatStream();
 
+            // History tidak dikirim via query string — server reconstruct dari DB
+            // untuk menghindari URL terlalu panjang (414) dan konten chat bocor ke log.
             const params = new URLSearchParams({
-                history: JSON.stringify(history),
                 document_ids: JSON.stringify(documentIds),
                 web_search_mode: webSearchMode ? '1' : '0',
             });
@@ -503,8 +503,8 @@ const registerChatPageData = (Alpine) => {
             this.activeEventSource = es;
 
             es.addEventListener('chunk', (e) => {
-                // Unescape newlines encoded by server
-                const text = (e.data || '').replace(/\\n/g, '\n');
+                // Server menggunakan multi-line SSE framing — browser otomatis join dengan \n
+                const text = e.data || '';
                 this.streamingText += text;
                 this.streaming = true;
                 this.hasFirstAssistantChunk = true;
@@ -518,12 +518,12 @@ const registerChatPageData = (Alpine) => {
             });
 
             es.addEventListener('model-name', (e) => {
-                this.modelName = (e.data || '').replace(/\\n/g, '\n');
+                this.modelName = e.data || '';
             });
 
             es.addEventListener('sources', (e) => {
                 try {
-                    const parsed = JSON.parse((e.data || '').replace(/\\n/g, '\n'));
+                    const parsed = JSON.parse(e.data || '');
                     if (Array.isArray(parsed)) {
                         this.sources = parsed;
                     }
@@ -533,7 +533,7 @@ const registerChatPageData = (Alpine) => {
             });
 
             es.addEventListener('error', (e) => {
-                const msg = (e.data || '').replace(/\\n/g, '\n');
+                const msg = e.data || '';
                 if (msg) {
                     this.stalePendingWarning = msg;
                 }
@@ -1941,16 +1941,12 @@ const registerChatPageData = (Alpine) => {
                         },
                     }));
 
-                    // Open SSE stream to receive live chunks from Python AI
+                    // Open SSE stream to receive live chunks from Python AI.
+                    // History tidak dikirim — server reconstruct dari DB.
                     if (conversationId > 0) {
-                        const history = (this.$wire.messages || []).map((m) => ({
-                            role: m.role || '',
-                            content: m.content || '',
-                        }));
                         window.dispatchEvent(new CustomEvent('chat-open-stream', {
                             detail: {
                                 conversationId,
-                                history,
                                 documentIds: normalizedDocs,
                                 webSearchMode: Boolean(this.webSearchMode),
                                 loadingContext,
