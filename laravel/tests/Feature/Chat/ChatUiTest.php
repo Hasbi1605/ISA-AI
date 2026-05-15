@@ -1160,6 +1160,55 @@ class ChatUiTest extends TestCase
             });
     }
 
+    public function test_refresh_pending_chat_state_does_not_replay_typewriter_for_streamed_message(): void
+    {
+        $user = User::factory()->create();
+        $conversation = Conversation::create([
+            'user_id' => $user->id,
+            'title' => 'SSE streamed refresh test',
+        ]);
+
+        Message::create([
+            'conversation_id' => $conversation->id,
+            'role' => 'user',
+            'content' => 'Tolong jawab lewat SSE.',
+        ]);
+
+        $component = Livewire::actingAs($user)
+            ->test(ChatIndex::class, ['id' => $conversation->id])
+            ->assertSet('pendingConversationIds', [$conversation->id]);
+
+        $assistant = Message::create([
+            'conversation_id' => $conversation->id,
+            'role' => 'assistant',
+            'content' => 'Jawaban SSE sudah tampil live.',
+        ]);
+        $conversation->touch();
+
+        $component
+            ->call('refreshPendingChatState', $assistant->id)
+            ->assertSet('pendingConversationIds', [])
+            ->assertSet('newMessageId', null)
+            ->assertSee('Jawaban SSE sudah tampil live.', false)
+            ->assertDontSee('wire:key="msg-typing-'.$assistant->id.'"', false)
+            ->assertDispatched('chat-pending-state-updated', pendingConversationIds: [])
+            ->assertDispatched('assistant-message-persisted', function (string $_event, array $payload) use ($conversation, $assistant) {
+                return (int) ($payload['conversationId'] ?? 0) === (int) $conversation->id
+                    && (int) ($payload['messageId'] ?? 0) === (int) $assistant->id;
+            });
+    }
+
+    public function test_streaming_answer_uses_final_answer_bubble_style(): void
+    {
+        $user = User::factory()->create();
+
+        Livewire::actingAs($user)
+            ->test(ChatIndex::class)
+            ->assertSee('x-show="streamingText !== \'\'"', false)
+            ->assertSee('prose prose-p:my-1 prose-headings:my-2', false)
+            ->assertSee('x-text="streamingText"', false);
+    }
+
     public function test_chat_history_groups_today_by_jakarta_date(): void
     {
         Carbon::setTestNow(Carbon::parse('2026-05-09 10:00:00', 'Asia/Jakarta'));

@@ -307,6 +307,10 @@ const registerChatPageData = (Alpine) => {
         phase1Done: false,
         phase2Done: false,
         shimmerActive: false,
+        streamingQueue: '',
+        streamingTypewriterTimer: null,
+        streamingTypewriterDoneCallback: null,
+        streamedAssistantMessageId: null,
         _messageCompleteHandler: null,
         chatMutationObserver: null,
         wireListeners: [],
@@ -419,21 +423,7 @@ const registerChatPageData = (Alpine) => {
                 this.resetStreamingState();
             });
             this.registerWireListener('assistant-output', (data) => {
-                this.streamingText += data[0] || '';
-                this.streaming = true;
-                this.hasFirstAssistantChunk = true;
-                this.scrollToBottom();
-
-                // Jangan langsung pindah ke "Menampilkan jawaban" — biarkan
-                // chain timeout fase 1→2→3 yang mengatur. Kalau fase 2 sudah
-                // selesai (phase2Done), baru boleh pindah sekarang.
-                if (this.phase2Done) {
-                    this.loadingPhase = 'Menampilkan jawaban';
-                    this.loadingPhaseKey++;
-                    this.shimmerActive = false;
-                }
-                // Kalau belum, phase2Timeout akan memanggil tryShowAnswer()
-                // setelah fase 2 selesai.
+                this.handleAssistantChunk(data[0] || '');
             });
             this.registerWireListener('model-name', (data) => {
                 this.modelName = data[0] || '';
@@ -504,17 +494,7 @@ const registerChatPageData = (Alpine) => {
 
             es.addEventListener('chunk', (e) => {
                 // Server menggunakan multi-line SSE framing — browser otomatis join dengan \n
-                const text = e.data || '';
-                this.streamingText += text;
-                this.streaming = true;
-                this.hasFirstAssistantChunk = true;
-                this.scrollToBottom();
-
-                if (this.phase2Done) {
-                    this.loadingPhase = 'Menampilkan jawaban';
-                    this.loadingPhaseKey++;
-                    this.shimmerActive = false;
-                }
+                this.handleAssistantChunk(e.data || '');
             });
 
             es.addEventListener('model-name', (e) => {
@@ -532,6 +512,11 @@ const registerChatPageData = (Alpine) => {
                 }
             });
 
+            es.addEventListener('message-id', (e) => {
+                const messageId = Number(e.data || 0);
+                this.streamedAssistantMessageId = Number.isFinite(messageId) && messageId > 0 ? messageId : null;
+            });
+
             es.addEventListener('error', (e) => {
                 const msg = e.data || '';
                 if (msg) {
@@ -543,10 +528,19 @@ const registerChatPageData = (Alpine) => {
 
             es.addEventListener('done', () => {
                 this.closeChatStream();
-                // Trigger wire refresh so Livewire loads the persisted message
-                if (this.$wire && typeof this.$wire.refreshPendingChatState === 'function') {
-                    this.$wire.refreshPendingChatState();
-                }
+                const streamedMessageId = this.hasFirstAssistantChunk ? this.streamedAssistantMessageId : null;
+                this.afterStreamingTypewriterSettles(() => {
+                    // Trigger wire refresh so Livewire loads the persisted message.
+                    // If this message already appeared via SSE, do not replay the
+                    // persisted DB copy through the final-message typewriter.
+                    if (this.$wire && typeof this.$wire.refreshPendingChatState === 'function') {
+                        if (streamedMessageId) {
+                            this.$wire.refreshPendingChatState(streamedMessageId);
+                        } else {
+                            this.$wire.refreshPendingChatState();
+                        }
+                    }
+                });
             });
 
             es.onerror = () => {
@@ -558,6 +552,7 @@ const registerChatPageData = (Alpine) => {
             this.clearLoadingPhaseTimeout();
             this.clearPhase2Timeout();
             this.clearPendingStaleTimeout();
+            this.clearStreamingTypewriter();
             this.closeChatStream();
             if (this._chatStreamHandler) {
                 window.removeEventListener('chat-open-stream', this._chatStreamHandler);
@@ -618,6 +613,86 @@ const registerChatPageData = (Alpine) => {
             }
         },
 
+        clearStreamingTypewriter() {
+            if (this.streamingTypewriterTimer) {
+                window.clearTimeout(this.streamingTypewriterTimer);
+                this.streamingTypewriterTimer = null;
+            }
+
+            this.streamingQueue = '';
+            this.streamingTypewriterDoneCallback = null;
+        },
+
+        handleAssistantChunk(text) {
+            const chunk = String(text || '');
+            if (chunk === '') {
+                return;
+            }
+
+            this.streamingQueue += chunk;
+            this.streaming = true;
+            this.hasFirstAssistantChunk = true;
+            this.startStreamingTypewriter();
+
+            // Jangan langsung pindah ke "Menampilkan jawaban" — biarkan
+            // chain timeout fase 1→2→3 yang mengatur. Kalau fase 2 sudah
+            // selesai (phase2Done), baru boleh pindah sekarang.
+            if (this.phase2Done) {
+                this.loadingPhase = 'Menampilkan jawaban';
+                this.loadingPhaseKey++;
+                this.shimmerActive = false;
+            }
+            // Kalau belum, phase2Timeout akan memanggil tryShowAnswer()
+            // setelah fase 2 selesai.
+        },
+
+        startStreamingTypewriter() {
+            if (this.streamingTypewriterTimer) {
+                return;
+            }
+
+            const tick = () => {
+                this.streamingTypewriterTimer = null;
+
+                if (this.streamingQueue === '') {
+                    this.runStreamingTypewriterDoneCallback();
+                    return;
+                }
+
+                const remaining = this.streamingQueue.length;
+                const chunkSize = remaining > 1600 ? 22 : (remaining > 800 ? 18 : (remaining > 320 ? 14 : 9));
+                const nextChunk = this.streamingQueue.substring(0, chunkSize);
+
+                this.streamingText += nextChunk;
+                this.streamingQueue = this.streamingQueue.substring(nextChunk.length);
+                this.scrollToBottom();
+
+                const nextDelay = this.streamingQueue.length > 1600 ? 2 : (this.streamingQueue.length > 800 ? 3 : 5);
+                this.streamingTypewriterTimer = window.setTimeout(tick, nextDelay);
+            };
+
+            this.streamingTypewriterTimer = window.setTimeout(tick, this.streamingText === '' ? 30 : 0);
+        },
+
+        afterStreamingTypewriterSettles(callback) {
+            if (this.streamingQueue === '' && !this.streamingTypewriterTimer) {
+                callback();
+                return;
+            }
+
+            this.streamingTypewriterDoneCallback = callback;
+        },
+
+        runStreamingTypewriterDoneCallback() {
+            if (typeof this.streamingTypewriterDoneCallback !== 'function') {
+                return;
+            }
+
+            const callback = this.streamingTypewriterDoneCallback;
+            this.streamingTypewriterDoneCallback = null;
+            callback();
+        },
+
         // Dipanggil setelah fase 2 selesai. Kalau chunk sudah ada, langsung
         // tampilkan "Menampilkan jawaban". Kalau belum, tunggu chunk datang
         // (assistant-output handler akan cek phase2Done).
@@ -675,6 +750,7 @@ const registerChatPageData = (Alpine) => {
         resetStreamingState(stopStreaming = true) {
             this.clearLoadingPhaseTimeout();
             this.clearPhase2Timeout();
+            this.clearStreamingTypewriter();
 
             this.loadingPhaseKey = 0;
             this.hasFirstAssistantChunk = false;
@@ -687,6 +763,7 @@ const registerChatPageData = (Alpine) => {
             this.streamingText = '';
             this.modelName = '';
             this.sources = [];
+            this.streamedAssistantMessageId = null;
 
             if (stopStreaming) {
                 this.streaming = false;

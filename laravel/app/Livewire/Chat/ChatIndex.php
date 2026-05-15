@@ -644,8 +644,11 @@ class ChatIndex extends Component
         ];
     }
 
-    public function refreshPendingChatState(): void
+    public function refreshPendingChatState(?int $alreadyStreamedMessageId = null): void
     {
+        $alreadyStreamedMessageId = $alreadyStreamedMessageId !== null && $alreadyStreamedMessageId > 0
+            ? $alreadyStreamedMessageId
+            : null;
         $previousPendingIds = collect($this->pendingConversationIds)
             ->map(fn ($id) => (int) $id)
             ->values();
@@ -665,7 +668,11 @@ class ChatIndex extends Component
                 ->latest('id')
                 ->value('id');
 
-            if ($completedIds->contains($activeConversationId) && $latestAssistantId) {
+            if (
+                $completedIds->contains($activeConversationId)
+                && $latestAssistantId
+                && (int) $latestAssistantId !== $alreadyStreamedMessageId
+            ) {
                 $this->newMessageId = (int) $latestAssistantId;
             }
 
