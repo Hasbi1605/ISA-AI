@@ -85,6 +85,7 @@ class ChatStreamTest extends TestCase
                 ?string $source_policy = null,
                 bool $allow_auto_realtime_web = true,
                 ?array $document_ids = null,
+                ?string $request_id = null,
             ): \Generator {
                 yield 'OK';
             }
@@ -121,6 +122,7 @@ class ChatStreamTest extends TestCase
                 ?string $source_policy = null,
                 bool $allow_auto_realtime_web = true,
                 ?array $document_ids = null,
+                ?string $request_id = null,
             ): \Generator {
                 yield 'Halo ';
                 yield 'dunia!';
@@ -171,6 +173,7 @@ class ChatStreamTest extends TestCase
                     ?string $source_policy = null,
                     bool $allow_auto_realtime_web = true,
                     ?array $document_ids = null,
+                ?string $request_id = null,
                 ): \Generator {
                     $this->captured = $messages;
                     yield 'OK';
@@ -216,6 +219,7 @@ class ChatStreamTest extends TestCase
                 ?string $source_policy = null,
                 bool $allow_auto_realtime_web = true,
                 ?array $document_ids = null,
+                ?string $request_id = null,
             ): \Generator {
                 yield 'Jawaban dari streaming.';
             }
@@ -265,6 +269,7 @@ class ChatStreamTest extends TestCase
                 ?string $source_policy = null,
                 bool $allow_auto_realtime_web = true,
                 ?array $document_ids = null,
+                ?string $request_id = null,
             ): \Generator {
                 yield 'Jawaban duplikat dari stream.';
             }
@@ -309,6 +314,7 @@ class ChatStreamTest extends TestCase
                 ?string $source_policy = null,
                 bool $allow_auto_realtime_web = true,
                 ?array $document_ids = null,
+                ?string $request_id = null,
             ): \Generator {
                 yield 'Jawaban dari stream.';
             }
@@ -333,6 +339,7 @@ class ChatStreamTest extends TestCase
                 ?string $source_policy = null,
                 bool $allow_auto_realtime_web = true,
                 ?array $document_ids = null,
+                ?string $request_id = null,
             ): \Generator {
                 yield 'Jawaban dari job (seharusnya tidak tersimpan).';
             }
@@ -390,6 +397,7 @@ class ChatStreamTest extends TestCase
                 ?string $source_policy = null,
                 bool $allow_auto_realtime_web = true,
                 ?array $document_ids = null,
+                ?string $request_id = null,
             ): \Generator {
                 yield 'Jawaban dari job.';
             }
@@ -419,6 +427,7 @@ class ChatStreamTest extends TestCase
                 ?string $source_policy = null,
                 bool $allow_auto_realtime_web = true,
                 ?array $document_ids = null,
+                ?string $request_id = null,
             ): \Generator {
                 yield 'Jawaban dari stream (seharusnya tidak tersimpan).';
             }
@@ -473,6 +482,7 @@ class ChatStreamTest extends TestCase
                 ?string $source_policy = null,
                 bool $allow_auto_realtime_web = true,
                 ?array $document_ids = null,
+                ?string $request_id = null,
             ): \Generator {
                 yield AIService::ERROR_SENTINEL.'❌ Kesalahan sistem.';
             }
@@ -549,6 +559,7 @@ class ChatStreamTest extends TestCase
                     ?string $source_policy = null,
                     bool $allow_auto_realtime_web = true,
                     ?array $document_ids = null,
+                ?string $request_id = null,
                 ): \Generator {
                     $this->captured->documentIds = $document_ids;
                     $this->captured->filenames = $document_filenames;
@@ -613,6 +624,7 @@ class ChatStreamTest extends TestCase
                 ?string $source_policy = null,
                 bool $allow_auto_realtime_web = true,
                 ?array $document_ids = null,
+                ?string $request_id = null,
             ): \Generator {
                 yield 'Jawaban tersimpan.';
             }
@@ -665,6 +677,7 @@ class ChatStreamTest extends TestCase
                     ?string $source_policy = null,
                     bool $allow_auto_realtime_web = true,
                     ?array $document_ids = null,
+                ?string $request_id = null,
                 ): \Generator {
                     $this->called = true;
                     yield 'Chunk yang tidak boleh dikirim.';
@@ -834,6 +847,7 @@ class ChatStreamTest extends TestCase
                     ?string $source_policy = null,
                     bool $allow_auto_realtime_web = true,
                     ?array $document_ids = null,
+                ?string $request_id = null,
                 ): \Generator {
                     $this->called = true;
                     yield 'Tidak boleh dipanggil saat stream claim aktif';
@@ -895,6 +909,7 @@ class ChatStreamTest extends TestCase
                     ?string $source_policy = null,
                     bool $allow_auto_realtime_web = true,
                     ?array $document_ids = null,
+                ?string $request_id = null,
                 ): \Generator {
                     $this->called = true;
                     yield 'Tidak boleh dipanggil karena stream sudah jawab';
@@ -951,6 +966,7 @@ class ChatStreamTest extends TestCase
                     ?string $source_policy = null,
                     bool $allow_auto_realtime_web = true,
                     ?array $document_ids = null,
+                ?string $request_id = null,
                 ): \Generator {
                     $orchestrator = app(ChatOrchestrationService::class);
                     $this->claimWasActiveInsideSendChat = $orchestrator->hasActiveStreamClaim((int) $this->conversation->id);
@@ -1004,6 +1020,7 @@ class ChatStreamTest extends TestCase
                     ?string $source_policy = null,
                     bool $allow_auto_realtime_web = true,
                     ?array $document_ids = null,
+                ?string $request_id = null,
                 ): \Generator {
                     $this->called = true;
                     yield 'Stream jalan meski pre-claim ada';
@@ -1102,6 +1119,7 @@ class ChatStreamTest extends TestCase
                     ?string $source_policy = null,
                     bool $allow_auto_realtime_web = true,
                     ?array $document_ids = null,
+                ?string $request_id = null,
                 ): \Generator {
                     $this->called = true;
                     yield 'Jawaban fallback dari job.';
