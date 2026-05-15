@@ -321,8 +321,13 @@ class ChatOrchestrationService
             return null;
         }
 
-        $acquired = Cache::add($claimKey, 'stream', now()->addSeconds(self::STREAM_CLAIM_TTL_SECONDS));
-        return $acquired ? $claimKey : null;
+        if (Cache::has($claimKey)) {
+            return $claimKey;
+        }
+
+        Cache::add($claimKey, 'stream', now()->addSeconds(self::STREAM_CLAIM_TTL_SECONDS));
+
+        return $claimKey;
     }
 
     public function releaseStreamClaim(?string $claimKey): void

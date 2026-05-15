@@ -908,6 +908,57 @@ class ChatStreamTest extends TestCase
         $this->assertFalse($orchestrator->hasActiveStreamClaim($conversation->id), 'Claim harus dilepas setelah stream selesai');
     }
 
+    public function test_execute_stream_adopts_pre_existing_claim_from_send_message(): void
+    {
+        $user = User::factory()->create();
+        $conversation = Conversation::create([
+            'user_id' => $user->id,
+            'title' => 'Claim adoption test',
+        ]);
+
+        Message::create([
+            'conversation_id' => $conversation->id,
+            'role' => 'user',
+            'content' => 'Pertanyaan adopsi claim',
+        ]);
+
+        $orchestrator = app(ChatOrchestrationService::class);
+
+        $preClaimKey = $orchestrator->acquireStreamClaim($conversation->id);
+        $this->assertNotNull($preClaimKey, 'Pre-claim harus berhasil dibuat');
+
+        $aiCalled = false;
+        $this->app->bind(AIService::class, function () use (&$aiCalled) {
+            return new class($aiCalled) extends AIService
+            {
+                public function __construct(private bool &$called)
+                {
+                    parent::__construct();
+                }
+
+                public function sendChat(
+                    array $messages,
+                    ?array $document_filenames = null,
+                    ?string $user_id = null,
+                    bool $force_web_search = false,
+                    ?string $source_policy = null,
+                    bool $allow_auto_realtime_web = true,
+                    ?array $document_ids = null,
+                ): \Generator {
+                    $this->called = true;
+                    yield 'Stream jalan meski pre-claim ada';
+                }
+            };
+        });
+
+        $body = $this->runExecuteStream($user, $conversation);
+
+        $this->assertTrue($aiCalled, 'Stream harus tetap memanggil AI meski pre-claim sudah ada');
+        $this->assertStringContainsString('Stream jalan meski pre-claim ada', $body);
+        $this->assertStringContainsString('event: done', $body);
+        $this->assertFalse($orchestrator->hasActiveStreamClaim($conversation->id), 'Claim harus dilepas setelah stream selesai');
+    }
+
     // -------------------------------------------------------------------------
     // Helper
     // -------------------------------------------------------------------------
