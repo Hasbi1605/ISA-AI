@@ -30,6 +30,9 @@
     {{-- ===== CHAT TAB CONTENT ===== --}}
     <div x-show="activeTab === 'chat'" class="flex w-full h-full overflow-hidden">
         @if(! empty($pendingConversationIds))
+            {{-- Polling 3s: jalur utama untuk mendeteksi assistant message yang sudah selesai dipersist.
+                 GenerateChatResponse tidak dispatch event setelah selesai, sehingga polling tetap
+                 dibutuhkan sebagai satu-satunya mekanisme refresh. --}}
             <div wire:poll.3s="refreshPendingChatState" class="hidden" aria-hidden="true"></div>
         @endif
 

@@ -217,7 +217,9 @@
                                 </p>
                             </div>
                         @else
-                            <div wire:poll.3s
+                            {{-- Poll 5s: preview generation memakan 5-15 detik, 3s terlalu agresif.
+                                 Rollback: ubah wire:poll.5s kembali ke wire:poll.3s --}}
+                            <div wire:poll.5s
                                  class="flex flex-col items-center justify-center h-full p-8 text-center gap-3">
                                 <span class="h-6 w-6 rounded-full border-2 border-stone-400 border-t-transparent animate-spin"></span>
                                 <p class="text-sm text-gray-600 dark:text-gray-300">
