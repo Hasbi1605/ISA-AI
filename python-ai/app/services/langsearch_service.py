@@ -44,12 +44,16 @@ class LangSearchService:
     def _normalize_cache_query(self, query: str) -> str:
         return " ".join((query or "").strip().lower().split())
 
-    def _cache_key(self, query: str, time_bucket: int) -> Tuple[str, int]:
-        return (self._normalize_cache_query(query), time_bucket)
+    def _cache_key(self, query: str, freshness: str, count: int, time_bucket: int) -> tuple:
+        """
+        Cache key mencakup freshness dan count agar query yang sama dengan
+        parameter berbeda tidak saling menimpa hasil cache.
+        """
+        return (self._normalize_cache_query(query), freshness, count, time_bucket)
 
-    def _get_cached_result(self, query: str, time_bucket: int) -> Optional[List[Dict]]:
+    def _get_cached_result(self, query: str, freshness: str, count: int, time_bucket: int) -> Optional[List[Dict]]:
         """Get cached search result if not expired."""
-        key = self._cache_key(query, time_bucket)
+        key = self._cache_key(query, freshness, count, time_bucket)
         now = time.time()
         with self._cache_lock:
             if key in self._search_cache:
@@ -61,10 +65,10 @@ class LangSearchService:
                     return results
                 del self._search_cache[key]
         return None
-    
-    def _cache_result(self, query: str, time_bucket: int, results: List[Dict]):
+
+    def _cache_result(self, query: str, freshness: str, count: int, time_bucket: int, results: List[Dict]):
         """Cache search result with timestamp."""
-        key = self._cache_key(query, time_bucket)
+        key = self._cache_key(query, freshness, count, time_bucket)
         with self._cache_lock:
             self._search_cache[key] = (results, time.time())
             self._search_cache.move_to_end(key)
@@ -92,9 +96,9 @@ class LangSearchService:
             logger.warning("⚠️ LangSearch: API key not configured")
             return []
         
-        # Check cache first (cache per 5 minutes)
+        # Check cache first — key mencakup freshness dan count agar tidak tercampur
         time_bucket = self._get_time_bucket()
-        cached = self._get_cached_result(query, time_bucket)
+        cached = self._get_cached_result(query, freshness, count, time_bucket)
         if cached is not None:
             return cached
         
@@ -185,8 +189,8 @@ class LangSearchService:
             len(formatted_results),
         )
         
-        # Cache the result
-        self._cache_result(query, time_bucket, formatted_results)
+        # Cache the result — key mencakup freshness dan count
+        self._cache_result(query, freshness, count, time_bucket, formatted_results)
         
         return formatted_results
     
@@ -210,7 +214,8 @@ class LangSearchService:
         results_formatted = []
         for idx, result in enumerate(results, 1):
             title = result.get("title", "No title")
-            snippet = result.get("snippet", "No description")
+            # Gunakan summary sebagai fallback jika snippet kosong
+            snippet = result.get("snippet", "") or result.get("summary", "") or "No description"
             url = result.get("url", "")
             date = result.get("datePublished", "")
             

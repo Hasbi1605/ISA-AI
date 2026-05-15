@@ -273,7 +273,14 @@ def get_context_for_query(
         if rerank_enabled and len(search_results) >= 2:
             candidates = search_results[:web_candidates] if len(search_results) > web_candidates else search_results
 
-            if len(candidates) >= 2:
+            # Skip rerank jika jumlah kandidat sudah <= web_top_n — rerank tidak
+            # memangkas kandidat dalam kondisi ini, hanya membuang waktu ~200-400ms.
+            if len(candidates) <= web_top_n:
+                logger.info(
+                    "⚡ Web search: rerank skipped (candidates=%d <= web_top_n=%d)",
+                    len(candidates), web_top_n,
+                )
+            elif len(candidates) >= 2:
                 documents = []
                 for result in candidates:
                     title   = result.get("title", "")

@@ -1,4 +1,7 @@
+import hashlib
 import logging
+import threading
+import time
 from typing import List, Tuple, Optional
 from urllib.parse import quote
 
@@ -7,7 +10,7 @@ import tiktoken
 from openai import OpenAI
 from langchain_core.embeddings import Embeddings
 
-from app.env_utils import get_env
+from app.env_utils import get_env, get_env_int
 from app.services.rag_config import (
     EMBEDDING_MODELS,
     MAX_EMBEDDING_DIM,
@@ -17,6 +20,14 @@ logger = logging.getLogger(__name__)
 
 GITHUB_MODELS_BASE_URL = "https://models.github.ai/inference"
 BEDROCK_RUNTIME_URL_TEMPLATE = "https://bedrock-runtime.{region}.amazonaws.com/model/{model_id}/invoke"
+
+# TTL cache embedding provider (detik). Default 300s = 5 menit.
+# Set ke 0 untuk disable cache.
+_EMBEDDING_CACHE_TTL = max(0, get_env_int("EMBEDDING_CACHE_TTL", 300))
+
+# Cache: key = (model_index, api_key_hash) → (embeddings_instance, provider_name, model_index, cached_at)
+_embedding_cache: dict = {}
+_embedding_cache_lock = threading.Lock()
 
 try:
     TIKTOKEN_ENCODER = tiktoken.get_encoding("cl100k_base")
@@ -149,6 +160,43 @@ def count_tokens(text: str) -> int:
         return len(text) // 4
 
 
+def _make_cache_key(model_index: int, api_key: str) -> tuple:
+    """Buat cache key dari model index dan hash API key (tidak menyimpan key asli)."""
+    key_hash = hashlib.sha256(api_key.encode()).hexdigest()[:16]
+    return (model_index, key_hash)
+
+
+def _get_cached_embeddings(model_index: int, api_key: str) -> Optional[Tuple["Embeddings", str, int]]:
+    """Return cached embedding instance jika masih valid, atau None."""
+    if _EMBEDDING_CACHE_TTL <= 0:
+        return None
+    cache_key = _make_cache_key(model_index, api_key)
+    with _embedding_cache_lock:
+        entry = _embedding_cache.get(cache_key)
+        if entry is None:
+            return None
+        embeddings, provider_name, idx, cached_at = entry
+        if time.monotonic() - cached_at > _EMBEDDING_CACHE_TTL:
+            del _embedding_cache[cache_key]
+            return None
+        return embeddings, provider_name, idx
+
+
+def _set_cached_embeddings(model_index: int, api_key: str, embeddings: "Embeddings", provider_name: str, idx: int) -> None:
+    """Simpan embedding instance ke cache."""
+    if _EMBEDDING_CACHE_TTL <= 0:
+        return
+    cache_key = _make_cache_key(model_index, api_key)
+    with _embedding_cache_lock:
+        _embedding_cache[cache_key] = (embeddings, provider_name, idx, time.monotonic())
+
+
+def clear_embedding_cache() -> None:
+    """Hapus seluruh cache embedding. Berguna untuk testing."""
+    with _embedding_cache_lock:
+        _embedding_cache.clear()
+
+
 def get_embeddings_with_fallback(model_index: int = 0) -> Tuple[Optional[Embeddings], str, int]:
     for idx in range(model_index, len(EMBEDDING_MODELS)):
         model_config = EMBEDDING_MODELS[idx]
@@ -157,6 +205,13 @@ def get_embeddings_with_fallback(model_index: int = 0) -> Tuple[Optional[Embeddi
         if not api_key:
             logger.warning(f"⚠️ {model_config['name']}: API key tidak ditemukan")
             continue
+
+        # Cek cache sebelum probe — skip embed_query("test") jika masih valid
+        cached = _get_cached_embeddings(idx, api_key)
+        if cached is not None:
+            embeddings, provider_name, cached_idx = cached
+            logger.debug("📦 Embedding cache hit: %s (idx=%d)", provider_name, cached_idx)
+            return embeddings, provider_name, cached_idx
 
         try:
             if model_config["provider"] == "github":
@@ -168,6 +223,7 @@ def get_embeddings_with_fallback(model_index: int = 0) -> Tuple[Optional[Embeddi
                 )
                 _ = embeddings.embed_query("test")
                 logger.info(f"✅ Menggunakan {model_config['name']} (TPM: {model_config['tpm_limit']:,}, Dim: {MAX_EMBEDDING_DIM})")
+                _set_cached_embeddings(idx, api_key, embeddings, model_config["name"], idx)
                 return embeddings, model_config["name"], idx
 
             if model_config["provider"] == "bedrock_titan":
@@ -181,11 +237,16 @@ def get_embeddings_with_fallback(model_index: int = 0) -> Tuple[Optional[Embeddi
                 )
                 _ = embeddings.embed_query("test")
                 logger.info(f"✅ Menggunakan {model_config['name']} (Dim native: {model_config.get('dimensions', 1024)}, Dim index: {MAX_EMBEDDING_DIM})")
+                _set_cached_embeddings(idx, api_key, embeddings, model_config["name"], idx)
                 return embeddings, model_config["name"], idx
 
         except Exception as e:
             error_msg = str(e)
             logger.warning(f"⚠️ {model_config['name']} gagal: {error_msg}")
+            # Pastikan entry cache yang mungkin stale dihapus
+            cache_key = _make_cache_key(idx, api_key)
+            with _embedding_cache_lock:
+                _embedding_cache.pop(cache_key, None)
 
     logger.error("❌ Semua embedding provider gagal atau tidak tersedia")
     return None, "none", -1
