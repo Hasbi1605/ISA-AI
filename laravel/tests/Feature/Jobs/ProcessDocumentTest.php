@@ -361,14 +361,9 @@ class ProcessDocumentTest extends TestCase
             'status' => 'pending',
         ]);
 
-        // Simulate: while Job A's HTTP call is in flight, a reprocess happens
-        // and Job B claims the document with a new token, overwriting Job A's
-        // cache entry. When Job A returns from HTTP, it must detect the mismatch
-        // and NOT set the document to `ready` (Job B owns the slot now).
         Http::fake([
             '*/api/documents/process' => function () use ($document) {
-                // Simulate Job B starting handle(): new token written to cache,
-                // status reset to processing by the new job's claim.
+                // Simulate Job B starting handle(): new token written to cache.
                 \Illuminate\Support\Facades\Cache::put(
                     'doc_process_claim:'.$document->id,
                     'new-job-token-from-job-B',
@@ -377,14 +372,17 @@ class ProcessDocumentTest extends TestCase
 
                 return Http::response(['message' => 'success'], 200);
             },
-            '*/api/documents/*' => Http::response(['message' => 'deleted'], 200),
         ]);
 
         (new ProcessDocument($document))->handle();
 
-        // Guard A (token mismatch): Job A must NOT have set the document to
-        // `ready` since a different token was registered mid-flight.
+        // Guard A (token mismatch): Job A must NOT have set `ready`.
         $this->assertNotSame('ready', $document->fresh()->status);
+
+        // Stale job must NOT call DELETE — the newer job will clean up vectors
+        // as part of its own post-ingest swap. Calling delete-all-by-document-id
+        // here could erase Job B's freshly written vectors.
+        Http::assertNotSent(fn ($req) => $req->method() === 'DELETE');
     }
 
     public function test_race_window_blocked_when_status_reset_to_pending_before_job_b_claims(): void
@@ -411,21 +409,21 @@ class ProcessDocumentTest extends TestCase
         Http::fake([
             '*/api/documents/process' => function () use ($document) {
                 // Simulate the race window: reprocess reset status to pending,
-                // but Job B has NOT yet started handle() (its token is not in
-                // cache yet). Guard A alone would miss this window.
-                // Guard B (WHERE status=processing) catches it.
+                // but Job B has NOT yet started handle() (token not in cache).
                 Document::where('id', $document->id)->update(['status' => 'pending']);
 
                 return Http::response(['message' => 'success'], 200);
             },
-            '*/api/documents/*' => Http::response(['message' => 'deleted'], 200),
         ]);
 
         (new ProcessDocument($document))->handle();
 
-        // Guard B (WHERE status=processing): the document status was reset to
-        // `pending` mid-flight. Job A must detect this and NOT set `ready`.
+        // Guard B: document status was reset to pending mid-flight → NOT ready.
         $this->assertSame('pending', $document->fresh()->status);
+
+        // Stale job must NOT call DELETE — the upcoming Job B will snapshot
+        // these vectors as "old" and swap them atomically after its own success.
+        Http::assertNotSent(fn ($req) => $req->method() === 'DELETE');
     }
 
     public function test_failed_does_not_overwrite_newer_job_ready_state(): void

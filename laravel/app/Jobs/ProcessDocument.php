@@ -201,14 +201,15 @@ class ProcessDocument implements ShouldQueue
             // still holds our token. Guard B catches it via the DB status check.
             $currentToken = Cache::get($this->claimCacheKey);
             if ($currentToken !== null && $currentToken !== $this->claimToken) {
-                logger()->info('ProcessDocument: stale — claim token superseded mid-flight; discarding ingested vectors', [
+                // Guard A: a newer job has claimed the slot and may already be
+                // ingesting its own vectors. Calling delete-all-by-document-id
+                // here would race with the newer job's ingest and could erase its
+                // freshly written vectors or the still-valid previous context.
+                // The newer job's own Python post-ingest cleanup will handle
+                // removing any vectors we left behind.
+                logger()->info('ProcessDocument: stale — claim token superseded mid-flight; skipping vector cleanup to avoid race', [
                     'document_id' => $freshDocument->id,
                 ]);
-
-                try {
-                    $this->deleteVectorsForDocument($freshDocument);
-                } catch (\Throwable $ignored) {
-                }
 
                 return;
             }
@@ -219,18 +220,18 @@ class ProcessDocument implements ShouldQueue
                 ->update(['status' => 'ready']);
 
             if ($saved === 0) {
-                // Document escaped 'processing' state — e.g. reprocess reset it
-                // to 'pending' after our HTTP call started but before we tried
-                // to write 'ready'. Discard this ingest so the newer job wins.
-                logger()->info('ProcessDocument: stale — document left processing state mid-flight; discarding ingested vectors', [
+                // Guard B: document escaped 'processing' (reprocess reset it to
+                // 'pending'). At this point Python has already completed ingest
+                // for this job and run its own post-ingest cleanup. The vectors
+                // in Chroma now belong to this job's ingest run.
+                // Do NOT delete them: the upcoming reprocess job will snapshot
+                // these as "old" and clean them up atomically after its own
+                // successful ingest. Deleting here could erase the only valid
+                // context while the new job has not yet started.
+                logger()->info('ProcessDocument: stale — document left processing state mid-flight; not deleting vectors (newer job will clean up)', [
                     'document_id' => $freshDocument->id,
                     'current_status' => $freshDocument->fresh()?->status ?? 'deleted',
                 ]);
-
-                try {
-                    $this->deleteVectorsForDocument($freshDocument);
-                } catch (\Throwable $ignored) {
-                }
 
                 return;
             }
