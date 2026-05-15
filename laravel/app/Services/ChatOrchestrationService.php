@@ -316,16 +316,31 @@ class ChatOrchestrationService
                     ->lockForUpdate()
                     ->first();
 
-                // Jika sudah ada assistant message setelah user message terakhir, skip
+                // Jika sudah ada assistant message setelah user message terakhir:
+                // - jika sukses (is_error=false): skip (idempotent)
+                // - jika error (is_error=true): upgrade menjadi jawaban sukses
                 if ($latestUserMessage !== null) {
-                    $alreadyExists = \App\Models\Message::query()
+                    $latestAssistant = \App\Models\Message::query()
                         ->where('conversation_id', $conversationId)
                         ->where('role', 'assistant')
                         ->where('id', '>', $latestUserMessage->id)
-                        ->exists();
+                        ->latest('id')
+                        ->lockForUpdate()
+                        ->first();
 
-                    if ($alreadyExists) {
-                        return null;
+                    if ($latestAssistant !== null) {
+                        if ((bool) $latestAssistant->is_error === false) {
+                            return null;
+                        }
+
+                        // Recovery path: stream error duluan lalu job sukses belakangan.
+                        // Reuse row error yang ada agar tetap satu assistant message.
+                        $latestAssistant->forceFill([
+                            'content' => $content,
+                            'is_error' => false,
+                        ])->save();
+
+                        return $latestAssistant->fresh();
                     }
                 }
 
@@ -360,13 +375,17 @@ class ChatOrchestrationService
                     ->first();
 
                 if ($latestUserMessage !== null) {
-                    $alreadyExists = \App\Models\Message::query()
+                    $latestAssistant = \App\Models\Message::query()
                         ->where('conversation_id', $conversationId)
                         ->where('role', 'assistant')
                         ->where('id', '>', $latestUserMessage->id)
-                        ->exists();
+                        ->latest('id')
+                        ->lockForUpdate()
+                        ->first();
 
-                    if ($alreadyExists) {
+                    // Jika sudah ada jawaban sukses, jangan ditimpa error.
+                    // Jika sudah ada error, tetap idempotent (skip).
+                    if ($latestAssistant !== null) {
                         return null;
                     }
                 }

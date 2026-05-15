@@ -123,6 +123,7 @@ class GenerateChatResponse implements ShouldQueue
     public function failed(?\Throwable $exception): void
     {
         Auth::loginUsingId($this->userId);
+        $orchestrator = app(ChatOrchestrationService::class);
 
         Log::error('Background chat response failed', [
             'conversation_id' => $this->conversationId,
@@ -134,17 +135,18 @@ class GenerateChatResponse implements ShouldQueue
             return;
         }
 
-        Message::create([
-            'conversation_id' => $this->conversationId,
-            'role' => 'assistant',
-            'content' => 'Maaf, jawaban gagal diproses. Silakan coba kirim ulang.',
-            'is_error' => true,
-        ]);
+        $saved = $orchestrator->saveErrorMessage(
+            $this->conversationId,
+            'Maaf, jawaban gagal diproses. Silakan coba kirim ulang.',
+            $this->userId,
+        );
 
-        Conversation::query()
-            ->whereKey($this->conversationId)
-            ->where('user_id', $this->userId)
-            ->touch();
+        if ($saved !== null) {
+            Conversation::query()
+                ->whereKey($this->conversationId)
+                ->where('user_id', $this->userId)
+                ->touch();
+        }
     }
 
     private function conversationStillExists(): bool

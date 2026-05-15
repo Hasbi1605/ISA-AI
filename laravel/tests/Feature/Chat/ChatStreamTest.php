@@ -760,6 +760,45 @@ class ChatStreamTest extends TestCase
             ->where('role', 'assistant')->count());
     }
 
+    public function test_stream_error_first_then_job_success_recovers_to_normal_answer(): void
+    {
+        $user = User::factory()->create();
+        $conversation = Conversation::create([
+            'user_id' => $user->id,
+            'title' => 'Error then success recovery test',
+        ]);
+
+        Message::create([
+            'conversation_id' => $conversation->id,
+            'role' => 'user',
+            'content' => 'Pertanyaan pemulihan',
+        ]);
+
+        $orchestrator = app(ChatOrchestrationService::class);
+
+        // Step 1: stream menyimpan error duluan
+        $this->actingAs($user);
+        $savedError = $orchestrator->saveErrorMessage($conversation->id, 'Error awal dari stream.', $user->id);
+        $this->assertNotNull($savedError);
+        $this->assertTrue((bool) $savedError->is_error);
+
+        // Step 2: job sukses belakangan harus memulihkan row yang sama menjadi normal
+        $savedSuccess = $orchestrator->saveAssistantMessage($conversation->id, 'Jawaban sukses dari job.', $user->id);
+        $this->assertNotNull($savedSuccess);
+        $this->assertFalse((bool) $savedSuccess->is_error);
+        $this->assertSame('Jawaban sukses dari job.', $savedSuccess->content);
+
+        // Tetap satu assistant message setelah recovery
+        $assistantMessages = Message::query()
+            ->where('conversation_id', $conversation->id)
+            ->where('role', 'assistant')
+            ->get();
+
+        $this->assertCount(1, $assistantMessages);
+        $this->assertFalse((bool) $assistantMessages->first()->is_error);
+        $this->assertSame('Jawaban sukses dari job.', $assistantMessages->first()->content);
+    }
+
     // -------------------------------------------------------------------------
     // Helper
     // -------------------------------------------------------------------------
