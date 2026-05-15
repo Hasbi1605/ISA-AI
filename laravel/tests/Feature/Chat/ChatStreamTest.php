@@ -857,6 +857,66 @@ class ChatStreamTest extends TestCase
         $orchestrator->releaseStreamClaim($claimKey);
     }
 
+    public function test_job_skips_ai_when_stream_already_persisted_answer(): void
+    {
+        $user = User::factory()->create();
+        $conversation = Conversation::create([
+            'user_id' => $user->id,
+            'title' => 'Job skip after stream persisted',
+        ]);
+
+        Message::create([
+            'conversation_id' => $conversation->id,
+            'role' => 'user',
+            'content' => 'Pertanyaan stream sudah jawab',
+        ]);
+
+        // Simulate stream already persisted assistant message
+        Message::create([
+            'conversation_id' => $conversation->id,
+            'role' => 'assistant',
+            'content' => 'Jawaban dari stream.',
+        ]);
+
+        $aiCalled = false;
+        $this->app->bind(AIService::class, function () use (&$aiCalled) {
+            return new class($aiCalled) extends AIService
+            {
+                public function __construct(private bool &$called)
+                {
+                    parent::__construct();
+                }
+
+                public function sendChat(
+                    array $messages,
+                    ?array $document_filenames = null,
+                    ?string $user_id = null,
+                    bool $force_web_search = false,
+                    ?string $source_policy = null,
+                    bool $allow_auto_realtime_web = true,
+                    ?array $document_ids = null,
+                ): \Generator {
+                    $this->called = true;
+                    yield 'Tidak boleh dipanggil karena stream sudah jawab';
+                }
+            };
+        });
+
+        $this->actingAs($user);
+        $job = new GenerateChatResponse(
+            conversationId: (int) $conversation->id,
+            userId: (int) $user->id,
+            history: [['role' => 'user', 'content' => 'Pertanyaan stream sudah jawab']],
+        );
+        $job->handle(app(AIService::class), app(ChatOrchestrationService::class));
+
+        $this->assertFalse($aiCalled, 'Job tidak boleh memanggil AI jika stream sudah menyimpan jawaban');
+        $this->assertSame(1, Message::query()
+            ->where('conversation_id', $conversation->id)
+            ->where('role', 'assistant')
+            ->count(), 'Harus tetap satu assistant message');
+    }
+
     public function test_execute_stream_acquires_claim_before_ai_call(): void
     {
         $user = User::factory()->create();

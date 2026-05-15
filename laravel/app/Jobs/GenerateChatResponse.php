@@ -65,6 +65,13 @@ class GenerateChatResponse implements ShouldQueue
             return;
         }
 
+        // Guard: jika stream sudah sukses menyimpan assistant message sebelum
+        // job retry ini berjalan, tidak perlu memanggil AI lagi. Ini mencegah
+        // double AI call pada happy path stream + job fallback.
+        if ($orchestrator->assistantAlreadyAnswered($this->conversationId)) {
+            return;
+        }
+
         $fullResponse = '';
         $streamBuffer = '';
         $sources = [];
