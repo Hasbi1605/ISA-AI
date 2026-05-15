@@ -755,6 +755,33 @@ class ChatUiTest extends TestCase
         $this->assertFalse($normalMessage->fresh()->is_error);
     }
 
+    public function test_error_assistant_message_shows_failure_label_in_chat_ui(): void
+    {
+        $user = User::factory()->create();
+        $conversation = Conversation::create([
+            'user_id' => $user->id,
+            'title' => 'Error UI label test',
+        ]);
+
+        Message::create([
+            'conversation_id' => $conversation->id,
+            'role' => 'user',
+            'content' => 'Apa isi dokumen ini?',
+        ]);
+
+        Message::create([
+            'conversation_id' => $conversation->id,
+            'role' => 'assistant',
+            'content' => 'Saya belum bisa membaca konteks dari dokumen yang dipilih saat ini.',
+            'is_error' => true,
+        ]);
+
+        Livewire::actingAs($user)
+            ->test(ChatIndex::class, ['id' => $conversation->id])
+            ->assertSee('Gagal memproses jawaban')
+            ->assertSee('Saya belum bisa membaca konteks dari dokumen yang dipilih saat ini.');
+    }
+
     public function test_generate_chat_response_persists_assistant_message_to_origin_conversation(): void
     {
         $user = User::factory()->create();

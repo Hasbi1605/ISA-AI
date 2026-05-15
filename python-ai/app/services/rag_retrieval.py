@@ -59,6 +59,31 @@ def _bm25_child_fallback(
     return fallback_docs
 
 
+def _bm25_corpus_fallback_for_filenames(
+    vectorstore,
+    query: str,
+    filenames: List[str] | None,
+    user_filter: Dict,
+    top_k_per_doc: int,
+) -> List[Tuple]:
+    fallback_docs: List[Tuple] = []
+    for fname in filenames or []:
+        f_filter = {"$and": [user_filter, {"filename": fname}]}
+        try:
+            stored_texts, stored_metas = _get_child_corpus(
+                vectorstore,
+                f_filter,
+                max(1, top_k_per_doc),
+            )
+            docs = _bm25_child_fallback(query, stored_texts, stored_metas, top_k_per_doc)
+            if docs:
+                logger.info("🔍 RAG: %s — %d chunk (BM25 corpus fallback)", fname, len(docs))
+                fallback_docs.extend(docs)
+        except Exception as cerr:
+            logger.warning("🔍 RAG: BM25 corpus fallback gagal untuk %s: %s", fname, cerr)
+    return fallback_docs
+
+
 def search_relevant_chunks(query: str, filenames: List[str] = None, top_k: int = 5, user_id: str = None, document_ids: List[str] = None, request_id: str = None) -> Tuple[List[Dict], bool]:
     tracker = LatencyTracker(request_id=request_id)
     try:
@@ -147,8 +172,21 @@ def search_relevant_chunks(query: str, filenames: List[str] = None, top_k: int =
                     fn_filter = {"$and": [user_filter, {"filename": {"$in": filenames}}]}
                 else:
                     fn_filter = {"$and": [user_filter, {"filename": filenames[0]}]}
-                f_vec = vectorstore.similarity_search_with_score(search_query, k=k_combined, filter=fn_filter)
-                docs = _exclude_parent_search_results(f_vec)
+                try:
+                    f_vec = vectorstore.similarity_search_with_score(search_query, k=k_combined, filter=fn_filter)
+                    docs = _exclude_parent_search_results(f_vec)
+                except Exception as ferr:
+                    logger.warning(
+                        "🔍 RAG: filename vector fallback failed (%s), mencoba BM25 corpus fallback",
+                        ferr,
+                    )
+                    docs = _bm25_corpus_fallback_for_filenames(
+                        vectorstore,
+                        query,
+                        filenames,
+                        user_filter,
+                        max(doc_candidates, bm25_cands),
+                    )
         elif filenames and len(filenames) > 1:
             n_docs = len(filenames)
             per_doc_k = max(2, doc_candidates // n_docs)
@@ -217,13 +255,35 @@ def search_relevant_chunks(query: str, filenames: List[str] = None, top_k: int =
         elif filenames and len(filenames) == 1:
             logger.info("🔍 RETRIEVAL: Filtering by filename='%s', user_id='%s'", filenames[0], user_id)
             f_filter = {"$and": [user_filter, {"filename": filenames[0]}]}
-            f_vec = vectorstore.similarity_search_with_score(
-                search_query, k=doc_candidates, filter=f_filter
-            )
-            f_vec = _exclude_parent_search_results(f_vec)
             stored_texts: List[str] = []
             stored_metas: List[dict] = []
-            if hybrid_enabled:
+            try:
+                f_vec = vectorstore.similarity_search_with_score(
+                    search_query, k=doc_candidates, filter=f_filter
+                )
+                f_vec = _exclude_parent_search_results(f_vec)
+            except Exception as ferr:
+                logger.warning(
+                    "🔍 RAG: filename vector search failed for %s (%s), mencoba BM25 corpus fallback",
+                    filenames[0],
+                    ferr,
+                )
+                f_vec = []
+                try:
+                    stored_texts, stored_metas = _get_child_corpus(
+                        vectorstore,
+                        f_filter,
+                        max(doc_candidates, bm25_cands),
+                    )
+                except Exception as cerr:
+                    logger.debug("Child corpus fallback gagal untuk %s: %s", filenames[0], cerr)
+                docs = _bm25_child_fallback(query, stored_texts, stored_metas, doc_candidates)
+                if docs:
+                    logger.info("🔍 RAG: %s — %d chunk (BM25 corpus fallback)", filenames[0], len(docs))
+            else:
+                docs = []
+
+            if f_vec and hybrid_enabled:
                 try:
                     stored_texts, stored_metas = _get_child_corpus(
                         vectorstore,
@@ -243,7 +303,7 @@ def search_relevant_chunks(query: str, filenames: List[str] = None, top_k: int =
                 except Exception:
                     docs = f_vec
                     logger.info("🔍 RAG: %s — %d chunk (vector only, BM25 error)", filenames[0], len(f_vec))
-            else:
+            elif f_vec:
                 docs = f_vec
                 logger.info("🔍 RAG: Filtering by filename: %s untuk user_id: %s", filenames[0], user_id)
 

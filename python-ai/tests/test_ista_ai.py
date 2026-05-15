@@ -659,3 +659,49 @@ class TestPDRParentIsolation:
         assert chunks[0]["filename"] == "legacy.docx"
         assert chunks[0].get("pdr") is True
         assert "Parent legacy content" in chunks[0]["content"]
+
+    def test_document_id_vector_error_falls_back_to_bm25_corpus(self, monkeypatch):
+        from app.services import rag_retrieval
+        from app import config_loader
+
+        class RecoverableVectorStore:
+            def similarity_search_with_score(self, query, k=4, filter=None):
+                raise RuntimeError("Error executing plan: Internal error: Error finding id")
+
+            def get(self, where=None, include=None, limit=None):
+                return {
+                    "documents": [
+                        "Isi dokumen administrasi yang tetap bisa dibaca dari corpus",
+                    ],
+                    "metadatas": [
+                        {
+                            "filename": "adm.pdf",
+                            "user_id": "47",
+                            "document_id": "99",
+                            "chunk_type": "child",
+                            "chunk_index": 0,
+                        },
+                    ],
+                }
+
+        self._disable_networked_retrieval_paths(monkeypatch)
+        monkeypatch.setattr(config_loader, "get_pdr_config", lambda: {"enabled": False})
+        monkeypatch.setattr(
+            rag_retrieval,
+            "get_embeddings_with_fallback",
+            lambda *args, **kwargs: (object(), "fake", 0),
+        )
+        monkeypatch.setattr(rag_retrieval, "Chroma", lambda *args, **kwargs: RecoverableVectorStore())
+
+        chunks, success = rag_retrieval.search_relevant_chunks(
+            query="apa isi dokumen administrasi",
+            filenames=["adm.pdf"],
+            top_k=5,
+            user_id="47",
+            document_ids=["99"],
+        )
+
+        assert success is True
+        assert len(chunks) == 1
+        assert chunks[0]["filename"] == "adm.pdf"
+        assert "dokumen administrasi" in chunks[0]["content"]

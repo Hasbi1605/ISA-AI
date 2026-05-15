@@ -29,6 +29,7 @@
     @foreach($messages as $message)
         @php
             $isUserMessage = $message['role'] == 'user';
+            $isAssistantError = ! $isUserMessage && (bool) ($message['is_error'] ?? false);
         @endphp
         <div wire:key="chat-message-{{ $message['id'] }}" class="flex {{ $isUserMessage ? 'justify-end' : 'justify-start' }}">
              <div class="w-full sm:max-w-3xl flex items-start gap-2 sm:gap-4 px-0 sm:px-8 {{ $isUserMessage ? 'flex-row-reverse' : '' }}">
@@ -62,6 +63,9 @@
                                 'allow_unsafe_links' => false,
                             ]);
                             $exportFileName = 'ista-ai-jawaban-' . $message['id'];
+                            $assistantBubbleClass = $isAssistantError
+                                ? 'rounded-2xl rounded-bl-sm bg-rose-50/95 backdrop-blur-sm dark:bg-rose-950/30 border border-rose-200/80 dark:border-rose-500/30 px-4 py-3 text-[14.5px] leading-relaxed text-rose-900 dark:text-rose-100 prose prose-p:my-1 prose-headings:my-2 prose-ul:my-1 prose-li:my-0 prose-li:marker:text-rose-700 prose-a:text-rose-700 prose-a:decoration-rose-500/80 hover:prose-a:text-rose-900 dark:prose-headings:text-rose-100 dark:prose-p:text-rose-100 dark:prose-strong:text-rose-50 dark:prose-ul:text-rose-100 dark:prose-ol:text-rose-100 dark:prose-li:text-rose-100 dark:prose-li:marker:text-rose-100 dark:prose-a:text-rose-200 dark:prose-a:decoration-rose-200/90 dark:hover:prose-a:text-white pb-1'
+                                : 'rounded-2xl rounded-bl-sm bg-white/80 backdrop-blur-sm dark:bg-gray-800 border border-stone-200/60 dark:border-gray-800 px-4 py-3 text-[14.5px] leading-relaxed text-stone-700 dark:text-gray-100 prose prose-p:my-1 prose-headings:my-2 prose-ul:my-1 prose-li:my-0 prose-li:marker:text-stone-800 prose-a:text-sky-700 prose-a:decoration-sky-600/80 hover:prose-a:text-sky-800 dark:prose-headings:text-white dark:prose-p:text-gray-100 dark:prose-strong:text-white dark:prose-ul:text-gray-100 dark:prose-ol:text-gray-100 dark:prose-li:text-gray-100 dark:prose-li:marker:text-white dark:prose-a:text-sky-300 dark:prose-a:decoration-sky-300/90 dark:hover:prose-a:text-sky-200 pb-1';
                         @endphp
                         <div
                             wire:key="chat-answer-actions-{{ $message['id'] }}"
@@ -79,7 +83,7 @@
                                 <div
                                     wire:ignore
                                     wire:key="msg-typing-{{ $message['id'] }}"
-                                    class="rounded-2xl rounded-bl-sm bg-white/80 backdrop-blur-sm dark:bg-gray-800 border border-stone-200/60 dark:border-gray-800 px-4 py-3 text-[14.5px] leading-relaxed text-stone-700 dark:text-gray-100 prose prose-p:my-1 prose-headings:my-2 prose-ul:my-1 prose-li:my-0 prose-li:marker:text-stone-800 prose-a:text-sky-700 prose-a:decoration-sky-600/80 hover:prose-a:text-sky-800 dark:prose-headings:text-white dark:prose-p:text-gray-100 dark:prose-strong:text-white dark:prose-ul:text-gray-100 dark:prose-ol:text-gray-100 dark:prose-li:text-gray-100 dark:prose-li:marker:text-white dark:prose-a:text-sky-300 dark:prose-a:decoration-sky-300/90 dark:hover:prose-a:text-sky-200 pb-1"
+                                    class="{{ $assistantBubbleClass }}"
                                     x-data="{
                                         content: @js((string) $assistantHtml),
                                         displayedContent: '',
@@ -114,15 +118,27 @@
                                         }
                                     }"
                                     x-init="typewriterEffect()"
-                                    x-html="displayedContent"
                                 >
+                                    @if($isAssistantError)
+                                        <div class="mb-2 flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-[0.08em] text-rose-700 dark:text-rose-200">
+                                            <span class="flex h-4 w-4 items-center justify-center rounded-full bg-rose-100 text-[10px] dark:bg-rose-500/20">!</span>
+                                            Gagal memproses jawaban
+                                        </div>
+                                    @endif
+                                    <div x-html="displayedContent"></div>
                                 </div>
                             @else
                                 <div
                                     wire:key="msg-static-{{ $message['id'] }}"
-                                    class="rounded-2xl rounded-bl-sm bg-white/80 backdrop-blur-sm dark:bg-gray-800 border border-stone-200/60 dark:border-gray-800 px-4 py-3 text-[14.5px] leading-relaxed text-stone-700 dark:text-gray-100 prose prose-p:my-1 prose-headings:my-2 prose-ul:my-1 prose-li:my-0 prose-li:marker:text-stone-800 prose-a:text-sky-700 prose-a:decoration-sky-600/80 hover:prose-a:text-sky-800 dark:prose-headings:text-white dark:prose-p:text-gray-100 dark:prose-strong:text-white dark:prose-ul:text-gray-100 dark:prose-ol:text-gray-100 dark:prose-li:text-gray-100 dark:prose-li:marker:text-white dark:prose-a:text-sky-300 dark:prose-a:decoration-sky-300/90 dark:hover:prose-a:text-sky-200 pb-1"
-                                    x-html="@js((string) $assistantHtml)"
+                                    class="{{ $assistantBubbleClass }}"
                                 >
+                                    @if($isAssistantError)
+                                        <div class="mb-2 flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-[0.08em] text-rose-700 dark:text-rose-200">
+                                            <span class="flex h-4 w-4 items-center justify-center rounded-full bg-rose-100 text-[10px] dark:bg-rose-500/20">!</span>
+                                            Gagal memproses jawaban
+                                        </div>
+                                    @endif
+                                    <div x-html="@js((string) $assistantHtml)"></div>
                                 </div>
 
                             @endif

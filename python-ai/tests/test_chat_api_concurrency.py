@@ -329,3 +329,50 @@ def test_chat_api_no_prefetch_web_on_retrieval_failure(monkeypatch):
 
     assert chunks == ["fallback"]
     assert policy_calls["count"] == 0
+
+
+def test_chat_api_marks_document_retrieval_failure_as_error(monkeypatch):
+    req = chat_api.ChatRequest(
+        messages=[{"role": "user", "content": "apa isi dokumen ini"}],
+        document_filenames=["doc.pdf"],
+        user_id="u1",
+        force_web_search=False,
+        explicit_web_request=False,
+    )
+
+    def fake_policy_helpers():
+        return (
+            lambda q: False,
+            lambda **kwargs: (False, "DOC_NO_WEB", "low"),
+            lambda *args, **kwargs: {"search_context": ""},
+        )
+
+    def fake_streamers():
+        def _stream(*args, **kwargs):
+            yield "fallback"
+
+        def _with_sources(*args, **kwargs):
+            yield "ok"
+
+        return _stream, _with_sources
+
+    def fake_doc_helpers():
+        def search_relevant_chunks(*args, **kwargs):
+            return ([], False)
+
+        def build_rag_prompt(*args, **kwargs):
+            return "PROMPT", []
+
+        return search_relevant_chunks, build_rag_prompt
+
+    monkeypatch.setattr(chat_api, "StreamingResponse", _DummyStreamingResponse)
+    monkeypatch.setattr(chat_api, "_get_rag_policy_helpers", fake_policy_helpers)
+    monkeypatch.setattr(chat_api, "_get_chat_streamers", fake_streamers)
+    monkeypatch.setattr(chat_api, "_get_rag_document_helpers", fake_doc_helpers)
+
+    response = asyncio.run(chat_api.chat_stream(req, _make_fake_http_request()))
+    chunks = _collect_stream(response.body_iterator)
+
+    assert chunks
+    assert chunks[0].startswith(chat_api.ERROR_SENTINEL)
+    assert "dokumen" in chunks[0].lower()

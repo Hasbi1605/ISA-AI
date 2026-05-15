@@ -30,6 +30,8 @@ except Exception:
 
 app = FastAPI(title="ISTA AI Chat Microservice", version="1.2.0")
 
+ERROR_SENTINEL = "[ISTA_AI_ERROR]"
+
 
 class ChatRequest(BaseModel):
     messages: List[Dict[str, str]]
@@ -271,7 +273,7 @@ async def chat_stream(request: ChatRequest, http_request: Request):
         tracker.end_total("request_routed", extra={"mode": "doc_error"})
 
         def document_error_stream():
-            yield _document_context_error_message()
+            yield ERROR_SENTINEL + _document_context_error_message()
 
         return StreamingResponse(document_error_stream(), media_type="text/event-stream")
 

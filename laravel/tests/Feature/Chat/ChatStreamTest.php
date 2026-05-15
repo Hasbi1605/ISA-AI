@@ -491,6 +491,8 @@ class ChatStreamTest extends TestCase
         $body = $this->runExecuteStream($user, $conversation);
 
         $this->assertStringContainsString('event: error', $body);
+        $this->assertStringNotContainsString('event: chunk', $body);
+        $this->assertStringNotContainsString(AIService::ERROR_SENTINEL, $body);
 
         $this->assertDatabaseHas('messages', [
             'conversation_id' => $conversation->id,

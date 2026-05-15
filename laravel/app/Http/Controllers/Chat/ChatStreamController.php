@@ -140,6 +140,7 @@ class ChatStreamController extends Controller
         $fullResponse = '';
         $streamBuffer = '';
         $sources = [];
+        $errorStreamDetected = false;
 
         try {
             foreach (
@@ -170,6 +171,15 @@ class ChatStreamController extends Controller
                 if (! empty($parsedSources)) {
                     $sources = $parsedSources;
                     $this->sendSseEvent('sources', json_encode($sources));
+                }
+
+                if ($fullResponse === '' && str_starts_with((string) $chunk, AIService::ERROR_SENTINEL)) {
+                    $errorStreamDetected = true;
+                }
+
+                if ($errorStreamDetected) {
+                    $fullResponse .= (string) $chunk;
+                    continue;
                 }
 
                 $chunk = $orchestrator->sanitizeAssistantOutput((string) $chunk);
