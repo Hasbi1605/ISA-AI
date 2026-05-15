@@ -181,6 +181,7 @@ async def chat_stream(request: ChatRequest, http_request: Request):
                 _get_rag_top_k(),
                 request.user_id,
                 request.document_ids,
+                tracker.request_id,
             )
             tracker.end("retrieval", extra={"chunks": len(chunks), "success": success})
 
@@ -194,6 +195,7 @@ async def chat_stream(request: ChatRequest, http_request: Request):
                     allow_auto_realtime_web,
                     True,
                     explicit_web_request,
+                    tracker.request_id,
                 )
                 tracker.end("web_search", extra={"reason": reason_code})
                 web_context = context_data.get("search_context", "") if isinstance(context_data, dict) else ""
@@ -206,6 +208,7 @@ async def chat_stream(request: ChatRequest, http_request: Request):
                 _get_rag_top_k(),
                 request.user_id,
                 request.document_ids,
+                tracker.request_id,
             )
             tracker.end("retrieval", extra={"chunks": len(chunks), "success": success})
             web_context = ""
@@ -234,6 +237,7 @@ async def chat_stream(request: ChatRequest, http_request: Request):
                             allow_auto_realtime_web=allow_auto_realtime_web,
                             documents_active=True,
                             explicit_web_request=explicit_web_request,
+                            request_id=tracker.request_id,
                         ),
                         tracker,
                     ),
@@ -257,6 +261,7 @@ async def chat_stream(request: ChatRequest, http_request: Request):
                         allow_auto_realtime_web=allow_auto_realtime_web,
                         documents_active=True,
                         explicit_web_request=explicit_web_request,
+                        request_id=tracker.request_id,
                     ),
                     tracker,
                 ),
@@ -279,6 +284,7 @@ async def chat_stream(request: ChatRequest, http_request: Request):
                 allow_auto_realtime_web=allow_auto_realtime_web,
                 documents_active=False,
                 explicit_web_request=explicit_web_request,
+                request_id=tracker.request_id,
             ),
             tracker,
         ),
@@ -293,58 +299,13 @@ def _wrap_stream_with_ttft(
     """
     Wrap generator LLM untuk mengukur TTFT (time to first token) dan total LLM duration.
     Tidak log isi token — hanya timing metadata.
-    Mendukung sync generator maupun async generator.
+    Hanya mendukung sync generator — get_llm_stream dan get_llm_stream_with_sources
+    keduanya bertipe Generator[str, None, None] sehingga path async tidak diperlukan.
     """
-    import inspect
     import time
 
-    if inspect.isasyncgen(generator):
-        # Async generator — wrap ke sync dengan asyncio.run per chunk
-        import asyncio
+    from app.services.latency_logger import log_latency
 
-        async def _collect():
-            chunks = []
-            async for chunk in generator:
-                chunks.append(chunk)
-            return chunks
-
-        try:
-            loop = asyncio.get_event_loop()
-            if loop.is_running():
-                # Dalam konteks async (FastAPI), kumpulkan dulu lalu yield
-                import concurrent.futures
-                with concurrent.futures.ThreadPoolExecutor() as pool:
-                    future = pool.submit(asyncio.run, _collect())
-                    chunks = future.result()
-            else:
-                chunks = loop.run_until_complete(_collect())
-        except Exception:
-            chunks = asyncio.run(_collect())
-
-        first_chunk = True
-        t_llm_start = time.perf_counter()
-        chunk_count = 0
-
-        for chunk in chunks:
-            if first_chunk:
-                ttft_ms = (time.perf_counter() - t_llm_start) * 1000.0
-                from app.services.latency_logger import log_latency
-                log_latency("llm_first_chunk", ttft_ms, request_id=tracker.request_id)
-                first_chunk = False
-            chunk_count += 1
-            yield chunk
-
-        llm_total_ms = (time.perf_counter() - t_llm_start) * 1000.0
-        from app.services.latency_logger import log_latency
-        log_latency(
-            "llm_stream_end",
-            llm_total_ms,
-            request_id=tracker.request_id,
-            extra={"chunks": chunk_count},
-        )
-        return
-
-    # Sync generator
     first_chunk = True
     t_llm_start = time.perf_counter()
     chunk_count = 0
@@ -352,14 +313,12 @@ def _wrap_stream_with_ttft(
     for chunk in generator:
         if first_chunk:
             ttft_ms = (time.perf_counter() - t_llm_start) * 1000.0
-            from app.services.latency_logger import log_latency
             log_latency("llm_first_chunk", ttft_ms, request_id=tracker.request_id)
             first_chunk = False
         chunk_count += 1
         yield chunk
 
     llm_total_ms = (time.perf_counter() - t_llm_start) * 1000.0
-    from app.services.latency_logger import log_latency
     log_latency(
         "llm_stream_end",
         llm_total_ms,

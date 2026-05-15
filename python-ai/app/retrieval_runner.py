@@ -30,6 +30,7 @@ def _run_retrieval_search_inprocess(
     top_k: int = 5,
     user_id: str | None = None,
     document_ids: List[str] | None = None,
+    request_id: str | None = None,
 ) -> Tuple[List[Dict[str, Any]], bool]:
     from app.services.rag_retrieval import search_relevant_chunks
 
@@ -39,6 +40,7 @@ def _run_retrieval_search_inprocess(
         top_k=top_k,
         user_id=user_id,
         document_ids=document_ids,
+        request_id=request_id,
     )
     return list(chunks or []), bool(success)
 
@@ -49,6 +51,7 @@ def run_retrieval_search(
     top_k: int = 5,
     user_id: str | None = None,
     document_ids: List[str] | None = None,
+    request_id: str | None = None,
 ) -> Tuple[List[Dict[str, Any]], bool]:
     timeout_seconds = get_env_int("DOCUMENT_RETRIEVAL_SUBPROCESS_TIMEOUT", 180)
     app_dir = os.path.dirname(os.path.dirname(__file__))
@@ -58,7 +61,8 @@ def run_retrieval_search(
     if not use_subprocess:
         try:
             return _run_retrieval_search_inprocess(
-                query, filenames, top_k=top_k, user_id=user_id, document_ids=document_ids
+                query, filenames, top_k=top_k, user_id=user_id, document_ids=document_ids,
+                request_id=request_id,
             )
         except Exception:
             logger.exception("In-process retrieval failed; falling back to subprocess")

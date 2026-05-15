@@ -206,4 +206,3 @@ class GenerateChatResponse implements ShouldQueue
         ));
     }
 }
-
