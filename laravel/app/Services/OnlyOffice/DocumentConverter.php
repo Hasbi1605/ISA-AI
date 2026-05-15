@@ -26,6 +26,7 @@ class DocumentConverter
             'outputtype' => 'pdf',
             'title' => $this->fileName($memo, 'docx'),
             'url' => $this->memoDocumentUrl($memo, $version),
+            'exp' => time() + 300,
         ];
 
         $conversionUrl = $this->conversionUrl($key);

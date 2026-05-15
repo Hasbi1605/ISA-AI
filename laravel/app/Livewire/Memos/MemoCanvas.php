@@ -95,6 +95,7 @@ class MemoCanvas extends Component
                     'name' => (string) Auth::user()?->name,
                 ],
             ],
+            'exp' => now()->addMinutes($ttlMinutes)->getTimestamp(),
         ];
 
         $config['token'] = $signer->sign($config);
