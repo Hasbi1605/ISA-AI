@@ -187,16 +187,21 @@ class ProcessDocument implements ShouldQueue
             }
 
             // ── Stale-job guard: post-success status update ───────────────────
-            // Verify our claim token is still current BEFORE transitioning to
-            // `ready`. If the user triggered a reprocess after our HTTP call
-            // started, a new job has claimed the slot and overwritten the token.
-            // In that case, this job's ingest result is stale — clean up the
-            // vectors we just ingested and exit without setting `ready`.
-            // Only skip if a DIFFERENT, non-null token is in cache (active claim
-            // by a newer job); proceed if cache is empty or token matches.
+            // DUAL GUARD: both conditions must pass before writing `ready`.
+            //
+            // Guard A — cache token: skip if a DIFFERENT non-null token is in
+            // cache, meaning a newer job has already started handle() and claimed
+            // the slot.
+            //
+            // Guard B — atomic WHERE: skip if the document is no longer in
+            // `processing` state. This closes the race window that exists between
+            // when a reprocess resets the document to `pending` and when the new
+            // job starts handle() and writes its token to cache. During that
+            // window Guard A alone cannot detect the reprocess because the cache
+            // still holds our token. Guard B catches it via the DB status check.
             $currentToken = Cache::get($this->claimCacheKey);
             if ($currentToken !== null && $currentToken !== $this->claimToken) {
-                logger()->info('ProcessDocument: stale — claim superseded mid-flight; discarding ingested vectors', [
+                logger()->info('ProcessDocument: stale — claim token superseded mid-flight; discarding ingested vectors', [
                     'document_id' => $freshDocument->id,
                 ]);
 
@@ -208,8 +213,28 @@ class ProcessDocument implements ShouldQueue
                 return;
             }
 
-            // 4. Update status to ready
-            $freshDocument->update(['status' => 'ready']);
+            // 4. Update status to ready (atomic guard: only if still processing)
+            $saved = Document::where('id', $freshDocument->id)
+                ->where('status', 'processing')
+                ->update(['status' => 'ready']);
+
+            if ($saved === 0) {
+                // Document escaped 'processing' state — e.g. reprocess reset it
+                // to 'pending' after our HTTP call started but before we tried
+                // to write 'ready'. Discard this ingest so the newer job wins.
+                logger()->info('ProcessDocument: stale — document left processing state mid-flight; discarding ingested vectors', [
+                    'document_id' => $freshDocument->id,
+                    'current_status' => $freshDocument->fresh()?->status ?? 'deleted',
+                ]);
+
+                try {
+                    $this->deleteVectorsForDocument($freshDocument);
+                } catch (\Throwable $ignored) {
+                }
+
+                return;
+            }
+
             $this->document = $freshDocument;
 
                 // 5. Dispatch preview rendering job as a fallback if the

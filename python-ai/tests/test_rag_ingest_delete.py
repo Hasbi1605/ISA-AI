@@ -287,3 +287,92 @@ def test_process_document_fails_closed_on_embedding_provider_mismatch(monkeypatc
     assert "mismatch" in message.lower() or "incompatib" in message.lower(), (
         f"Expected mismatch/incompatibility message, got: {message!r}"
     )
+
+
+def test_process_document_fails_closed_on_mid_ingest_provider_switch(monkeypatch):
+    """After at least one chunk is written with Provider A, a rate-limit
+    that would trigger a switch to Provider B must abort ingest with an
+    error rather than mixing embeddings mid-collection."""
+    import os as _os
+    from app.services import rag_ingest
+
+    monkeypatch.setattr(_os.path, "exists", lambda p: True)
+    monkeypatch.setattr(_os.path, "getsize", lambda p: 1024)
+
+    # Force 1 chunk per batch so the second batch triggers a rate-limit error
+    # after the first batch already wrote 1 chunk with "provider-1".
+    monkeypatch.setattr("app.services.rag_ingest.AGGRESSIVE_BATCH_SIZE", 1)
+    monkeypatch.setattr("app.services.rag_ingest.MAX_TOKENS_PER_BATCH", 1)
+
+    # Simulate multiple providers available for cascade
+    from app.services import rag_config as _rc
+    monkeypatch.setattr(
+        "app.services.rag_ingest.EMBEDDING_MODELS",
+        [{"provider": "provider-1"}, {"provider": "provider-2"}],
+    )
+
+    call_count = {"n": 0}
+
+    def fake_get_embeddings(start_index=0, **kw):
+        call_count["n"] += 1
+        return (object(), f"provider-{call_count['n']}", start_index)
+
+    monkeypatch.setattr("app.services.rag_ingest.get_embeddings_with_fallback", fake_get_embeddings)
+    monkeypatch.setattr(
+        "app.services.rag_ingest._load_documents_lightweight",
+        lambda *a, **kw: [
+            type("Doc", (), {"page_content": f"chunk{i}", "metadata": {}})()
+            for i in range(3)
+        ],
+    )
+
+    batch_call_count = {"n": 0}
+
+    class FakeCollection:
+        def get(self, where=None, ids=None, include=None):
+            return {"ids": [], "metadatas": []}
+
+        def upsert(self, **kw):
+            pass
+
+        def delete(self, where=None, ids=None):
+            pass
+
+    class FakeChroma:
+        def __init__(self, **kw):
+            self._collection = FakeCollection()
+
+        def get(self, **kw):
+            return {"ids": [], "metadatas": []}
+
+        def delete(self, **kw):
+            pass
+
+        def add_documents(self, docs):
+            batch_call_count["n"] += 1
+            if batch_call_count["n"] == 1:
+                # First batch: succeed (writes 1 chunk with provider-1)
+                return
+            # Second batch: simulate rate limit to trigger provider switch
+            raise Exception("429 rate limit exceeded: quota exhausted")
+
+    monkeypatch.setattr("app.services.rag_ingest.Chroma", FakeChroma)
+    # count_tokens returns 1 per chunk so batching by MAX_TOKENS_PER_BATCH=1 works
+    monkeypatch.setattr("app.services.rag_ingest.count_tokens", lambda text: 1)
+
+    success, message = rag_ingest.process_document(
+        file_path="/fake/doc.pdf",
+        filename="doc.pdf",
+        user_id="user-1",
+        document_id="99",
+    )
+
+    assert success is False, f"Expected False but got {success!r}"
+    # The error must explicitly mention that chunks were already written
+    # with the original provider and a provider switch was blocked.
+    assert (
+        "provider" in message.lower()
+        or "switch" in message.lower()
+        or "incompatib" in message.lower()
+        or "already written" in message.lower()
+    ), f"Expected provider-switch message, got: {message!r}"

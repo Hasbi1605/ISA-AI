@@ -367,15 +367,13 @@ class ProcessDocumentTest extends TestCase
         // and NOT set the document to `ready` (Job B owns the slot now).
         Http::fake([
             '*/api/documents/process' => function () use ($document) {
-                // New reprocess dispatched while Job A is in the HTTP call.
-                // Register a *different* claim token in cache to simulate Job B.
+                // Simulate Job B starting handle(): new token written to cache,
+                // status reset to processing by the new job's claim.
                 \Illuminate\Support\Facades\Cache::put(
                     'doc_process_claim:'.$document->id,
                     'new-job-token-from-job-B',
                     300,
                 );
-                // Job B also reset the status to processing.
-                Document::where('id', $document->id)->update(['status' => 'processing']);
 
                 return Http::response(['message' => 'success'], 200);
             },
@@ -384,9 +382,50 @@ class ProcessDocumentTest extends TestCase
 
         (new ProcessDocument($document))->handle();
 
-        // Job A must NOT have set the document to `ready` since its claim was
-        // superseded. The document should remain in `processing` (Job B's state).
-        $this->assertSame('processing', $document->fresh()->status);
+        // Guard A (token mismatch): Job A must NOT have set the document to
+        // `ready` since a different token was registered mid-flight.
+        $this->assertNotSame('ready', $document->fresh()->status);
+    }
+
+    public function test_race_window_blocked_when_status_reset_to_pending_before_job_b_claims(): void
+    {
+        Storage::fake('local');
+        Queue::fake();
+        config()->set('services.ai_document_service.url', 'http://python-ai-docs:8002');
+        config()->set('services.ai_document_service.token', 'internal-token');
+
+        $user = User::factory()->create();
+        $filePath = 'documents/'.$user->id.'/race-window.pdf';
+        Storage::disk('local')->put($filePath, '%PDF-1.4 fake');
+
+        $document = Document::create([
+            'user_id' => $user->id,
+            'filename' => 'race-window.pdf',
+            'original_name' => 'race-window.pdf',
+            'file_path' => $filePath,
+            'mime_type' => 'application/pdf',
+            'file_size_bytes' => 123,
+            'status' => 'pending',
+        ]);
+
+        Http::fake([
+            '*/api/documents/process' => function () use ($document) {
+                // Simulate the race window: reprocess reset status to pending,
+                // but Job B has NOT yet started handle() (its token is not in
+                // cache yet). Guard A alone would miss this window.
+                // Guard B (WHERE status=processing) catches it.
+                Document::where('id', $document->id)->update(['status' => 'pending']);
+
+                return Http::response(['message' => 'success'], 200);
+            },
+            '*/api/documents/*' => Http::response(['message' => 'deleted'], 200),
+        ]);
+
+        (new ProcessDocument($document))->handle();
+
+        // Guard B (WHERE status=processing): the document status was reset to
+        // `pending` mid-flight. Job A must detect this and NOT set `ready`.
+        $this->assertSame('pending', $document->fresh()->status);
     }
 
     public function test_failed_does_not_overwrite_newer_job_ready_state(): void

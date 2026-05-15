@@ -213,18 +213,13 @@ def process_document(
                         old_parent_ids = (_old_p.get("ids") or [])
                     except Exception as _psnap_err:
                         logger.debug("Could not snapshot old parent IDs: %s", _psnap_err)
-                p_ids   = [pid for pid, _, _ in pdr_parent_docs]
-                p_texts = [txt for _, txt, _ in pdr_parent_docs]
-                p_metas = [meta for _, _, meta in pdr_parent_docs]
-                raw_col.upsert(
-                    ids=p_ids,
-                    documents=p_texts,
-                    metadatas=p_metas,
-                    embeddings=[[0.0] * MAX_EMBEDDING_DIM] * len(p_ids),
-                )
-                logger.info("✅ PDR: %d parent chunks disimpan ke ChromaDB", len(pdr_parent_docs))
+                # NOTE: parent upsert is intentionally deferred to AFTER all child
+                # vectors are written successfully. This ensures parent chunks are
+                # only updated when the full ingest is complete — if child ingest
+                # fails partway, the old parent context remains intact.
+                # See pdr_parent_upsert_pending below.
             except Exception as pe:
-                logger.warning("⚠️  Gagal menyimpan parent PDR: %s", pe)
+                logger.warning("⚠️  Gagal membuka parent store PDR: %s", pe)
 
         successful_chunks = 0
         failed_chunks = 0
@@ -337,6 +332,24 @@ def process_document(
 
                 elif is_rate_limit and current_model_index < len(EMBEDDING_MODELS) - 1:
                     if current_model_index < len(EMBEDDING_MODELS) - 1:
+                        # ── Embedding consistency: fail-close mid-ingest provider switch ──
+                        # If any chunks have already been written with the current provider,
+                        # switching to a different provider would leave the collection with
+                        # chunks from two incompatible embedding spaces. Fail here so the
+                        # operator can delete the document's vectors and retry from scratch.
+                        if successful_chunks > 0:
+                            logger.error(
+                                "❌ EMBEDDING CONSISTENCY: cannot switch provider mid-ingest — "
+                                "%d chunk(s) already written with '%s'. "
+                                "Delete this document's vectors and re-ingest to use a single provider.",
+                                successful_chunks, provider_name,
+                            )
+                            raise Exception(
+                                f"Embedding provider switch blocked mid-ingest: {successful_chunks} chunks "
+                                f"already written with '{provider_name}'. "
+                                "Delete existing vectors for this document and retry."
+                            )
+
                         logger.warning(f"🚫 Rate limit detected! Cascading to next model tier...")
 
                         current_model_index += 1
@@ -385,7 +398,9 @@ def process_document(
                                         retry_delay *= 2
                                         continue
                                     else:
-                                        from app.services.rag_config import EMBEDDING_MODELS
+                                        # EMBEDDING_MODELS is imported at module level; using it here
+                                        # directly avoids the UnboundLocalError that a local
+                                        # `from ... import EMBEDDING_MODELS` would cause.
                                         if current_model_index < len(EMBEDDING_MODELS) - 1:
                                             current_model_index += 1
                                             embeddings, provider_name, current_model_index = get_embeddings_with_fallback(current_model_index)
@@ -427,6 +442,32 @@ def process_document(
         if failed_chunks > 0:
             return False, f"Ingest partial: {failed_chunks}/{len(chunks)} chunks gagal saat embedding."
 
+        # ── PDR parent upsert (deferred until child ingest succeeds) ─────────
+        # Parents are written HERE — after all child vectors are durably stored.
+        # Writing parents before child ingest would leave the parent collection
+        # in an updated state even if child ingest subsequently fails.
+        if pdr_enabled and pdr_parent_docs:
+            try:
+                _p_store = Chroma(
+                    collection_name=PARENT_COLLECTION_NAME,
+                    persist_directory=CHROMA_PATH,
+                )
+                _p_col = _p_store._collection
+                p_ids   = [pid for pid, _, _ in pdr_parent_docs]
+                p_texts = [txt for _, txt, _ in pdr_parent_docs]
+                p_metas = [meta for _, _, meta in pdr_parent_docs]
+                _p_col.upsert(
+                    ids=p_ids,
+                    documents=p_texts,
+                    metadatas=p_metas,
+                    embeddings=[[0.0] * MAX_EMBEDDING_DIM] * len(p_ids),
+                )
+                logger.info("✅ PDR: %d parent chunks disimpan ke ChromaDB (post-ingest)", len(pdr_parent_docs))
+            except Exception as _pe:
+                logger.warning("⚠️  Gagal menyimpan parent PDR: %s", _pe)
+        else:
+            p_ids = []
+
         # ── Post-ingest atomic cleanup ────────────────────────────────────────
         # Now that the new vectors are durably written, delete the OLD vector IDs
         # that were snapshotted before the ingest started. This is safe because:
@@ -453,11 +494,20 @@ def process_document(
                     collection_name=PARENT_COLLECTION_NAME,
                     persist_directory=CHROMA_PATH,
                 )
-                _parent_vs._collection.delete(ids=old_parent_ids)
-                logger.info(
-                    "✅ Post-ingest cleanup: deleted %d stale parent chunks for document_id=%s",
-                    len(old_parent_ids), document_id,
-                )
+                # Exclude IDs that were just upserted. PDR parent IDs are
+                # deterministic (content-hash-based), so re-ingesting the same
+                # content produces the same IDs. Deleting them would erase the
+                # data we just wrote.
+                new_p_ids_set: set[str] = set(p_ids) if p_ids else set()
+                stale_parent_ids = [pid for pid in old_parent_ids if pid not in new_p_ids_set]
+                if stale_parent_ids:
+                    _parent_vs._collection.delete(ids=stale_parent_ids)
+                    logger.info(
+                        "✅ Post-ingest cleanup: deleted %d stale parent chunks for document_id=%s",
+                        len(stale_parent_ids), document_id,
+                    )
+                else:
+                    logger.info("Post-ingest parent cleanup: no stale IDs to delete (all IDs reused)")
             except Exception as _pcleanup_err:
                 logger.warning("Post-ingest parent cleanup failed: %s", _pcleanup_err)
 
