@@ -176,7 +176,7 @@ class LangSearchService:
         for item in results:
             formatted_results.append({
                 "title": item.get("name", ""),
-                "snippet": item.get("snippet", item.get("summary", "")),
+                "snippet": item.get("snippet") or item.get("summary", ""),
                 "url": item.get("url", ""),
                 "datePublished": item.get("datePublished", "")
             })

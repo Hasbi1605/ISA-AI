@@ -129,3 +129,45 @@ def test_build_search_context_snippet_takes_priority_over_summary():
     assert "Snippet utama" in context
     assert "Summary cadangan" not in context
 
+
+def test_search_uses_summary_when_snippet_is_empty_string(monkeypatch):
+    """Jika API mengirim snippet='' (string kosong), summary harus dipakai di search() sebelum masuk build_search_context()."""
+    import unittest.mock as mock
+
+    service = LangSearchService()
+
+    fake_api_response = {
+        "data": {
+            "webPages": {
+                "value": [
+                    {
+                        "name": "Judul Artikel",
+                        "snippet": "",
+                        "summary": "Isi summary dari API",
+                        "url": "https://example.com",
+                        "datePublished": "2026-01-01",
+                    }
+                ]
+            }
+        }
+    }
+
+    mock_response = mock.MagicMock()
+    mock_response.raise_for_status.return_value = None
+    mock_response.json.return_value = fake_api_response
+
+    monkeypatch.setenv("LANGSEARCH_API_KEY", "fake-key-for-test")
+    # Re-create service so api_key is picked up
+    service = LangSearchService()
+
+    with mock.patch("app.services.langsearch_service.requests.post", return_value=mock_response):
+        results = service.search("test query")
+
+    assert len(results) == 1
+    assert results[0]["snippet"] == "Isi summary dari API", (
+        f"snippet seharusnya diisi dari summary, got: {results[0]['snippet']!r}"
+    )
+
+    context = service.build_search_context(results)
+    assert "Isi summary dari API" in context
+    assert "No description" not in context
