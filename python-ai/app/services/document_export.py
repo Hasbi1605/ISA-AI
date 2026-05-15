@@ -388,7 +388,7 @@ def _render_xlsx(tables: list[dict[str, Any]], content_html: str, title: str) ->
             sheet.cell(row=1, column=1, value="")
         else:
             for row_index, line in enumerate(lines, start=1):
-                sheet.cell(row=row_index, column=1, value=line)
+                sheet.cell(row=row_index, column=1, value=_sanitize_cell_value(line))
     else:
         for index, table_data in enumerate(tables, start=1):
             sheet_name = _sanitize_sheet_name(table_data.get("name") or f"Table {index}")
@@ -398,12 +398,12 @@ def _render_xlsx(tables: list[dict[str, Any]], content_html: str, title: str) ->
             header = [str(cell) for cell in table_data.get("header", []) if cell is not None]
             if header:
                 for col_index, value in enumerate(header, start=1):
-                    sheet.cell(row=row_cursor, column=col_index, value=value)
+                    sheet.cell(row=row_cursor, column=col_index, value=_sanitize_cell_value(value))
                 row_cursor += 1
 
             for row in table_data.get("rows", []):
                 for col_index, value in enumerate(row, start=1):
-                    sheet.cell(row=row_cursor, column=col_index, value=value)
+                    sheet.cell(row=row_cursor, column=col_index, value=_sanitize_cell_value(str(value)))
                 row_cursor += 1
 
             if row_cursor == 1:
@@ -424,7 +424,7 @@ def _render_csv(tables: list[dict[str, Any]], content_html: str) -> bytes:
             writer.writerow([""])
         else:
             for line in lines:
-                writer.writerow([line])
+                writer.writerow([_sanitize_cell_value(line)])
     else:
         for index, table_data in enumerate(tables):
             if index > 0:
@@ -432,10 +432,10 @@ def _render_csv(tables: list[dict[str, Any]], content_html: str) -> bytes:
 
             header = [str(cell) for cell in table_data.get("header", []) if cell is not None]
             if header:
-                writer.writerow(header)
+                writer.writerow([_sanitize_cell_value(h) for h in header])
 
             for row in table_data.get("rows", []):
-                writer.writerow([str(cell) for cell in row])
+                writer.writerow([_sanitize_cell_value(str(cell)) for cell in row])
 
     return buffer.getvalue().encode("utf-8")
 
@@ -444,6 +444,23 @@ def _sanitize_sheet_name(name: str) -> str:
     cleaned = re.sub(r"[\[\]\:\*\?\/\\]+", " ", name).strip()
     cleaned = cleaned[:31] if cleaned else "Sheet"
     return cleaned or "Sheet"
+
+
+# Characters that trigger formula evaluation in common spreadsheet applications.
+# Values that begin with these must be prefixed to prevent formula injection.
+_FORMULA_PREFIXES = ("=", "+", "-", "@", "\t", "\r")
+
+
+def _sanitize_cell_value(value: str) -> str:
+    """Prefix cell values that start with formula-triggering characters with a tab.
+
+    This prevents spreadsheet applications (Excel, Google Sheets, LibreOffice)
+    from interpreting user/AI content as formulas. The tab prefix is the
+    recommended safe approach that preserves the original text without altering it.
+    """
+    if value and value[0] in _FORMULA_PREFIXES:
+        return "\t" + value
+    return value
 
 
 def export_content(content_html: str, target_format: str, file_name: str | None = None) -> ExportArtifact:

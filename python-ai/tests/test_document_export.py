@@ -414,3 +414,116 @@ def test_documents_process_route_cleans_temp_file_on_failure(monkeypatch):
     assert response.status_code == 500
     assert exists_calls["count"] >= 1
     assert removed_paths
+
+
+def test_documents_extract_tables_rejects_upload_exceeding_max_size(monkeypatch):
+    """extract-tables must return 413 when the uploaded file exceeds MAX_UPLOAD_BYTES."""
+    import app.routers.documents as docs_module
+
+    original_limit = docs_module.MAX_UPLOAD_BYTES
+    monkeypatch.setattr(docs_module, "MAX_UPLOAD_BYTES", 10)  # 10-byte limit for the test
+
+    oversized_content = b"A" * 11  # 1 byte over the limit
+
+    response = client.post(
+        "/api/documents/extract-tables",
+        headers=AUTH_HEADERS,
+        files={"file": ("big-file.pdf", oversized_content, "application/pdf")},
+    )
+
+    assert response.status_code == 413
+
+
+def test_documents_extract_content_rejects_upload_exceeding_max_size(monkeypatch):
+    """extract-content must return 413 when the uploaded file exceeds MAX_UPLOAD_BYTES."""
+    import app.routers.documents as docs_module
+
+    monkeypatch.setattr(docs_module, "MAX_UPLOAD_BYTES", 10)  # 10-byte limit for the test
+
+    oversized_content = b"B" * 11  # 1 byte over the limit
+
+    response = client.post(
+        "/api/documents/extract-content",
+        headers=AUTH_HEADERS,
+        files={"file": ("big-doc.docx", oversized_content, "application/vnd.openxmlformats-officedocument.wordprocessingml.document")},
+    )
+
+    assert response.status_code == 413
+
+
+@pytest.mark.parametrize("dangerous_value", [
+    "=CMD|'/C calc'!A0",
+    "+1+1",
+    "-1",
+    "@SUM(A1:A2)",
+    "\t=hidden",
+    "\r=CR",
+])
+def test_export_csv_sanitizes_formula_injection_in_cell_values(dangerous_value):
+    """CSV export must prefix formula-triggering cell values to prevent injection."""
+    from app.services.document_export import _sanitize_cell_value, _FORMULA_PREFIXES
+
+    # Verify the raw value is indeed dangerous.
+    assert dangerous_value[0] in _FORMULA_PREFIXES
+
+    sanitized = _sanitize_cell_value(dangerous_value)
+
+    # After sanitization the value must start with a tab (safe prefix).
+    assert sanitized.startswith("\t"), f"Expected tab prefix for {dangerous_value!r}, got {sanitized!r}"
+    # The original text must still be present.
+    assert dangerous_value in sanitized
+
+
+def test_export_xlsx_formula_injection_cells_are_prefixed():
+    """XLSX export must sanitize formula-triggering values in table rows and headers."""
+    from io import BytesIO
+    from openpyxl import load_workbook
+
+    dangerous_html = """
+    <table>
+      <tr><th>=SUM(A1:A2)</th><th>Nilai</th></tr>
+      <tr><td>+kalkulasi</td><td>100</td></tr>
+      <tr><td>normal text</td><td>@formula</td></tr>
+    </table>
+    """
+
+    xlsx = export_content(dangerous_html, "xlsx", "test-inject")
+    workbook = load_workbook(BytesIO(xlsx.content))
+    sheet = workbook.active
+
+    # All formula-triggering cells must be prefixed with a tab.
+    header_a1 = sheet["A1"].value or ""
+    assert header_a1.startswith("\t"), f"Header A1 should be tab-prefixed: {header_a1!r}"
+    assert "=SUM(A1:A2)" in header_a1
+
+    row2_a = sheet["A2"].value or ""
+    assert row2_a.startswith("\t"), f"Row2 A should be tab-prefixed: {row2_a!r}"
+
+    row3_b = sheet["B3"].value or ""
+    assert row3_b.startswith("\t"), f"Row3 B should be tab-prefixed: {row3_b!r}"
+
+    # Safe values must remain unchanged.
+    assert sheet["B1"].value == "Nilai"
+    assert sheet["B2"].value == "100"
+    assert sheet["A3"].value == "normal text"
+
+
+def test_export_csv_formula_injection_cells_are_prefixed():
+    """CSV export must sanitize formula-triggering values in table rows and headers."""
+    dangerous_html = """
+    <table>
+      <tr><th>=HYPERLINK(\"http://evil.com\")</th><th>Safe</th></tr>
+      <tr><td>-deleteAll</td><td>ok</td></tr>
+    </table>
+    """
+
+    csv_export = export_content(dangerous_html, "csv", "test-inject")
+    content = csv_export.content.decode("utf-8")
+
+    # Formula-starting values must be prefixed with a tab in the CSV output.
+    assert "\t=HYPERLINK" in content, f"Formula header not sanitized: {content!r}"
+    assert "\t-deleteAll" in content, f"Formula row not sanitized: {content!r}"
+
+    # Safe values must remain unchanged.
+    assert "Safe" in content
+    assert "ok" in content

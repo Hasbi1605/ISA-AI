@@ -45,13 +45,14 @@ class GenerateChatResponse implements ShouldQueue
             return;
         }
 
-        $documentFilenames = $orchestrator->getDocumentFilenames($this->conversationDocuments);
+        // Fetch both document IDs and filenames from the same filtered query so
+        // only owned + ready documents are used in RAG. This prevents processing,
+        // foreign, or stale documents from reaching the Python retrieval layer.
+        $docContext = $orchestrator->getActiveDocumentContext($this->conversationDocuments);
+        $documentFilenames = $docContext['filenames'];
+        $documentIds = $docContext['ids'];
         $sourcePolicy = $orchestrator->getSourcePolicy($documentFilenames);
         $allowAutoRealtimeWeb = $orchestrator->shouldAllowAutoRealtimeWeb($documentFilenames);
-        // Pass the document IDs (already integers) alongside filenames so Python
-        // can use document_id-based Chroma filtering for new-style chunks while
-        // falling back to filename for legacy chunks.
-        $documentIds = array_values(array_map('intval', $this->conversationDocuments));
 
         $fullResponse = '';
         $streamBuffer = '';

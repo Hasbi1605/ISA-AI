@@ -133,8 +133,12 @@ def search_relevant_chunks(query: str, filenames: List[str] = None, top_k: int =
                 docs = _exclude_parent_search_results(f_vec)
             except Exception as e:
                 logger.warning("🔍 RAG: combined document_id filter failed (%s), fallback to filename filter", e)
-                # Fallback to filename-based filter if $or is not supported
-                fn_filter = {"$and": [user_filter, {"filename": {"$in": filenames}} if len(filenames) > 1 else {"$and": [user_filter, {"filename": filenames[0]}]}]}
+                # Fallback to filename-based filter if $or is not supported.
+                # Build a flat $and — never nest another $and inside $and.
+                if len(filenames) > 1:
+                    fn_filter = {"$and": [user_filter, {"filename": {"$in": filenames}}]}
+                else:
+                    fn_filter = {"$and": [user_filter, {"filename": filenames[0]}]}
                 f_vec = vectorstore.similarity_search_with_score(search_query, k=k_combined, filter=fn_filter)
                 docs = _exclude_parent_search_results(f_vec)
         elif filenames and len(filenames) > 1:

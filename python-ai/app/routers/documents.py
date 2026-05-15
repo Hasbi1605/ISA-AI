@@ -1,5 +1,4 @@
 import os
-import shutil
 import uuid
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile
@@ -42,6 +41,27 @@ def _require_safe_filename(filename: str | None) -> str:
         raise HTTPException(status_code=400, detail="Nama file tidak valid.")
 
     return base
+
+
+def _stream_upload_with_limit(upload_file: UploadFile, dest_path: str) -> None:
+    """Write *upload_file* to *dest_path* in chunks.
+
+    Raises HTTP 413 before writing more than ``MAX_UPLOAD_BYTES`` so the server
+    never buffers an unbounded upload fully to disk.
+    """
+    written = 0
+    with open(dest_path, "wb") as buffer:
+        while True:
+            chunk_data = upload_file.file.read(1024 * 1024)
+            if not chunk_data:
+                break
+            written += len(chunk_data)
+            if written > MAX_UPLOAD_BYTES:
+                raise HTTPException(
+                    status_code=413,
+                    detail=f"File melebihi batas maksimum {MAX_UPLOAD_BYTES // (1024 * 1024)} MB.",
+                )
+            buffer.write(chunk_data)
 
 
 def delete_document_vectors(*args, **kwargs):
@@ -173,8 +193,7 @@ def extract_tables_endpoint(file: UploadFile = File(...)):
     temp_file_path = os.path.join(temp_dir, f"{file_id}_{safe_filename}")
 
     try:
-        with open(temp_file_path, "wb") as buffer:
-            shutil.copyfileobj(file.file, buffer)
+        _stream_upload_with_limit(file, temp_file_path)
 
         tables = extract_tables_from_file(temp_file_path)
 
@@ -183,6 +202,8 @@ def extract_tables_endpoint(file: UploadFile = File(...)):
             "filename": safe_filename,
             "tables": tables,
         }
+    except HTTPException:
+        raise
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     finally:
@@ -200,8 +221,7 @@ def extract_content_endpoint(file: UploadFile = File(...)):
     temp_file_path = os.path.join(temp_dir, f"{file_id}_{safe_filename}")
 
     try:
-        with open(temp_file_path, "wb") as buffer:
-            shutil.copyfileobj(file.file, buffer)
+        _stream_upload_with_limit(file, temp_file_path)
 
         content_html = extract_document_content_html(temp_file_path, filename=safe_filename)
 
@@ -210,6 +230,8 @@ def extract_content_endpoint(file: UploadFile = File(...)):
             "filename": safe_filename,
             "content_html": content_html,
         }
+    except HTTPException:
+        raise
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     finally:

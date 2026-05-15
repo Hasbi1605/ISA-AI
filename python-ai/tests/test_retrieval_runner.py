@@ -121,3 +121,72 @@ def test_run_retrieval_search_uses_subprocess_when_opted_in(monkeypatch):
 
     assert success is True
     assert chunks == []
+
+
+def test_subprocess_retrieval_passes_document_ids_as_json_arg(monkeypatch):
+    """Subprocess path must forward document_ids_json so the retrieval layer
+    can filter by document_id for new-style Chroma chunks."""
+    monkeypatch.setenv("DOCUMENT_RETRIEVAL_USE_SUBPROCESS", "1")
+
+    captured_args: list = []
+
+    def fake_run(*args, **kwargs):
+        captured_args.extend(args[0])
+        return subprocess.CompletedProcess(
+            args=args[0],
+            returncode=0,
+            stdout='{"success": true, "chunks": [{"filename": "report.pdf", "content": "data"}]}\n',
+            stderr="",
+        )
+
+    monkeypatch.setattr("app.retrieval_runner.subprocess.run", fake_run)
+
+    chunks, success = run_retrieval_search(
+        "laporan keuangan",
+        ["report.pdf"],
+        top_k=5,
+        user_id="7",
+        document_ids=["42", "99"],
+    )
+
+    assert success is True
+    assert chunks == [{"filename": "report.pdf", "content": "data"}]
+
+    # The document_ids_json argument must be present in the subprocess call.
+    import json as _json
+    doc_ids_arg = None
+    for arg in captured_args:
+        try:
+            parsed = _json.loads(arg)
+            if isinstance(parsed, list) and all(isinstance(x, str) for x in parsed):
+                doc_ids_arg = parsed
+        except (ValueError, TypeError):
+            continue
+
+    assert doc_ids_arg == ["42", "99"], f"document_ids not forwarded to subprocess: {captured_args}"
+
+
+def test_subprocess_retrieval_passes_empty_document_ids_when_none(monkeypatch):
+    """When no document_ids are provided, subprocess receives an empty JSON list."""
+    monkeypatch.setenv("DOCUMENT_RETRIEVAL_USE_SUBPROCESS", "1")
+
+    captured_args: list = []
+
+    def fake_run(*args, **kwargs):
+        captured_args.extend(args[0])
+        return subprocess.CompletedProcess(
+            args=args[0],
+            returncode=0,
+            stdout='{"success": true, "chunks": []}\n',
+            stderr="",
+        )
+
+    monkeypatch.setattr("app.retrieval_runner.subprocess.run", fake_run)
+
+    run_retrieval_search("query tanpa dokumen", filenames=None, top_k=3, user_id="1", document_ids=None)
+
+    import json as _json
+    # The last positional argument must be a JSON-encoded empty list.
+    last_non_flag = [a for a in captured_args if not a.startswith("-")]
+    doc_ids_arg = _json.loads(last_non_flag[-1])
+    assert doc_ids_arg == [], f"Expected empty list, got: {last_non_flag[-1]}"

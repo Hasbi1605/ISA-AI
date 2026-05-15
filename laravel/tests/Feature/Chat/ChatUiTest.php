@@ -182,6 +182,167 @@ class ChatUiTest extends TestCase
         $this->assertNull($service->getDocumentFilenames([$ownedProcessing->id, $otherReady->id]));
     }
 
+    public function test_get_active_document_context_returns_ids_and_filenames_from_same_filter(): void
+    {
+        $user = User::factory()->create();
+        $otherUser = User::factory()->create();
+
+        $ownedReady = Document::create([
+            'user_id' => $user->id,
+            'filename' => 'ready-doc.pdf',
+            'original_name' => 'ready-doc.pdf',
+            'file_path' => 'documents/'.$user->id.'/ready-doc.pdf',
+            'mime_type' => 'application/pdf',
+            'file_size_bytes' => 100,
+            'status' => 'ready',
+        ]);
+
+        $ownedProcessing = Document::create([
+            'user_id' => $user->id,
+            'filename' => 'processing-doc.pdf',
+            'original_name' => 'processing-doc.pdf',
+            'file_path' => 'documents/'.$user->id.'/processing-doc.pdf',
+            'mime_type' => 'application/pdf',
+            'file_size_bytes' => 100,
+            'status' => 'processing',
+        ]);
+
+        $foreignReady = Document::create([
+            'user_id' => $otherUser->id,
+            'filename' => 'foreign-ready.pdf',
+            'original_name' => 'foreign-ready.pdf',
+            'file_path' => 'documents/'.$otherUser->id.'/foreign-ready.pdf',
+            'mime_type' => 'application/pdf',
+            'file_size_bytes' => 100,
+            'status' => 'ready',
+        ]);
+
+        $service = new ChatOrchestrationService;
+        $this->actingAs($user);
+
+        $context = $service->getActiveDocumentContext([
+            $ownedReady->id,
+            $ownedProcessing->id,
+            $foreignReady->id,
+        ]);
+
+        // Only the owned+ready document should appear in both ids and filenames.
+        $this->assertSame([$ownedReady->id], $context['ids']);
+        $this->assertSame(['ready-doc.pdf'], $context['filenames']);
+    }
+
+    public function test_get_active_document_context_excludes_processing_and_foreign_documents_from_ids(): void
+    {
+        $user = User::factory()->create();
+        $otherUser = User::factory()->create();
+
+        $ownedProcessing = Document::create([
+            'user_id' => $user->id,
+            'filename' => 'stale.pdf',
+            'original_name' => 'stale.pdf',
+            'file_path' => 'documents/'.$user->id.'/stale.pdf',
+            'mime_type' => 'application/pdf',
+            'file_size_bytes' => 100,
+            'status' => 'processing',
+        ]);
+
+        $foreignDoc = Document::create([
+            'user_id' => $otherUser->id,
+            'filename' => 'foreign.pdf',
+            'original_name' => 'foreign.pdf',
+            'file_path' => 'documents/'.$otherUser->id.'/foreign.pdf',
+            'mime_type' => 'application/pdf',
+            'file_size_bytes' => 100,
+            'status' => 'ready',
+        ]);
+
+        $service = new ChatOrchestrationService;
+        $this->actingAs($user);
+
+        $context = $service->getActiveDocumentContext([$ownedProcessing->id, $foreignDoc->id]);
+
+        $this->assertSame([], $context['ids']);
+        $this->assertNull($context['filenames']);
+    }
+
+    public function test_generate_chat_response_job_only_sends_ready_owned_document_ids_to_ai(): void
+    {
+        $user = User::factory()->create();
+        $conversation = Conversation::create([
+            'user_id' => $user->id,
+            'title' => 'Test context filter',
+        ]);
+
+        $readyDoc = Document::create([
+            'user_id' => $user->id,
+            'filename' => 'ready.pdf',
+            'original_name' => 'ready.pdf',
+            'file_path' => 'documents/'.$user->id.'/ready.pdf',
+            'mime_type' => 'application/pdf',
+            'file_size_bytes' => 100,
+            'status' => 'ready',
+        ]);
+
+        $processingDoc = Document::create([
+            'user_id' => $user->id,
+            'filename' => 'processing.pdf',
+            'original_name' => 'processing.pdf',
+            'file_path' => 'documents/'.$user->id.'/processing.pdf',
+            'mime_type' => 'application/pdf',
+            'file_size_bytes' => 100,
+            'status' => 'processing',
+        ]);
+
+        $capturedDocumentIds = null;
+        $capturedFilenames = null;
+
+        // Use an object container so the reference persists through the closure
+        // and anonymous-class boundary. Arrow functions capture by value, so we
+        // need a mutable wrapper to propagate back to the assertion scope.
+        $captured = new \stdClass;
+        $captured->documentIds = null;
+        $captured->filenames = null;
+
+        $this->app->bind(AIService::class, function () use ($captured) {
+            return new class($captured) extends AIService
+            {
+                public function __construct(private \stdClass $captured)
+                {
+                    parent::__construct();
+                }
+
+                public function sendChat(
+                    array $messages,
+                    ?array $document_filenames = null,
+                    ?string $user_id = null,
+                    bool $force_web_search = false,
+                    ?string $source_policy = null,
+                    bool $allow_auto_realtime_web = true,
+                    ?array $document_ids = null,
+                ): \Generator {
+                    $this->captured->documentIds = $document_ids;
+                    $this->captured->filenames = $document_filenames;
+                    yield '';
+                }
+            };
+        });
+
+        $job = new \App\Jobs\GenerateChatResponse(
+            $conversation->id,
+            $user->id,
+            [['role' => 'user', 'content' => 'Halo']],
+            [$readyDoc->id, $processingDoc->id],
+        );
+
+        app()->call([$job, 'handle']);
+
+        // Processing document must never reach the AI layer.
+        $this->assertNotNull($captured->documentIds);
+        $this->assertContains($readyDoc->id, $captured->documentIds);
+        $this->assertNotContains($processingDoc->id, $captured->documentIds);
+        $this->assertSame(['ready.pdf'], $captured->filenames);
+    }
+
     public function test_send_message_rejects_prompt_over_8000_chars_before_rate_limit_or_ai_call(): void
     {
         $user = User::factory()->create();

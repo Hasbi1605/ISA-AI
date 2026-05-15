@@ -139,6 +139,36 @@ class ChatOrchestrationService
         return empty($filenames) ? null : $filenames;
     }
 
+    /**
+     * Return both the filtered document IDs and filenames from a single query.
+     *
+     * Only documents that are owned by the authenticated user AND have status
+     * "ready" are included. This ensures `document_ids` sent to Python always
+     * match the `document_filenames` array — both come from the same source.
+     *
+     * @param  array<int|string>  $conversationDocuments  Raw document IDs from the conversation.
+     * @return array{ids: list<int>, filenames: list<string>|null}
+     */
+    public function getActiveDocumentContext(array $conversationDocuments): array
+    {
+        if (empty($conversationDocuments)) {
+            return ['ids' => [], 'filenames' => null];
+        }
+
+        $docs = Document::whereIn('id', $conversationDocuments)
+            ->where('user_id', Auth::id())
+            ->where('status', 'ready')
+            ->get(['id', 'original_name']);
+
+        $ids = $docs->pluck('id')->map(fn ($id) => (int) $id)->values()->all();
+        $filenames = $docs->pluck('original_name')->values()->all();
+
+        return [
+            'ids' => $ids,
+            'filenames' => empty($filenames) ? null : $filenames,
+        ];
+    }
+
     public function getSourcePolicy(?array $documentFilenames): string
     {
         return !empty($documentFilenames) ? 'document_context' : 'hybrid_realtime_auto';
