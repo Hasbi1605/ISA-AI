@@ -221,3 +221,69 @@ def test_legacy_cleanup_delete_removes_both_new_and_legacy_chunks(monkeypatch):
     filters_str = " ".join(str(c["where"]) for c in main_deletes)
     assert "document_id" in filters_str, "One pass must delete by document_id"
     assert "filename" in filters_str, "One pass must delete by filename for legacy cleanup"
+
+
+# ── Embedding consistency guard ──────────────────────────────────────────────
+
+def test_process_document_fails_closed_on_embedding_provider_mismatch(monkeypatch):
+    """process_document must return (False, error_message) when existing vectors
+    were embedded with a different provider than the current one."""
+    import os as _os
+    from app.services import rag_ingest
+
+    # Make the function believe the file exists and has content.
+    monkeypatch.setattr(_os.path, "exists", lambda p: True)
+    monkeypatch.setattr(_os.path, "getsize", lambda p: 1024)
+
+    fake_embeddings = object()  # sentinel — not actually called in this path
+
+    # Return a different provider name than what's stored in the old vectors.
+    monkeypatch.setattr(
+        "app.services.rag_ingest.get_embeddings_with_fallback",
+        lambda *a, **kw: (fake_embeddings, "new-provider-openai", 0),
+    )
+    monkeypatch.setattr(
+        "app.services.rag_ingest._load_documents_lightweight",
+        lambda *a, **kw: [type("Doc", (), {"page_content": "text", "metadata": {}})()],
+    )
+
+    # Simulate: existing vectors use "old-provider-gemini" stored in metadata.
+    class FakeCollection:
+        def get(self, where=None, ids=None, include=None):
+            if ids is not None:
+                return {"ids": ids, "metadatas": [{"embedding_model": "old-provider-gemini"}]}
+            return {"ids": ["chunk-1"], "metadatas": [{"embedding_model": "old-provider-gemini"}]}
+
+        def upsert(self, **kw):
+            pass
+
+        def delete(self, where=None, ids=None):
+            pass
+
+    class FakeChroma:
+        def __init__(self, collection_name=None, embedding_function=None, persist_directory=None):
+            self._collection = FakeCollection()
+
+        def get(self, where=None, ids=None, include=None):
+            return FakeCollection().get(where=where, ids=ids, include=include)
+
+        def delete(self, **kw):
+            pass
+
+        def add_documents(self, docs):
+            pass
+
+    monkeypatch.setattr("app.services.rag_ingest.Chroma", FakeChroma)
+    monkeypatch.setattr("app.services.rag_ingest.count_tokens", lambda text: len(text.split()))
+
+    success, message = rag_ingest.process_document(
+        file_path="/fake/doc.pdf",
+        filename="doc.pdf",
+        user_id="user-1",
+        document_id="42",
+    )
+
+    assert success is False, f"Expected False but got {success!r}"
+    assert "mismatch" in message.lower() or "incompatib" in message.lower(), (
+        f"Expected mismatch/incompatibility message, got: {message!r}"
+    )

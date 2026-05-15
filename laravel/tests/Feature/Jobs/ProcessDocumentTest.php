@@ -16,6 +16,17 @@ class ProcessDocumentTest extends TestCase
 {
     use RefreshDatabase;
 
+    /**
+     * Read the protected $claimToken from a ProcessDocument job via reflection.
+     */
+    private function readClaimToken(ProcessDocument $job): string
+    {
+        $ref = new \ReflectionProperty($job, 'claimToken');
+        $ref->setAccessible(true);
+
+        return $ref->getValue($job);
+    }
+
     public function test_job_updates_status_to_ready_on_success(): void
     {
         Storage::fake('local');
@@ -95,6 +106,12 @@ class ProcessDocumentTest extends TestCase
         ]);
 
         $job = new ProcessDocument($document);
+        // Register this job's own claim token in cache so the guard passes.
+        \Illuminate\Support\Facades\Cache::put(
+            'doc_process_claim:'.$document->id,
+            $this->readClaimToken($job),
+            300,
+        );
         $job->failed(new \RuntimeException('permanent failure'));
 
         $this->assertSame('error', $document->fresh()->status);
@@ -320,64 +337,10 @@ class ProcessDocumentTest extends TestCase
     }
 
     // -------------------------------------------------------------------------
-    // Stale-job guard: ProcessDocument
+    // Claim-token stale-job guard (blocker fix)
     // -------------------------------------------------------------------------
 
-    public function test_job_is_skipped_when_document_is_already_processing(): void
-    {
-        Storage::fake('local');
-        Http::fake();
-
-        $user = User::factory()->create();
-        $filePath = 'documents/'.$user->id.'/already-processing.pdf';
-        Storage::disk('local')->put($filePath, '%PDF-1.4 fake');
-
-        // Document is already in 'processing' state — another worker grabbed it first.
-        $document = Document::create([
-            'user_id' => $user->id,
-            'filename' => 'already-processing.pdf',
-            'original_name' => 'already-processing.pdf',
-            'file_path' => $filePath,
-            'mime_type' => 'application/pdf',
-            'file_size_bytes' => 123,
-            'status' => 'processing',
-        ]);
-
-        (new ProcessDocument($document))->handle();
-
-        // Status must remain 'processing' — the stale job must not reset it to ready.
-        $this->assertSame('processing', $document->fresh()->status);
-        // No HTTP call should have been made for the duplicate job.
-        Http::assertNothingSent();
-    }
-
-    public function test_job_is_skipped_when_document_is_already_ready(): void
-    {
-        Storage::fake('local');
-        Http::fake();
-
-        $user = User::factory()->create();
-        $filePath = 'documents/'.$user->id.'/already-ready.pdf';
-        Storage::disk('local')->put($filePath, '%PDF-1.4 fake');
-
-        // Document already successfully processed by another job.
-        $document = Document::create([
-            'user_id' => $user->id,
-            'filename' => 'already-ready.pdf',
-            'original_name' => 'already-ready.pdf',
-            'file_path' => $filePath,
-            'mime_type' => 'application/pdf',
-            'file_size_bytes' => 123,
-            'status' => 'ready',
-        ]);
-
-        (new ProcessDocument($document))->handle();
-
-        $this->assertSame('ready', $document->fresh()->status);
-        Http::assertNothingSent();
-    }
-
-    public function test_stale_job_does_not_set_ready_when_document_reprocessed_mid_flight(): void
+    public function test_newer_job_claim_prevents_stale_job_from_setting_ready(): void
     {
         Storage::fake('local');
         Queue::fake();
@@ -385,26 +348,34 @@ class ProcessDocumentTest extends TestCase
         config()->set('services.ai_document_service.token', 'internal-token');
 
         $user = User::factory()->create();
-        $filePath = 'documents/'.$user->id.'/reprocessed.pdf';
+        $filePath = 'documents/'.$user->id.'/reprocessed-mid.pdf';
         Storage::disk('local')->put($filePath, '%PDF-1.4 fake');
 
         $document = Document::create([
             'user_id' => $user->id,
-            'filename' => 'reprocessed.pdf',
-            'original_name' => 'reprocessed.pdf',
+            'filename' => 'reprocessed-mid.pdf',
+            'original_name' => 'reprocessed-mid.pdf',
             'file_path' => $filePath,
             'mime_type' => 'application/pdf',
             'file_size_bytes' => 123,
             'status' => 'pending',
         ]);
 
-        // While this job was running (HTTP call in flight), a new reprocess
-        // was triggered which reset the document status back to 'pending'
-        // (simulated by modifying status inside the HTTP fake callback).
+        // Simulate: while Job A's HTTP call is in flight, a reprocess happens
+        // and Job B claims the document with a new token, overwriting Job A's
+        // cache entry. When Job A returns from HTTP, it must detect the mismatch
+        // and NOT set the document to `ready` (Job B owns the slot now).
         Http::fake([
             '*/api/documents/process' => function () use ($document) {
-                // Simulate another worker or admin resetting the document to pending.
-                Document::where('id', $document->id)->update(['status' => 'pending']);
+                // New reprocess dispatched while Job A is in the HTTP call.
+                // Register a *different* claim token in cache to simulate Job B.
+                \Illuminate\Support\Facades\Cache::put(
+                    'doc_process_claim:'.$document->id,
+                    'new-job-token-from-job-B',
+                    300,
+                );
+                // Job B also reset the status to processing.
+                Document::where('id', $document->id)->update(['status' => 'processing']);
 
                 return Http::response(['message' => 'success'], 200);
             },
@@ -413,9 +384,62 @@ class ProcessDocumentTest extends TestCase
 
         (new ProcessDocument($document))->handle();
 
-        // The post-success guard detected the status change and did NOT set 'ready'.
-        // The document should remain in 'pending' so the newer job can claim it.
-        $this->assertSame('pending', $document->fresh()->status);
+        // Job A must NOT have set the document to `ready` since its claim was
+        // superseded. The document should remain in `processing` (Job B's state).
+        $this->assertSame('processing', $document->fresh()->status);
+    }
+
+    public function test_failed_does_not_overwrite_newer_job_ready_state(): void
+    {
+        $user = User::factory()->create();
+
+        $document = Document::create([
+            'user_id' => $user->id,
+            'filename' => 'stale-failure.pdf',
+            'original_name' => 'stale-failure.pdf',
+            'file_path' => 'documents/'.$user->id.'/stale-failure.pdf',
+            'mime_type' => 'application/pdf',
+            'file_size_bytes' => 123,
+            'status' => 'ready', // Already marked ready by a newer job
+        ]);
+
+        // Job A was the old stale job. A newer Job B has already succeeded
+        // and set `ready`. Job A's final failure must not overwrite `ready`.
+        $jobA = new ProcessDocument($document);
+
+        // Register a *different* token to simulate that Job B replaced Job A's claim.
+        \Illuminate\Support\Facades\Cache::put(
+            'doc_process_claim:'.$document->id,
+            'newer-job-B-token',
+            300,
+        );
+
+        $jobA->failed(new \RuntimeException('old job permanent failure'));
+
+        // Status must remain `ready` — Job A's failed() must not overwrite it.
+        $this->assertSame('ready', $document->fresh()->status);
+    }
+
+    public function test_failed_sets_error_when_no_competing_claim_in_cache(): void
+    {
+        $user = User::factory()->create();
+
+        // Normal failure: document is in processing, no other job in cache.
+        $document = Document::create([
+            'user_id' => $user->id,
+            'filename' => 'normal-failure.pdf',
+            'original_name' => 'normal-failure.pdf',
+            'file_path' => 'documents/'.$user->id.'/normal-failure.pdf',
+            'mime_type' => 'application/pdf',
+            'file_size_bytes' => 123,
+            'status' => 'processing',
+        ]);
+
+        $job = new ProcessDocument($document);
+        // No competing token in cache — this job owns the slot.
+        $job->failed(new \RuntimeException('permanent failure'));
+
+        $this->assertSame('error', $document->fresh()->status);
     }
 
     // -------------------------------------------------------------------------
