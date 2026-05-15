@@ -226,6 +226,8 @@ class ChatStreamController extends Controller
             $cleanContent = 'Maaf, ISTA AI belum menerima jawaban yang bisa ditampilkan. Silakan coba lagi.';
         }
 
+        $this->sendSseEvent('final-content', $cleanContent);
+
         // Persist final message via saveAssistantMessage which now enforces
         // idempotency under DB lockForUpdate — safe against race with background job.
         $saved = $orchestrator->saveAssistantMessage($conversationId, $cleanContent, $user->id);

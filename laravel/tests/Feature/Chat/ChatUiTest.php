@@ -1206,7 +1206,8 @@ class ChatUiTest extends TestCase
             ->test(ChatIndex::class)
             ->assertSee('x-show="streamingText !== \'\'"', false)
             ->assertSee('prose prose-p:my-1 prose-headings:my-2', false)
-            ->assertSee('x-text="streamingText"', false);
+            ->assertSee('x-html="streamingHtml"', false)
+            ->assertDontSee('x-show="modelName"', false);
     }
 
     public function test_chat_history_groups_today_by_jakarta_date(): void

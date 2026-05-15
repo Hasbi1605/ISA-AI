@@ -1,3 +1,6 @@
+import DOMPurify from 'dompurify';
+import { marked } from 'marked';
+
 let hasRegisteredChatPageData = false;
 const CHAT_PENDING_STORAGE_KEY = 'ista.chat.pendingResponses.v1';
 const CHAT_COMPLETED_STORAGE_KEY = 'ista.chat.completedResponses.v1';
@@ -9,6 +12,32 @@ const CHAT_PENDING_MARKER_TTL_MS = 10 * 60 * 1000;
 const CHAT_PENDING_RECENT_TTL_MS = 3 * 60 * 1000;
 const CHAT_PENDING_STALE_WARNING_MS = 45 * 1000;
 const CHAT_MESSAGE_ACK_TIMEOUT_MS = 10 * 1000;
+const MARKDOWN_RENDER_OPTIONS = {
+    async: false,
+    breaks: false,
+    gfm: true,
+};
+
+const escapeHtmlForMarkdown = (value = '') => String(value)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#039;');
+
+const renderSafeStreamingMarkdown = (value = '') => {
+    try {
+        const html = marked.parse(escapeHtmlForMarkdown(value), MARKDOWN_RENDER_OPTIONS);
+
+        return DOMPurify.sanitize(String(html), {
+            USE_PROFILES: { html: true },
+        });
+    } catch (_) {
+        return DOMPurify.sanitize(`<p>${escapeHtmlForMarkdown(value)}</p>`, {
+            USE_PROFILES: { html: true },
+        });
+    }
+};
 
 const normalizeWirePayload = (data) => (Array.isArray(data) ? (data[0] || {}) : (data || {}));
 
@@ -294,6 +323,7 @@ const registerChatPageData = (Alpine) => {
         isSwitchingConversation: false,
         streaming: false,
         streamingText: '',
+        streamingHtml: '',
         modelName: '',
         sources: [],
         loadingContext: 'general',
@@ -310,6 +340,8 @@ const registerChatPageData = (Alpine) => {
         streamingQueue: '',
         streamingTypewriterTimer: null,
         streamingTypewriterDoneCallback: null,
+        streamingMarkdownRenderFrame: null,
+        streamingFinalText: null,
         streamedAssistantMessageId: null,
         _messageCompleteHandler: null,
         chatMutationObserver: null,
@@ -517,6 +549,11 @@ const registerChatPageData = (Alpine) => {
                 this.streamedAssistantMessageId = Number.isFinite(messageId) && messageId > 0 ? messageId : null;
             });
 
+            es.addEventListener('final-content', (e) => {
+                const content = e.data || '';
+                this.streamingFinalText = content !== '' ? content : null;
+            });
+
             es.addEventListener('error', (e) => {
                 const msg = e.data || '';
                 if (msg) {
@@ -530,6 +567,7 @@ const registerChatPageData = (Alpine) => {
                 this.closeChatStream();
                 const streamedMessageId = this.hasFirstAssistantChunk ? this.streamedAssistantMessageId : null;
                 this.afterStreamingTypewriterSettles(() => {
+                    this.applyFinalStreamingText();
                     // Trigger wire refresh so Livewire loads the persisted message.
                     // If this message already appeared via SSE, do not replay the
                     // persisted DB copy through the final-message typewriter.
@@ -553,6 +591,7 @@ const registerChatPageData = (Alpine) => {
             this.clearPhase2Timeout();
             this.clearPendingStaleTimeout();
             this.clearStreamingTypewriter();
+            this.clearStreamingMarkdownRender();
             this.closeChatStream();
             if (this._chatStreamHandler) {
                 window.removeEventListener('chat-open-stream', this._chatStreamHandler);
@@ -623,6 +662,42 @@ const registerChatPageData = (Alpine) => {
             this.streamingTypewriterDoneCallback = null;
         },
 
+        clearStreamingMarkdownRender() {
+            if (this.streamingMarkdownRenderFrame) {
+                window.cancelAnimationFrame(this.streamingMarkdownRenderFrame);
+                this.streamingMarkdownRenderFrame = null;
+            }
+        },
+
+        renderStreamingMarkdownNow() {
+            this.clearStreamingMarkdownRender();
+            this.streamingHtml = renderSafeStreamingMarkdown(this.streamingText);
+        },
+
+        scheduleStreamingMarkdownRender() {
+            if (this.streamingMarkdownRenderFrame) {
+                return;
+            }
+
+            this.streamingMarkdownRenderFrame = window.requestAnimationFrame(() => {
+                this.streamingMarkdownRenderFrame = null;
+                this.streamingHtml = renderSafeStreamingMarkdown(this.streamingText);
+                this.scrollToBottom();
+            });
+        },
+
+        applyFinalStreamingText() {
+            if (typeof this.streamingFinalText !== 'string' || this.streamingFinalText === '') {
+                return;
+            }
+
+            if (this.streamingText !== this.streamingFinalText) {
+                this.streamingText = this.streamingFinalText;
+            }
+
+            this.renderStreamingMarkdownNow();
+        },
+
         handleAssistantChunk(text) {
             const chunk = String(text || '');
             if (chunk === '') {
@@ -655,6 +730,7 @@ const registerChatPageData = (Alpine) => {
                 this.streamingTypewriterTimer = null;
 
                 if (this.streamingQueue === '') {
+                    this.renderStreamingMarkdownNow();
                     this.runStreamingTypewriterDoneCallback();
                     return;
                 }
@@ -665,7 +741,7 @@ const registerChatPageData = (Alpine) => {
 
                 this.streamingText += nextChunk;
                 this.streamingQueue = this.streamingQueue.substring(nextChunk.length);
-                this.scrollToBottom();
+                this.scheduleStreamingMarkdownRender();
 
                 const nextDelay = this.streamingQueue.length > 1600 ? 2 : (this.streamingQueue.length > 800 ? 3 : 5);
                 this.streamingTypewriterTimer = window.setTimeout(tick, nextDelay);
@@ -751,6 +827,7 @@ const registerChatPageData = (Alpine) => {
             this.clearLoadingPhaseTimeout();
             this.clearPhase2Timeout();
             this.clearStreamingTypewriter();
+            this.clearStreamingMarkdownRender();
 
             this.loadingPhaseKey = 0;
             this.hasFirstAssistantChunk = false;
@@ -761,6 +838,8 @@ const registerChatPageData = (Alpine) => {
             this.shimmerActive = false;
             this.stalePendingWarning = '';
             this.streamingText = '';
+            this.streamingHtml = '';
+            this.streamingFinalText = null;
             this.modelName = '';
             this.sources = [];
             this.streamedAssistantMessageId = null;

@@ -7,6 +7,8 @@ Setelah live SSE aktif, jawaban bisa tampil dua kali: teks hasil stream muncul l
 - Pertahankan efek typewriter untuk jawaban baru.
 - Hilangkan replay ganda setelah pesan SSE sudah tersimpan.
 - Samakan tampilan bubble streaming dengan bubble jawaban final saat ini.
+- Render markdown streaming secara aman agar tidak tampil sebagai markdown mentah sebelum pesan final tersimpan.
+- Sembunyikan badge nama model pada bubble streaming agar konsisten dengan pesan final.
 - Percepat rasa typewriter agar streaming tetap terasa responsif.
 
 ## Ruang Lingkup
@@ -22,13 +24,16 @@ Setelah live SSE aktif, jawaban bisa tampil dua kali: teks hasil stream muncul l
 ## Area / File Terkait
 - `laravel/resources/js/chat-page.js`
 - `laravel/resources/views/livewire/chat/partials/chat-messages.blade.php`
+- `laravel/app/Http/Controllers/Chat/ChatStreamController.php`
 - `laravel/app/Livewire/Chat/ChatIndex.php`
 - `laravel/tests/Feature/Chat/ChatUiTest.php`
+- `laravel/package.json`
+- `laravel/package-lock.json`
 
 ## Risiko
 - Jika suppress `newMessageId` terlalu agresif, fallback polling/background job bisa kehilangan typewriter.
 - Jika streaming reset terlalu cepat setelah `done`, typewriter SSE bisa terpotong sebelum semua chunk tampil.
-- Streaming tetap memakai teks mentah saat live karena final markdown HTML dibuat server-side; bubble dan tipografi disamakan agar visual tidak terasa berbeda.
+- Renderer markdown client-side harus tetap disanitasi agar tidak membuka XSS dari output AI.
 
 ## Langkah Implementasi
 1. Tambahkan state message id hasil SSE di Alpine.
@@ -37,7 +42,10 @@ Setelah live SSE aktif, jawaban bisa tampil dua kali: teks hasil stream muncul l
 4. Kirim id pesan yang sudah distream ke `refreshPendingChatState`.
 5. Suppress `newMessageId` hanya ketika latest assistant id sama dengan id yang sudah distream.
 6. Samakan class bubble streaming dengan class bubble jawaban final.
-7. Tambahkan test regresi untuk jalur SSE dan pastikan fallback polling tetap ada.
+7. Render `streamingText` menjadi HTML markdown yang disanitasi sebelum ditampilkan.
+8. Kirim `final-content` dari SSE setelah footer sumber ditambahkan agar stream dan final DB tidak berbeda.
+9. Sembunyikan badge model saat streaming.
+10. Tambahkan test regresi untuk jalur SSE dan pastikan fallback polling tetap ada.
 
 ## Rencana Test
 - Jalankan subset `ChatUiTest` terkait `refreshPendingChatState`, typewriter marker, dan render chat.

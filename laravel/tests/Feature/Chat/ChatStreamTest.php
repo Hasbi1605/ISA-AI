@@ -634,7 +634,53 @@ class ChatStreamTest extends TestCase
 
         $body = $this->runExecuteStream($user, $conversation);
 
+        $this->assertStringContainsString('event: final-content', $body);
+        $this->assertStringContainsString('data: Jawaban tersimpan.', $body);
         $this->assertStringContainsString('event: message-id', $body);
+    }
+
+    public function test_stream_final_content_event_includes_source_footer(): void
+    {
+        $user = User::factory()->create();
+        $conversation = Conversation::create([
+            'user_id' => $user->id,
+            'title' => 'Final content source footer test',
+        ]);
+
+        Message::create([
+            'conversation_id' => $conversation->id,
+            'role' => 'user',
+            'content' => 'Ringkas dokumen.',
+        ]);
+
+        $this->app->bind(AIService::class, fn () => new class extends AIService
+        {
+            public function sendChat(
+                array $messages,
+                ?array $document_filenames = null,
+                ?string $user_id = null,
+                bool $force_web_search = false,
+                ?string $source_policy = null,
+                bool $allow_auto_realtime_web = true,
+                ?array $document_ids = null,
+                ?string $request_id = null,
+            ): \Generator {
+                yield 'Jawaban dengan sumber.';
+                yield '[SOURCES:[{"filename":"dokumen-uji.pdf"}]]';
+            }
+        });
+
+        $body = $this->runExecuteStream($user, $conversation);
+
+        $this->assertStringContainsString('event: final-content', $body);
+        $this->assertStringContainsString('data: Jawaban dengan sumber.', $body);
+        $this->assertStringContainsString('data: ---', $body);
+        $this->assertStringContainsString('data: Dokumen rujukan: **dokumen-uji.pdf**', $body);
+        $this->assertDatabaseHas('messages', [
+            'conversation_id' => $conversation->id,
+            'role' => 'assistant',
+            'content' => "Jawaban dengan sumber.\n\n---\nDokumen rujukan: **dokumen-uji.pdf**",
+        ]);
     }
 
     // -------------------------------------------------------------------------
