@@ -30,11 +30,10 @@
     {{-- ===== CHAT TAB CONTENT ===== --}}
     <div x-show="activeTab === 'chat'" class="flex w-full h-full overflow-hidden">
         @if(! empty($pendingConversationIds))
-            {{-- Polling interval 15s: setelah streaming aktif (#189), polling bukan lagi jalur utama.
-                 Streaming mengirim 'done' event dan trigger refreshPendingChatState() langsung.
-                 15s hanya sebagai safety net jika stream gagal di tengah jalan.
-                 Rollback: ubah wire:poll.15s kembali ke wire:poll.3s --}}
-            <div wire:poll.15s="refreshPendingChatState" class="hidden" aria-hidden="true"></div>
+            {{-- Polling 3s: jalur utama untuk mendeteksi assistant message yang sudah selesai dipersist.
+                 GenerateChatResponse tidak dispatch event setelah selesai, sehingga polling tetap
+                 dibutuhkan sebagai satu-satunya mekanisme refresh. --}}
+            <div wire:poll.3s="refreshPendingChatState" class="hidden" aria-hidden="true"></div>
         @endif
 
         <!-- LEFT SIDEBAR: Chat History -->

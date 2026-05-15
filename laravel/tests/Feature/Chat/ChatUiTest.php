@@ -496,7 +496,7 @@ class ChatUiTest extends TestCase
             ->assertSee('h-3 w-3 shrink-0 rounded-full border', false)
             ->assertSee('min-w-0 flex-1 truncate', false)
             ->assertSee('bg-sky-500', false)
-            ->assertSee('wire:poll.15s="refreshPendingChatState"', false)
+            ->assertSee('wire:poll.3s="refreshPendingChatState"', false)
             ->assertSee('navigateToConversation($event,', false)
             ->assertSee('navigateToNewChat($event)', false)
             ->assertSee('chat-history-item', false)
