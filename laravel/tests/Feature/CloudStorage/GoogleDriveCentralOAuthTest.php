@@ -82,4 +82,73 @@ class GoogleDriveCentralOAuthTest extends TestCase
             ->assertRedirect(route('chat'))
             ->assertSessionHas('error');
     }
+
+    // -------------------------------------------------------------------------
+    // Admin gate: non-admin users must not be able to connect central OAuth
+    // -------------------------------------------------------------------------
+
+    public function test_connect_route_rejects_non_admin_even_with_valid_setup_key(): void
+    {
+        config()->set('services.google_drive.oauth_client_id', 'oauth-client-id');
+        config()->set('services.google_drive.oauth_client_secret', 'oauth-client-secret');
+        config()->set('services.google_drive.oauth_setup_key', 'setup-secret');
+        // Only admin@ista.test is allowed to perform the setup.
+        config()->set('services.google_drive.oauth_admin_emails', 'admin@ista.test');
+
+        // Regular user with a different email provides the correct setup key.
+        $regularUser = User::factory()->create(['email' => 'regular@ista.test']);
+
+        $this->actingAs($regularUser)
+            ->get(route('chat.google-drive.oauth.connect', ['setup_key' => 'setup-secret']))
+            ->assertForbidden();
+    }
+
+    public function test_connect_route_allows_admin_user_with_valid_setup_key(): void
+    {
+        config()->set('services.google_drive.oauth_client_id', 'oauth-client-id');
+        config()->set('services.google_drive.oauth_client_secret', 'oauth-client-secret');
+        config()->set('services.google_drive.oauth_setup_key', 'setup-secret');
+        config()->set('services.google_drive.oauth_admin_emails', 'admin@ista.test');
+
+        $adminUser = User::factory()->create(['email' => 'admin@ista.test']);
+
+        $response = $this->actingAs($adminUser)
+            ->get(route('chat.google-drive.oauth.connect', ['setup_key' => 'setup-secret']));
+
+        $response->assertRedirect();
+        $this->assertStringContainsString('accounts.google.com', (string) $response->headers->get('Location'));
+    }
+
+    public function test_callback_route_rejects_non_admin_user(): void
+    {
+        config()->set('services.google_drive.oauth_client_id', 'oauth-client-id');
+        config()->set('services.google_drive.oauth_client_secret', 'oauth-client-secret');
+        config()->set('services.google_drive.oauth_admin_emails', 'admin@ista.test');
+
+        $regularUser = User::factory()->create(['email' => 'regular@ista.test']);
+
+        $this->actingAs($regularUser)
+            ->get(route('chat.google-drive.oauth.callback', [
+                'code' => 'auth-code',
+                'state' => 'some-state',
+            ]))
+            ->assertForbidden();
+    }
+
+    public function test_admin_allowlist_is_case_insensitive(): void
+    {
+        config()->set('services.google_drive.oauth_client_id', 'oauth-client-id');
+        config()->set('services.google_drive.oauth_client_secret', 'oauth-client-secret');
+        config()->set('services.google_drive.oauth_setup_key', 'setup-secret');
+        // Config uses uppercase; user email is lowercase.
+        config()->set('services.google_drive.oauth_admin_emails', 'Admin@ISTA.test');
+
+        $adminUser = User::factory()->create(['email' => 'admin@ista.test']);
+
+        $response = $this->actingAs($adminUser)
+            ->get(route('chat.google-drive.oauth.connect', ['setup_key' => 'setup-secret']));
+
+        $response->assertRedirect();
+        $this->assertStringContainsString('accounts.google.com', (string) $response->headers->get('Location'));
+    }
 }

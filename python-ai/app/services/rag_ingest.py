@@ -31,21 +31,26 @@ def process_document(
     document_id: str | None = None,
 ):
     try:
-        logger.info(f"=== Processing document: {filename} ===")
-        logger.info(f"File path: {file_path}")
-        logger.info(f"File exists: {os.path.exists(file_path)}")
+        logger.info("=== Processing document: %s ===", filename)
+        logger.info("File path: %s", file_path)
+        logger.info("File exists: %s", os.path.exists(file_path))
         if os.path.exists(file_path):
             file_size = os.path.getsize(file_path)
-            logger.info(f"File size: {file_size:,} bytes ({file_size / 1024 / 1024:.2f} MB)")
+            logger.info("File size: %s bytes (%.2f MB)", f"{file_size:,}", file_size / 1024 / 1024)
 
-        logger.info("Cleaning up existing vectors before re-ingest for filename='%s', user_id='%s'", filename, user_id)
-        _del_ok, _del_msg = delete_document_vectors(filename, user_id, document_id=document_id, cleanup_legacy=True)
-        if not _del_ok:
-            logger.warning(
-                "Pre-ingest cleanup failed for '%s' (user=%s, document_id=%s): %s — "
-                "continuing with ingest but stale chunks may remain if cleanup did not complete.",
-                filename, user_id, document_id, _del_msg,
-            )
+        # ── Ingest atomicity: snapshot old vector IDs before ingest ──────────
+        # We query the IDs of any existing vectors for this document_id BEFORE
+        # writing new ones. If the new ingest succeeds, we delete ONLY those
+        # old IDs afterwards (post-ingest cleanup). If the ingest fails at any
+        # point, nothing has been deleted and the user's last valid retrieval
+        # context is preserved intact.
+        #
+        # This replaces the previous pre-ingest delete, which could silently
+        # erase all context if the embedding service was temporarily unavailable.
+        old_vector_ids: list[str] = []
+        old_parent_ids: list[str] = []
+
+        logger.info("Querying existing vectors before re-ingest for filename='%s', user_id='%s'", filename, user_id)
 
         import time as _time
         _load_start = _time.time()
@@ -197,21 +202,71 @@ def process_document(
                     persist_directory=CHROMA_PATH,
                 )
                 raw_col = parent_store._collection
-                p_ids   = [pid for pid, _, _ in pdr_parent_docs]
-                p_texts = [txt for _, txt, _ in pdr_parent_docs]
-                p_metas = [meta for _, _, meta in pdr_parent_docs]
-                raw_col.upsert(
-                    ids=p_ids,
-                    documents=p_texts,
-                    metadatas=p_metas,
-                    embeddings=[[0.0] * MAX_EMBEDDING_DIM] * len(p_ids),
-                )
-                logger.info("✅ PDR: %d parent chunks disimpan ke ChromaDB", len(pdr_parent_docs))
+
+                # Snapshot old parent IDs before upsert (post-ingest cleanup)
+                if document_id:
+                    try:
+                        _old_p = raw_col.get(
+                            where={"$and": [{"document_id": str(document_id)}, {"user_id": str(user_id)}, {"chunk_type": "parent"}]},
+                            include=[],
+                        )
+                        old_parent_ids = (_old_p.get("ids") or [])
+                    except Exception as _psnap_err:
+                        logger.debug("Could not snapshot old parent IDs: %s", _psnap_err)
+                # NOTE: parent upsert is intentionally deferred to AFTER all child
+                # vectors are written successfully. This ensures parent chunks are
+                # only updated when the full ingest is complete — if child ingest
+                # fails partway, the old parent context remains intact.
+                # See pdr_parent_upsert_pending below.
             except Exception as pe:
-                logger.warning("⚠️  Gagal menyimpan parent PDR: %s", pe)
+                logger.warning("⚠️  Gagal membuka parent store PDR: %s", pe)
 
         successful_chunks = 0
         failed_chunks = 0
+
+        # ── Snapshot old vector IDs (for post-ingest atomic cleanup) ─────────
+        # Query existing IDs BEFORE writing any new vectors. After a successful
+        # ingest we delete ONLY these old IDs so that a partial/failed ingest
+        # never erases the user's last valid retrieval context.
+        if document_id:
+            try:
+                _old = vectorstore.get(
+                    where={"$and": [{"document_id": str(document_id)}, {"user_id": str(user_id)}]},
+                    include=[],
+                )
+                old_vector_ids = _old.get("ids") or []
+                logger.info(
+                    "📥 Ingest atomicity: found %d existing vectors for document_id=%s (will delete after successful ingest)",
+                    len(old_vector_ids), document_id,
+                )
+            except Exception as _snap_err:
+                logger.warning("Could not snapshot existing vector IDs: %s — will skip post-ingest cleanup", _snap_err)
+
+        # ── Embedding consistency check ────────────────────────────────────────
+        # Fail-close before writing any new vectors if existing chunks used a
+        # different embedding provider. Mixing incompatible embedding spaces
+        # makes cosine-distance comparisons meaningless and corrupts retrieval.
+        if old_vector_ids:
+            try:
+                _sample = vectorstore.get(ids=old_vector_ids[:1], include=["metadatas"])
+                _sample_metas = (_sample.get("metadatas") or [{}])
+                _existing_model = (_sample_metas[0] or {}).get("embedding_model", "")
+                if _existing_model and _existing_model != provider_name:
+                    logger.error(
+                        "⚠️  EMBEDDING INCOMPATIBILITY for document_id=%s: "
+                        "existing='%s' vs current='%s'. "
+                        "Delete existing vectors before re-ingesting.",
+                        document_id, _existing_model, provider_name,
+                    )
+                    return (
+                        False,
+                        f"Embedding provider mismatch: existing='{_existing_model}' vs current='{provider_name}'. "
+                        "Delete existing vectors for this document before re-ingesting to avoid mixing incompatible embedding spaces.",
+                    )
+                elif _existing_model:
+                    logger.info("✅ Embedding consistency OK: provider='%s'", provider_name)
+            except Exception as _compat_err:
+                logger.debug("Embedding consistency check skipped: %s", _compat_err)
 
         smart_batches = []
         current_batch = []
@@ -277,6 +332,24 @@ def process_document(
 
                 elif is_rate_limit and current_model_index < len(EMBEDDING_MODELS) - 1:
                     if current_model_index < len(EMBEDDING_MODELS) - 1:
+                        # ── Embedding consistency: fail-close mid-ingest provider switch ──
+                        # If any chunks have already been written with the current provider,
+                        # switching to a different provider would leave the collection with
+                        # chunks from two incompatible embedding spaces. Fail here so the
+                        # operator can delete the document's vectors and retry from scratch.
+                        if successful_chunks > 0:
+                            logger.error(
+                                "❌ EMBEDDING CONSISTENCY: cannot switch provider mid-ingest — "
+                                "%d chunk(s) already written with '%s'. "
+                                "Delete this document's vectors and re-ingest to use a single provider.",
+                                successful_chunks, provider_name,
+                            )
+                            raise Exception(
+                                f"Embedding provider switch blocked mid-ingest: {successful_chunks} chunks "
+                                f"already written with '{provider_name}'. "
+                                "Delete existing vectors for this document and retry."
+                            )
+
                         logger.warning(f"🚫 Rate limit detected! Cascading to next model tier...")
 
                         current_model_index += 1
@@ -325,7 +398,9 @@ def process_document(
                                         retry_delay *= 2
                                         continue
                                     else:
-                                        from app.services.rag_config import EMBEDDING_MODELS
+                                        # EMBEDDING_MODELS is imported at module level; using it here
+                                        # directly avoids the UnboundLocalError that a local
+                                        # `from ... import EMBEDDING_MODELS` would cause.
                                         if current_model_index < len(EMBEDDING_MODELS) - 1:
                                             current_model_index += 1
                                             embeddings, provider_name, current_model_index = get_embeddings_with_fallback(current_model_index)
@@ -366,6 +441,75 @@ def process_document(
 
         if failed_chunks > 0:
             return False, f"Ingest partial: {failed_chunks}/{len(chunks)} chunks gagal saat embedding."
+
+        # ── PDR parent upsert (deferred until child ingest succeeds) ─────────
+        # Parents are written HERE — after all child vectors are durably stored.
+        # Writing parents before child ingest would leave the parent collection
+        # in an updated state even if child ingest subsequently fails.
+        if pdr_enabled and pdr_parent_docs:
+            try:
+                _p_store = Chroma(
+                    collection_name=PARENT_COLLECTION_NAME,
+                    persist_directory=CHROMA_PATH,
+                )
+                _p_col = _p_store._collection
+                p_ids   = [pid for pid, _, _ in pdr_parent_docs]
+                p_texts = [txt for _, txt, _ in pdr_parent_docs]
+                p_metas = [meta for _, _, meta in pdr_parent_docs]
+                _p_col.upsert(
+                    ids=p_ids,
+                    documents=p_texts,
+                    metadatas=p_metas,
+                    embeddings=[[0.0] * MAX_EMBEDDING_DIM] * len(p_ids),
+                )
+                logger.info("✅ PDR: %d parent chunks disimpan ke ChromaDB (post-ingest)", len(pdr_parent_docs))
+            except Exception as _pe:
+                logger.warning("⚠️  Gagal menyimpan parent PDR: %s", _pe)
+        else:
+            p_ids = []
+
+        # ── Post-ingest atomic cleanup ────────────────────────────────────────
+        # Now that the new vectors are durably written, delete the OLD vector IDs
+        # that were snapshotted before the ingest started. This is safe because:
+        #   - If we reach here, all new chunks are already queryable.
+        #   - We delete by specific IDs, so the new chunks are untouched.
+        #   - If this cleanup fails, the old chunks remain as stale duplicates
+        #     but retrieval continues to work (new chunks are preferred by score).
+        if old_vector_ids:
+            try:
+                vectorstore.delete(ids=old_vector_ids)
+                logger.info(
+                    "✅ Post-ingest cleanup: deleted %d stale vectors for document_id=%s",
+                    len(old_vector_ids), document_id,
+                )
+            except Exception as _cleanup_err:
+                logger.warning(
+                    "Post-ingest cleanup failed (stale chunks may remain): %s",
+                    _cleanup_err,
+                )
+
+        if old_parent_ids:
+            try:
+                _parent_vs = Chroma(
+                    collection_name=PARENT_COLLECTION_NAME,
+                    persist_directory=CHROMA_PATH,
+                )
+                # Exclude IDs that were just upserted. PDR parent IDs are
+                # deterministic (content-hash-based), so re-ingesting the same
+                # content produces the same IDs. Deleting them would erase the
+                # data we just wrote.
+                new_p_ids_set: set[str] = set(p_ids) if p_ids else set()
+                stale_parent_ids = [pid for pid in old_parent_ids if pid not in new_p_ids_set]
+                if stale_parent_ids:
+                    _parent_vs._collection.delete(ids=stale_parent_ids)
+                    logger.info(
+                        "✅ Post-ingest cleanup: deleted %d stale parent chunks for document_id=%s",
+                        len(stale_parent_ids), document_id,
+                    )
+                else:
+                    logger.info("Post-ingest parent cleanup: no stale IDs to delete (all IDs reused)")
+            except Exception as _pcleanup_err:
+                logger.warning("Post-ingest parent cleanup failed: %s", _pcleanup_err)
 
         return True, "Document processed successfully dengan Token-Aware Chunking & Aggressive Batching."
 

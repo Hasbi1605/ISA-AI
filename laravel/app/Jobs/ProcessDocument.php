@@ -8,8 +8,10 @@ use Illuminate\Foundation\Bus\Dispatchable;
 use Illuminate\Foundation\Queue\Queueable;
 use Illuminate\Queue\InteractsWithQueue;
 use Illuminate\Queue\SerializesModels;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Str;
 
 class ProcessDocument implements ShouldQueue
 {
@@ -38,11 +40,27 @@ class ProcessDocument implements ShouldQueue
     public bool $deleteWhenMissingModels = true;
 
     /**
+     * Unique claim token for this job dispatch.
+     *
+     * Generated in the constructor and serialized with the job payload so that
+     * all retry attempts carry the SAME token. A newer reprocess job gets a
+     * different token, which lets the current job detect that its processing
+     * slot has been superseded and bail out gracefully.
+     */
+    protected string $claimToken;
+
+    /**
+     * Cache key under which the current owner's token is stored.
+     */
+    protected string $claimCacheKey;
+
+    /**
      * Create a new job instance.
      */
     public function __construct(public Document $document)
     {
-        //
+        $this->claimToken = Str::uuid()->toString();
+        $this->claimCacheKey = 'doc_process_claim:'.$document->id;
     }
 
     /**
@@ -67,8 +85,53 @@ class ProcessDocument implements ShouldQueue
 
         $this->document = $fresh;
 
-        // 1. Update status to processing
-        $this->document->update(['status' => 'processing']);
+        // ── Stale-job guard: atomic status claim ─────────────────────────────
+        // Each job dispatch carries a unique $claimToken (set in the constructor
+        // so it survives serialisation for retries). The flow:
+        //
+        //   1. Try to claim from `pending` via an atomic WHERE update.
+        //   2. If that succeeds, register this job's token in cache.
+        //   3. If the document is already in `processing`, check whether WE own
+        //      that slot (same token still in cache). If we do, it's a retry of
+        //      this same job — continue. If a newer job has overwritten the
+        //      token, bail out.
+        //
+        // This prevents a stale job (Job A) from overwriting the progress of a
+        // newer job (Job B) that claimed the document after a user-triggered
+        // reprocess reset the status to `pending`.
+        $claimedFromPending = Document::where('id', $fresh->id)
+            ->where('status', 'pending')
+            ->update(['status' => 'processing']);
+
+        if ($claimedFromPending > 0) {
+            // Fresh claim: register our token so subsequent steps and failed()
+            // can verify ownership. TTL covers all retry attempts plus buffer.
+            $ttl = ($this->timeout * $this->tries) + 600;
+            Cache::put($this->claimCacheKey, $this->claimToken, $ttl);
+        } else {
+            // Document is not in `pending`. It could be:
+            //   (a) A retry of THIS job — our token is still in cache.
+            //   (b) A different, newer job has claimed it — different token.
+            //   (c) Cache expired after a long delay — no token in cache.
+            //
+            // For (a): continue processing (token matches).
+            // For (b): bail out — a newer reprocess job has taken ownership.
+            // For (c): treat as retry and continue (we can't distinguish from (a)
+            //          after cache expiry, but retrying is safer than silently
+            //          dropping the attempt).
+            $currentToken = Cache::get($this->claimCacheKey);
+
+            if ($currentToken !== null && $currentToken !== $this->claimToken) {
+                // A different job has claimed ownership → this job is stale.
+                logger()->info('ProcessDocument: skipped — claim superseded by newer job', [
+                    'document_id' => $fresh->id,
+                    'current_status' => $fresh->refresh()?->status ?? 'deleted',
+                ]);
+
+                return;
+            }
+            // Token matches (or cache expired for a retry) → continue.
+        }
 
             // 2. Prepare file - Try both private and public paths
             $filePath = Storage::disk('local')->path($this->document->file_path);
@@ -79,7 +142,7 @@ class ProcessDocument implements ShouldQueue
             }
 
         if (! file_exists($filePath)) {
-            $this->document->update(['status' => 'error']);
+            $this->updateStatusIfClaimOwned('error');
             logger()->error("Document processing failed for ID {$this->document->id}: File not found. Tried: {$this->document->file_path} and private/{$this->document->file_path}");
 
             return;
@@ -87,7 +150,7 @@ class ProcessDocument implements ShouldQueue
 
         $fileContent = file_get_contents($filePath);
         if ($fileContent === false) {
-            $this->document->update(['status' => 'error']);
+            $this->updateStatusIfClaimOwned('error');
             logger()->error("Document processing failed for ID {$this->document->id}: unable to read file");
 
             return;
@@ -123,8 +186,56 @@ class ProcessDocument implements ShouldQueue
                 return;
             }
 
-            // 4. Update status to ready
-            $freshDocument->update(['status' => 'ready']);
+            // ── Stale-job guard: post-success status update ───────────────────
+            // DUAL GUARD: both conditions must pass before writing `ready`.
+            //
+            // Guard A — cache token: skip if a DIFFERENT non-null token is in
+            // cache, meaning a newer job has already started handle() and claimed
+            // the slot.
+            //
+            // Guard B — atomic WHERE: skip if the document is no longer in
+            // `processing` state. This closes the race window that exists between
+            // when a reprocess resets the document to `pending` and when the new
+            // job starts handle() and writes its token to cache. During that
+            // window Guard A alone cannot detect the reprocess because the cache
+            // still holds our token. Guard B catches it via the DB status check.
+            $currentToken = Cache::get($this->claimCacheKey);
+            if ($currentToken !== null && $currentToken !== $this->claimToken) {
+                // Guard A: a newer job has claimed the slot and may already be
+                // ingesting its own vectors. Calling delete-all-by-document-id
+                // here would race with the newer job's ingest and could erase its
+                // freshly written vectors or the still-valid previous context.
+                // The newer job's own Python post-ingest cleanup will handle
+                // removing any vectors we left behind.
+                logger()->info('ProcessDocument: stale — claim token superseded mid-flight; skipping vector cleanup to avoid race', [
+                    'document_id' => $freshDocument->id,
+                ]);
+
+                return;
+            }
+
+            // 4. Update status to ready (atomic guard: only if still processing)
+            $saved = Document::where('id', $freshDocument->id)
+                ->where('status', 'processing')
+                ->update(['status' => 'ready']);
+
+            if ($saved === 0) {
+                // Guard B: document escaped 'processing' (reprocess reset it to
+                // 'pending'). At this point Python has already completed ingest
+                // for this job and run its own post-ingest cleanup. The vectors
+                // in Chroma now belong to this job's ingest run.
+                // Do NOT delete them: the upcoming reprocess job will snapshot
+                // these as "old" and clean them up atomically after its own
+                // successful ingest. Deleting here could erase the only valid
+                // context while the new job has not yet started.
+                logger()->info('ProcessDocument: stale — document left processing state mid-flight; not deleting vectors (newer job will clean up)', [
+                    'document_id' => $freshDocument->id,
+                    'current_status' => $freshDocument->fresh()?->status ?? 'deleted',
+                ]);
+
+                return;
+            }
+
             $this->document = $freshDocument;
 
                 // 5. Dispatch preview rendering job as a fallback if the
@@ -142,10 +253,50 @@ class ProcessDocument implements ShouldQueue
         }
     }
 
+    /**
+     * Mark the document as `error` only when this job still owns the claim,
+     * or when the cache has been cleared (no competing job is active).
+     *
+     * A final failure from a stale job must not overwrite a newer job's
+     * `processing` or `ready` state. Only skip if a DIFFERENT, non-null token
+     * is present — that signals an active newer claim.
+     */
     public function failed(\Throwable $exception): void
     {
+        $currentToken = Cache::get($this->claimCacheKey);
+
+        if ($currentToken !== null && $currentToken !== $this->claimToken) {
+            // A newer job is actively processing this document. Bail out.
+            logger()->info('ProcessDocument: failed() skipped — claim superseded by newer job', [
+                'document_id' => $this->document->id,
+            ]);
+
+            return;
+        }
+
         $this->document->update(['status' => 'error']);
         logger()->error("Document processing permanently failed for ID {$this->document->id}: ".$exception->getMessage());
+    }
+
+    /**
+     * Update the document status only when this job still owns the claim (or
+     * when the cache is clear — no active competing job). Skip only if a
+     * DIFFERENT, non-null token is present in cache.
+     */
+    private function updateStatusIfClaimOwned(string $status): void
+    {
+        $currentToken = Cache::get($this->claimCacheKey);
+
+        if ($currentToken !== null && $currentToken !== $this->claimToken) {
+            logger()->info('ProcessDocument: status update skipped — claim superseded', [
+                'document_id' => $this->document->id,
+                'intended_status' => $status,
+            ]);
+
+            return;
+        }
+
+        $this->document->update(['status' => $status]);
     }
 
     private function deleteVectorsForDocument(Document $doc): void

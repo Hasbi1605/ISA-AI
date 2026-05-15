@@ -197,4 +197,107 @@ class GoogleDriveUploadTest extends TestCase
             'preview_status' => Document::PREVIEW_STATUS_READY,
         ]);
     }
+
+    // -------------------------------------------------------------------------
+    // Idempotency: retry / double-click does not create duplicate records
+    // -------------------------------------------------------------------------
+
+    public function test_chat_answer_export_is_idempotent_on_duplicate_external_id(): void
+    {
+        Storage::fake('local');
+
+        $user = User::factory()->create();
+        $conversation = Conversation::create(['user_id' => $user->id, 'title' => 'Idempotency test']);
+        $message = Message::create([
+            'conversation_id' => $conversation->id,
+            'role' => 'assistant',
+            'content' => 'Jawaban untuk uji idempotency.',
+        ]);
+
+        $exportService = Mockery::mock(DocumentExportService::class);
+        $exportService->shouldReceive('exportContent')
+            ->andReturn([
+                'body' => '%PDF-1.4 idem',
+                'content_type' => 'application/pdf',
+                'file_name' => 'ista-ai-jawaban-'.$message->id.'.pdf',
+            ]);
+        $this->app->instance(DocumentExportService::class, $exportService);
+
+        $uploadResult = [
+            'external_id' => 'drive-idem-id',
+            'name' => 'ista-ai-jawaban-'.$message->id.'.pdf',
+            'mime_type' => 'application/pdf',
+            'web_view_link' => 'https://drive.google.com/file/d/drive-idem-id/view',
+            'folder_external_id' => 'folder-id',
+            'size_bytes' => 512,
+        ];
+
+        $googleDriveService = Mockery::mock(GoogleDriveService::class);
+        $googleDriveService->shouldReceive('canUploadWithConfiguredAccount')->andReturn(true);
+        $googleDriveService->shouldReceive('uploadFromPath')->twice()->andReturn($uploadResult);
+        $this->app->instance(GoogleDriveService::class, $googleDriveService);
+
+        $component = Livewire::actingAs($user)->test(ChatIndex::class);
+
+        // First export.
+        $component->call('saveAnswerToGoogleDrive', $message->id, 'pdf');
+
+        // Second export with the same external_id (retry / double-click).
+        $component->call('saveAnswerToGoogleDrive', $message->id, 'pdf');
+
+        // Must produce exactly ONE cloud_storage_files record, not two.
+        $this->assertDatabaseCount('cloud_storage_files', 1);
+        $this->assertDatabaseHas('cloud_storage_files', [
+            'user_id' => $user->id,
+            'provider' => 'google_drive',
+            'external_id' => 'drive-idem-id',
+        ]);
+    }
+
+    public function test_document_viewer_export_is_idempotent_on_duplicate_external_id(): void
+    {
+        Storage::fake('local');
+
+        $user = User::factory()->create();
+        $document = $this->createDocument($user);
+
+        $exportService = Mockery::mock(DocumentExportService::class);
+        $exportService->shouldReceive('exportDocument')
+            ->andReturn([
+                'body' => '%PDF-1.4 idem',
+                'content_type' => 'application/pdf',
+                'file_name' => 'surat-keluar.pdf',
+            ]);
+        $this->app->instance(DocumentExportService::class, $exportService);
+
+        $uploadResult = [
+            'external_id' => 'drive-doc-idem-id',
+            'name' => 'surat-keluar.pdf',
+            'mime_type' => 'application/pdf',
+            'web_view_link' => 'https://drive.google.com/file/d/drive-doc-idem-id/view',
+            'folder_external_id' => 'folder-id',
+            'size_bytes' => 1024,
+        ];
+
+        $googleDriveService = Mockery::mock(GoogleDriveService::class);
+        $googleDriveService->shouldReceive('canUploadWithConfiguredAccount')->andReturn(true);
+        $googleDriveService->shouldReceive('uploadFromPath')->twice()->andReturn($uploadResult);
+        $this->app->instance(GoogleDriveService::class, $googleDriveService);
+
+        $component = Livewire::actingAs($user)->test(DocumentViewer::class)->call('open', $document->id);
+
+        // First export.
+        $component->call('saveToGoogleDrive', 'pdf');
+
+        // Second export (retry) with the same Drive external_id.
+        $component->call('saveToGoogleDrive', 'pdf');
+
+        // Only one record should exist — no duplicates.
+        $this->assertDatabaseCount('cloud_storage_files', 1);
+        $this->assertDatabaseHas('cloud_storage_files', [
+            'user_id' => $user->id,
+            'provider' => 'google_drive',
+            'external_id' => 'drive-doc-idem-id',
+        ]);
+    }
 }

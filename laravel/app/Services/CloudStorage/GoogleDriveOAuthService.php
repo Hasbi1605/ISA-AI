@@ -46,6 +46,29 @@ class GoogleDriveOAuthService
         return is_string($providedSetupKey) && hash_equals($expectedSetupKey, $providedSetupKey);
     }
 
+    /**
+     * Determine whether the given user is allowed to perform the central
+     * Google Drive OAuth setup.
+     *
+     * When `GOOGLE_DRIVE_OAUTH_ADMIN_EMAILS` is configured (comma-separated),
+     * only users whose email appears in that list are allowed — in every
+     * environment. When the config is absent the flow is only allowed in
+     * `local` / `testing` environments (backward-compatible default for
+     * development; fail-closed in production).
+     */
+    public function isAllowedAdminUser(User $user): bool
+    {
+        $adminEmails = $this->adminEmails();
+
+        if (! empty($adminEmails)) {
+            return in_array(strtolower((string) $user->email), $adminEmails, true);
+        }
+
+        // No allowlist configured: allow only in non-production environments so
+        // the OAuth flow is fail-closed in production without explicit admin setup.
+        return app()->environment(['local', 'testing']);
+    }
+
     public function authorizationUrl(User $user): string
     {
         if (! $this->isConfigured()) {
@@ -285,6 +308,25 @@ class GoogleDriveOAuthService
     private function setupKey(): ?string
     {
         return $this->normalizeNullableString(config('services.google_drive.oauth_setup_key'));
+    }
+
+    /**
+     * Return the normalised lowercase list of email addresses that are
+     * permitted to perform the central Google Drive OAuth setup.
+     *
+     * @return list<string>
+     */
+    private function adminEmails(): array
+    {
+        $raw = config('services.google_drive.oauth_admin_emails', '');
+
+        if (! is_string($raw) || trim($raw) === '') {
+            return [];
+        }
+
+        return array_values(array_filter(
+            array_map(fn (string $e) => strtolower(trim($e)), explode(',', $raw)),
+        ));
     }
 
     private function normalizeNullableString(mixed $value): ?string

@@ -86,20 +86,24 @@ class DocumentViewer extends Component
                     $folderExternalId,
                 );
 
-                CloudStorageFile::create([
-                    'user_id' => (int) $userId,
-                    'provider' => 'google_drive',
-                    'direction' => CloudStorageFile::DIRECTION_EXPORT,
-                    'local_type' => Document::class,
-                    'local_id' => $document->id,
-                    'external_id' => $upload['external_id'],
-                    'name' => $upload['name'],
-                    'mime_type' => $upload['mime_type'],
-                    'web_view_link' => $upload['web_view_link'],
-                    'folder_external_id' => $upload['folder_external_id'],
-                    'size_bytes' => $upload['size_bytes'],
-                    'synced_at' => now(),
-                ]);
+                CloudStorageFile::updateOrCreate(
+                    [
+                        'user_id' => (int) $userId,
+                        'provider' => 'google_drive',
+                        'external_id' => $upload['external_id'],
+                    ],
+                    [
+                        'direction' => CloudStorageFile::DIRECTION_EXPORT,
+                        'local_type' => Document::class,
+                        'local_id' => $document->id,
+                        'name' => $upload['name'],
+                        'mime_type' => $upload['mime_type'],
+                        'web_view_link' => $upload['web_view_link'],
+                        'folder_external_id' => $upload['folder_external_id'],
+                        'size_bytes' => $upload['size_bytes'],
+                        'synced_at' => now(),
+                    ]
+                );
 
                 $this->driveUploadResult = [
                     'file_name' => $upload['name'],

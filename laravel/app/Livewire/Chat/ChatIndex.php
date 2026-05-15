@@ -16,6 +16,7 @@ use App\Services\DocumentExportService;
 use App\Services\DocumentLifecycleService;
 use App\Support\UserFacingError;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\RateLimiter;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
@@ -487,20 +488,24 @@ class ChatIndex extends Component
                     null,
                 );
 
-                CloudStorageFile::create([
-                    'user_id' => (int) $userId,
-                    'provider' => 'google_drive',
-                    'direction' => CloudStorageFile::DIRECTION_EXPORT,
-                    'local_type' => Message::class,
-                    'local_id' => $message->id,
-                    'external_id' => $upload['external_id'],
-                    'name' => $upload['name'],
-                    'mime_type' => $upload['mime_type'],
-                    'web_view_link' => $upload['web_view_link'],
-                    'folder_external_id' => $upload['folder_external_id'],
-                    'size_bytes' => $upload['size_bytes'],
-                    'synced_at' => now(),
-                ]);
+                CloudStorageFile::updateOrCreate(
+                    [
+                        'user_id' => (int) $userId,
+                        'provider' => 'google_drive',
+                        'external_id' => $upload['external_id'],
+                    ],
+                    [
+                        'direction' => CloudStorageFile::DIRECTION_EXPORT,
+                        'local_type' => Message::class,
+                        'local_id' => $message->id,
+                        'name' => $upload['name'],
+                        'mime_type' => $upload['mime_type'],
+                        'web_view_link' => $upload['web_view_link'],
+                        'folder_external_id' => $upload['folder_external_id'],
+                        'size_bytes' => $upload['size_bytes'],
+                        'synced_at' => now(),
+                    ]
+                );
             } finally {
                 Storage::disk('local')->delete($tempRelativePath);
             }
@@ -566,17 +571,32 @@ class ChatIndex extends Component
 
         $conversationIdForRequest = (int) $this->currentConversationId;
 
-        if ($conversationIdForRequest) {
+        // ── Atomic double-submit guard ────────────────────────────────────────
+        // Wrap the pending-response check and user-message insert in a single
+        // DB transaction with a row lock on the conversation. This prevents two
+        // concurrent requests for the same conversation from both passing the
+        // pending check and both inserting a user message + dispatching a job.
+        $userMessageArray = DB::transaction(function () use ($conversationIdForRequest, $orchestrator) {
             $activeConversation = Conversation::query()
-                ->with('latestMessage')
+                ->lockForUpdate()
                 ->find($conversationIdForRequest);
 
-            if ($activeConversation !== null && $this->conversationHasPendingResponse($activeConversation)) {
-                return;
+            if ($activeConversation === null) {
+                return null;
             }
-        }
 
-        $userMessageArray = $orchestrator->saveUserMessage($conversationIdForRequest, $this->prompt);
+            $activeConversation->load('latestMessage');
+
+            if ($this->conversationHasPendingResponse($activeConversation)) {
+                return null;
+            }
+
+            return $orchestrator->saveUserMessage($conversationIdForRequest, $this->prompt);
+        });
+
+        if ($userMessageArray === null) {
+            return;
+        }
         $this->messages[] = $userMessageArray;
         $this->dispatch('user-message-acked', conversationId: $conversationIdForRequest, messageId: $userMessageArray['id'] ?? null);
         $this->prompt = '';

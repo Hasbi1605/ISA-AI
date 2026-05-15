@@ -34,6 +34,18 @@ class RenderDocumentPreview implements ShouldBeUniqueUntilProcessing, ShouldQueu
         $fresh = $this->document->fresh();
 
         if ($fresh === null) {
+            logger()->info('RenderDocumentPreview: skipped — document deleted before render started', [
+                'document_id' => $this->document->id,
+            ]);
+
+            return;
+        }
+
+        // Skip if another render already completed while this job was queued.
+        // ShouldBeUniqueUntilProcessing prevents duplicate entries in the queue,
+        // but a stale job dispatched before the preview was rendered can still
+        // arrive after the fact. Guard here to avoid re-rendering unnecessarily.
+        if ($fresh->preview_status === Document::PREVIEW_STATUS_READY) {
             return;
         }
 
