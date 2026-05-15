@@ -18,7 +18,7 @@ class GenerateChatResponse implements ShouldQueue
 {
     use Dispatchable, InteractsWithQueue, Queueable, SerializesModels;
 
-    public int $tries = 1;
+    public int $tries = 10;
 
     public int $timeout = 180;
 
@@ -53,6 +53,24 @@ class GenerateChatResponse implements ShouldQueue
         $documentIds = $docContext['ids'];
         $sourcePolicy = $orchestrator->getSourcePolicy($documentFilenames);
         $allowAutoRealtimeWeb = $orchestrator->shouldAllowAutoRealtimeWeb($documentFilenames);
+
+        // Jika stream sedang memegang claim untuk latest user message,
+        // job jangan ikut menjadi runner paralel. Requeue sebagai fallback
+        // tertunda agar tetap bisa recover bila stream gagal sebelum persist.
+        if ($orchestrator->hasActiveStreamClaim($this->conversationId)) {
+            // Stream claim aktif (intent atau active) — defer 30 detik.
+            // Dengan tries=10 dan release(30), job punya ~300 detik coverage
+            // untuk menunggu claim TTL (240 detik) stale sebelum fallback jalan.
+            $this->release(30);
+            return;
+        }
+
+        // Guard: jika stream sudah sukses menyimpan assistant message sebelum
+        // job retry ini berjalan, tidak perlu memanggil AI lagi. Ini mencegah
+        // double AI call pada happy path stream + job fallback.
+        if ($orchestrator->assistantAlreadyAnswered($this->conversationId)) {
+            return;
+        }
 
         $fullResponse = '';
         $streamBuffer = '';
@@ -123,6 +141,7 @@ class GenerateChatResponse implements ShouldQueue
     public function failed(?\Throwable $exception): void
     {
         Auth::loginUsingId($this->userId);
+        $orchestrator = app(ChatOrchestrationService::class);
 
         Log::error('Background chat response failed', [
             'conversation_id' => $this->conversationId,
@@ -134,17 +153,18 @@ class GenerateChatResponse implements ShouldQueue
             return;
         }
 
-        Message::create([
-            'conversation_id' => $this->conversationId,
-            'role' => 'assistant',
-            'content' => 'Maaf, jawaban gagal diproses. Silakan coba kirim ulang.',
-            'is_error' => true,
-        ]);
+        $saved = $orchestrator->saveErrorMessage(
+            $this->conversationId,
+            'Maaf, jawaban gagal diproses. Silakan coba kirim ulang.',
+            $this->userId,
+        );
 
-        Conversation::query()
-            ->whereKey($this->conversationId)
-            ->where('user_id', $this->userId)
-            ->touch();
+        if ($saved !== null) {
+            Conversation::query()
+                ->whereKey($this->conversationId)
+                ->where('user_id', $this->userId)
+                ->touch();
+        }
     }
 
     private function conversationStillExists(): bool

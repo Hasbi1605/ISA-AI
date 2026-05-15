@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Controllers\Chat\ChatStreamController;
 use App\Http\Controllers\CloudStorage\GoogleDriveOAuthController;
 use App\Http\Controllers\Documents\DocumentExportController;
 use App\Http\Controllers\Documents\DocumentPreviewController;
@@ -35,6 +36,11 @@ Route::get('chat/{id?}', ChatIndex::class)
     ->middleware(['auth', 'verified', 'throttle:30,1'])
     ->whereNumber('id')
     ->name('chat');
+
+Route::get('chat/stream/{conversationId}', [ChatStreamController::class, 'stream'])
+    ->middleware(['auth', 'verified', 'throttle:60,1'])
+    ->whereNumber('conversationId')
+    ->name('chat.stream');
 
 Route::post('onlyoffice/callback/{memo}', OnlyOfficeCallbackController::class)
     ->name('onlyoffice.callback');

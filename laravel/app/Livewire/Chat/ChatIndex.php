@@ -625,6 +625,11 @@ class ChatIndex extends Component
         $this->loadConversations();
         $this->dispatch('conversation-activated', id: $conversationIdForRequest);
 
+        // Acquire stream claim as early as possible (right after user message is
+        // persisted) so background job fallback can observe active stream intent
+        // even before EventSource is fully connected.
+        $orchestrator->acquireStreamClaim($conversationIdForRequest);
+
         GenerateChatResponse::dispatch(
             $conversationIdForRequest,
             (int) Auth::id(),

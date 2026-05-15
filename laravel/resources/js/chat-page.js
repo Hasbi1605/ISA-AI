@@ -311,6 +311,8 @@ const registerChatPageData = (Alpine) => {
         chatMutationObserver: null,
         wireListeners: [],
         windowListeners: [],
+        activeEventSource: null,
+        _chatStreamHandler: null,
 
         getConversationMeta() {
             const metaEl = this.$el.querySelector('[data-chat-conversation-id]');
@@ -452,6 +454,18 @@ const registerChatPageData = (Alpine) => {
                 this.scrollToBottom();
             });
 
+            this._chatStreamHandler = (event) => {
+                const detail = event?.detail || {};
+                const conversationId = Number(detail.conversationId || 0);
+                const documentIds = detail.documentIds || [];
+                const webSearchMode = Boolean(detail.webSearchMode);
+                const loadingContext = detail.loadingContext || 'general';
+                if (conversationId > 0) {
+                    this.openChatStream(conversationId, documentIds, webSearchMode, loadingContext);
+                }
+            };
+            window.addEventListener('chat-open-stream', this._chatStreamHandler);
+
             this.$nextTick(() => this.maybeRestorePendingPlaceholder());
         },
 
@@ -467,10 +481,88 @@ const registerChatPageData = (Alpine) => {
             this.windowListeners.push(() => window.removeEventListener(event, callback));
         },
 
+        closeChatStream() {
+            if (this.activeEventSource) {
+                this.activeEventSource.close();
+                this.activeEventSource = null;
+            }
+        },
+
+        openChatStream(conversationId, documentIds, webSearchMode, loadingContext) {
+            this.closeChatStream();
+
+            // History tidak dikirim via query string — server reconstruct dari DB
+            // untuk menghindari URL terlalu panjang (414) dan konten chat bocor ke log.
+            const params = new URLSearchParams({
+                document_ids: JSON.stringify(documentIds),
+                web_search_mode: webSearchMode ? '1' : '0',
+            });
+
+            const url = `/chat/stream/${conversationId}?${params.toString()}`;
+            const es = new EventSource(url);
+            this.activeEventSource = es;
+
+            es.addEventListener('chunk', (e) => {
+                // Server menggunakan multi-line SSE framing — browser otomatis join dengan \n
+                const text = e.data || '';
+                this.streamingText += text;
+                this.streaming = true;
+                this.hasFirstAssistantChunk = true;
+                this.scrollToBottom();
+
+                if (this.phase2Done) {
+                    this.loadingPhase = 'Menampilkan jawaban';
+                    this.loadingPhaseKey++;
+                    this.shimmerActive = false;
+                }
+            });
+
+            es.addEventListener('model-name', (e) => {
+                this.modelName = e.data || '';
+            });
+
+            es.addEventListener('sources', (e) => {
+                try {
+                    const parsed = JSON.parse(e.data || '');
+                    if (Array.isArray(parsed)) {
+                        this.sources = parsed;
+                    }
+                } catch (_) {
+                    // ignore malformed sources
+                }
+            });
+
+            es.addEventListener('error', (e) => {
+                const msg = e.data || '';
+                if (msg) {
+                    this.stalePendingWarning = msg;
+                }
+                this.closeChatStream();
+                // Polling will recover the final state from DB
+            });
+
+            es.addEventListener('done', () => {
+                this.closeChatStream();
+                // Trigger wire refresh so Livewire loads the persisted message
+                if (this.$wire && typeof this.$wire.refreshPendingChatState === 'function') {
+                    this.$wire.refreshPendingChatState();
+                }
+            });
+
+            es.onerror = () => {
+                this.closeChatStream();
+            };
+        },
+
         destroy() {
             this.clearLoadingPhaseTimeout();
             this.clearPhase2Timeout();
             this.clearPendingStaleTimeout();
+            this.closeChatStream();
+            if (this._chatStreamHandler) {
+                window.removeEventListener('chat-open-stream', this._chatStreamHandler);
+                this._chatStreamHandler = null;
+            }
             if (this._messageCompleteHandler) {
                 window.removeEventListener('message-complete', this._messageCompleteHandler);
                 this._messageCompleteHandler = null;
@@ -1848,6 +1940,19 @@ const registerChatPageData = (Alpine) => {
                             messageId: response?.messageId || null,
                         },
                     }));
+
+                    // Open SSE stream to receive live chunks from Python AI.
+                    // History tidak dikirim — server reconstruct dari DB.
+                    if (conversationId > 0) {
+                        window.dispatchEvent(new CustomEvent('chat-open-stream', {
+                            detail: {
+                                conversationId,
+                                documentIds: normalizedDocs,
+                                webSearchMode: Boolean(this.webSearchMode),
+                                loadingContext,
+                            },
+                        }));
+                    }
                 })
                 .catch(() => {
                     this.$dispatch('user-message-acked');

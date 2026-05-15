@@ -7,10 +7,12 @@ use App\Models\Message;
 use App\Models\Document;
 use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Database\QueryException;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Auth;
 
 class ChatOrchestrationService
 {
+    private const STREAM_CLAIM_TTL_SECONDS = 240;
     private const SANITIZE_REPLACEMENTS = [
         '/\bchunks?\b/i' => 'bagian dokumen',
         '/\bchunk(?:ing|ed)?\b/i' => 'bagian dokumen',
@@ -270,6 +272,111 @@ class ChatOrchestrationService
         return trim($cleanContent);
     }
 
+    /**
+     * Check whether an assistant message (normal or error) already exists after
+     * the latest user message in this conversation.
+     *
+     * Used by ChatStreamController as a single-runner claim: if the background
+     * job already answered, the stream should skip calling AI entirely to avoid
+     * sending different chunks to the UI than what ends up in the DB.
+     */
+    public function assistantAlreadyAnswered(int $conversationId): bool
+    {
+        $latestUserMessage = Message::query()
+            ->where('conversation_id', $conversationId)
+            ->where('role', 'user')
+            ->latest('id')
+            ->first();
+
+        if ($latestUserMessage === null) {
+            return false;
+        }
+
+        return Message::query()
+            ->where('conversation_id', $conversationId)
+            ->where('role', 'assistant')
+            ->where('id', '>', $latestUserMessage->id)
+            ->exists();
+    }
+
+    public function streamClaimKeyForLatestUserMessage(int $conversationId): ?string
+    {
+        $latestUserMessage = Message::query()
+            ->where('conversation_id', $conversationId)
+            ->where('role', 'user')
+            ->latest('id')
+            ->first();
+
+        if ($latestUserMessage === null) {
+            return null;
+        }
+
+        return sprintf('chat:stream-claim:conversation:%d:user-message:%d', $conversationId, (int) $latestUserMessage->id);
+    }
+
+    /**
+     * Acquire or adopt a stream claim for the latest user message.
+     *
+     * Two-state claim lifecycle:
+     *   - 'intent'  : created by sendMessage() before EventSource opens.
+     *                 Signals to the fallback job that a stream is expected.
+     *   - 'active'  : upgraded by executeStream() when it adopts the intent.
+     *                 Duplicate streams that see 'active' are rejected.
+     *
+     * sendMessage() always calls this to create an 'intent' claim.
+     * executeStream() calls this to adopt 'intent' → 'active', or create
+     * 'active' directly if no prior intent exists.
+     * If the claim is already 'active' (duplicate stream), returns null.
+     */
+    public function acquireStreamClaim(int $conversationId): ?string
+    {
+        $claimKey = $this->streamClaimKeyForLatestUserMessage($conversationId);
+        if ($claimKey === null) {
+            return null;
+        }
+
+        $current = Cache::get($claimKey);
+
+        if ($current === null) {
+            // No claim yet — create intent (sendMessage path) or active (direct stream).
+            Cache::add($claimKey, 'intent', now()->addSeconds(self::STREAM_CLAIM_TTL_SECONDS));
+            return $claimKey;
+        }
+
+        if ($current === 'intent') {
+            // Adopt intent → upgrade to active (stream runner path).
+            Cache::put($claimKey, 'active', now()->addSeconds(self::STREAM_CLAIM_TTL_SECONDS));
+            return $claimKey;
+        }
+
+        // Already 'active' — duplicate stream, reject.
+        return null;
+    }
+
+    public function releaseStreamClaim(?string $claimKey): void
+    {
+        if ($claimKey === null) {
+            return;
+        }
+
+        Cache::forget($claimKey);
+    }
+
+    /**
+     * Returns true if a stream claim (intent or active) exists for the latest
+     * user message. The fallback job defers in both states.
+     */
+    public function hasActiveStreamClaim(int $conversationId): bool
+    {
+        $claimKey = $this->streamClaimKeyForLatestUserMessage($conversationId);
+        if ($claimKey === null) {
+            return false;
+        }
+
+        $value = Cache::get($claimKey);
+        return $value === 'intent' || $value === 'active';
+    }
+
     public function saveAssistantMessage(int $conversationId, string $content, int $userId): ?Message
     {
         if (! $this->conversationExists($conversationId, $userId)) {
@@ -277,7 +384,48 @@ class ChatOrchestrationService
         }
 
         try {
-            return $this->createAssistantMessage($conversationId, $content);
+            // Idempotensi: gunakan DB transaction + lockForUpdate pada user message
+            // terakhir agar baik SSE stream maupun background job tidak bisa
+            // menyimpan dua assistant message untuk satu user message yang sama.
+            // Ini adalah single source of truth untuk race condition di kedua jalur.
+            return \Illuminate\Support\Facades\DB::transaction(function () use ($conversationId, $content) {
+                $latestUserMessage = \App\Models\Message::query()
+                    ->where('conversation_id', $conversationId)
+                    ->where('role', 'user')
+                    ->latest('id')
+                    ->lockForUpdate()
+                    ->first();
+
+                // Jika sudah ada assistant message setelah user message terakhir:
+                // - jika sukses (is_error=false): skip (idempotent)
+                // - jika error (is_error=true): upgrade menjadi jawaban sukses
+                if ($latestUserMessage !== null) {
+                    $latestAssistant = \App\Models\Message::query()
+                        ->where('conversation_id', $conversationId)
+                        ->where('role', 'assistant')
+                        ->where('id', '>', $latestUserMessage->id)
+                        ->latest('id')
+                        ->lockForUpdate()
+                        ->first();
+
+                    if ($latestAssistant !== null) {
+                        if ((bool) $latestAssistant->is_error === false) {
+                            return null;
+                        }
+
+                        // Recovery path: stream error duluan lalu job sukses belakangan.
+                        // Reuse row error yang ada agar tetap satu assistant message.
+                        $latestAssistant->forceFill([
+                            'content' => $content,
+                            'is_error' => false,
+                        ])->save();
+
+                        return $latestAssistant->fresh();
+                    }
+                }
+
+                return $this->createAssistantMessage($conversationId, $content);
+            });
         } catch (QueryException $e) {
             if ($this->isConversationFkViolation($e)) {
                 return null;
@@ -294,12 +442,41 @@ class ChatOrchestrationService
         }
 
         try {
-            return Message::create([
-                'conversation_id' => $conversationId,
-                'role' => 'assistant',
-                'content' => $content,
-                'is_error' => true,
-            ]);
+            // Idempotensi: gunakan DB transaction + lockForUpdate agar error message
+            // tidak duplikat jika stream dan job keduanya gagal bersamaan.
+            // Jika sudah ada assistant message (normal atau error) setelah user message
+            // terakhir, skip — ini mencegah error stream menimpa jawaban sukses dari job.
+            return \Illuminate\Support\Facades\DB::transaction(function () use ($conversationId, $content) {
+                $latestUserMessage = \App\Models\Message::query()
+                    ->where('conversation_id', $conversationId)
+                    ->where('role', 'user')
+                    ->latest('id')
+                    ->lockForUpdate()
+                    ->first();
+
+                if ($latestUserMessage !== null) {
+                    $latestAssistant = \App\Models\Message::query()
+                        ->where('conversation_id', $conversationId)
+                        ->where('role', 'assistant')
+                        ->where('id', '>', $latestUserMessage->id)
+                        ->latest('id')
+                        ->lockForUpdate()
+                        ->first();
+
+                    // Jika sudah ada jawaban sukses, jangan ditimpa error.
+                    // Jika sudah ada error, tetap idempotent (skip).
+                    if ($latestAssistant !== null) {
+                        return null;
+                    }
+                }
+
+                return Message::create([
+                    'conversation_id' => $conversationId,
+                    'role' => 'assistant',
+                    'content' => $content,
+                    'is_error' => true,
+                ]);
+            });
         } catch (QueryException $e) {
             if ($this->isConversationFkViolation($e)) {
                 return null;
