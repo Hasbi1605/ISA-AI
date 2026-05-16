@@ -130,6 +130,16 @@ def test_build_search_context_snippet_takes_priority_over_summary():
     assert "Summary cadangan" not in context
 
 
+def test_build_no_results_context_warns_against_unsourced_realtime_answer():
+    service = LangSearchService()
+
+    context = service.build_no_results_context()
+
+    assert "KONTEKS WEB TERBARU" in context
+    assert "Tidak ada hasil pencarian web yang cukup" in context
+    assert "Jangan menyebut fakta real-time sebagai kepastian" in context
+
+
 def test_search_uses_summary_when_snippet_is_empty_string(monkeypatch):
     """Jika API mengirim snippet='' (string kosong), summary harus dipakai di search() sebelum masuk build_search_context()."""
     import unittest.mock as mock

@@ -362,6 +362,14 @@ class ChatIndex extends Component
                     'mimetypes:'.implode(',', Document::attachmentMimeTypes()),
                     'max:51200',
                 ],
+            ], [
+                'chatAttachment.required' => 'Pilih file dokumen terlebih dahulu.',
+                'chatAttachment.file' => 'Lampiran chat harus berupa file dokumen.',
+                'chatAttachment.mimes' => 'Lampiran chat harus berupa file PDF, DOCX, XLSX, atau CSV.',
+                'chatAttachment.mimetypes' => 'Lampiran chat harus berupa file PDF, DOCX, XLSX, atau CSV.',
+                'chatAttachment.max' => 'Ukuran lampiran chat tidak boleh lebih dari 50 MB.',
+            ], [
+                'chatAttachment' => 'lampiran chat',
             ]);
 
             $this->isUploadingAttachment = true;

@@ -27,6 +27,14 @@ _FRESHNESS_BY_INTENT = {
     "low": "oneWeek",    # Default
 }
 
+_SEARCH_COMMAND_PREFIX = re.compile(
+    r"^\s*(?:tolong|mohon|coba)?\s*"
+    r"(?:cari|cek|telusuri|browse|search|ringkas|rangkum)\s+"
+    r"(?:(?:di|pakai|gunakan)\s+(?:web|internet|online)\s+)?",
+    re.IGNORECASE,
+)
+_RECENCY_TERMS = ("terbaru", "terkini", "hari ini", "sekarang", "breaking")
+
 _langsearch_service = None
 _langsearch_service_lock = threading.Lock()
 
@@ -74,6 +82,29 @@ def _is_score_query(query: str) -> bool:
     has_keyword = any(keyword in normalized for keyword in SCORE_QUERY_KEYWORDS)
     has_vs = " vs " in f" {normalized} " or " versus " in f" {normalized} "
     return has_keyword or has_vs
+
+
+def _build_web_search_query(query: str, realtime_intent: str) -> str:
+    cleaned = (query or "").strip()
+    if not cleaned:
+        return cleaned
+
+    cleaned = _SEARCH_COMMAND_PREFIX.sub("", cleaned).strip()
+    cleaned = re.sub(r"\bissue\b", "isu", cleaned, flags=re.IGNORECASE)
+    cleaned = re.sub(r"\b(tentang|soal|mengenai|terkait)\b\s*", "", cleaned, flags=re.IGNORECASE)
+    cleaned = re.sub(r"\s+", " ", cleaned).strip()
+
+    if not cleaned:
+        cleaned = (query or "").strip()
+
+    normalized = cleaned.lower()
+    has_recency = any(term in normalized for term in _RECENCY_TERMS)
+    has_news_context = any(term in normalized for term in ("berita", "news", "isu", "kabar", "kasus", "kontroversi"))
+
+    if realtime_intent == "high" and has_recency and not has_news_context:
+        cleaned = f"{cleaned} berita"
+
+    return cleaned
 
 
 def _extract_team_groups_from_query(query: str) -> List[List[str]]:
@@ -265,6 +296,13 @@ def get_context_for_query(
 
         # Freshness adaptif: gunakan oneDay untuk realtime_intent=high
         freshness = _FRESHNESS_BY_INTENT.get(realtime_intent, "oneWeek")
+        search_query = _build_web_search_query(query, realtime_intent)
+        if search_query != (query or "").strip():
+            logger.info(
+                "🌐 Web search: query cleaned (%s -> %s)",
+                _query_log_meta(query),
+                _query_log_meta(search_query),
+            )
         if freshness != "oneWeek":
             logger.info("🌐 Web search: freshness=%s (realtime_intent=%s)", freshness, realtime_intent)
 
@@ -274,10 +312,10 @@ def get_context_for_query(
         if is_score:
             # Paralel: jalankan search utama dan focused score search bersamaan
             # agar tidak menunggu search pertama selesai sebelum memulai yang kedua.
-            focused_query = f"{query} final score"
+            focused_query = f"{search_query} final score"
             logger.info("⚡ Web search: paralel score query + focused search")
             with ThreadPoolExecutor(max_workers=2) as executor:
-                f_main = executor.submit(langsearch.search, query, freshness)
+                f_main = executor.submit(langsearch.search, search_query, freshness)
                 f_focused = executor.submit(langsearch.search, focused_query, freshness)
             main_results = f_main.result()
             focused_results = f_focused.result()
@@ -295,7 +333,7 @@ def get_context_for_query(
                 "focused_results": len(focused_results),
             })
         else:
-            search_results = langsearch.search(query, freshness)
+            search_results = langsearch.search(search_query, freshness)
             tracker.end("web_search", extra={
                 "results": len(search_results),
                 "reason": reason_code,
@@ -363,7 +401,12 @@ def get_context_for_query(
 
     has_search = len(search_results) > 0
 
-    search_context = langsearch.build_search_context(search_results) if has_search else ""
+    if has_search:
+        search_context = langsearch.build_search_context(search_results)
+    elif should_search and hasattr(langsearch, "build_no_results_context"):
+        search_context = langsearch.build_no_results_context()
+    else:
+        search_context = ""
     score_signal = extract_match_score_signal(query, search_results)
 
     if score_signal and search_context:

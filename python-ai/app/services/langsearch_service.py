@@ -235,6 +235,25 @@ Ringkasan: {snippet}"""
             results=results_str
         )
 
+    def build_no_results_context(self) -> str:
+        """
+        Build web context when search was requested but no result is available.
+
+        Tetap mengirim konteks ke LLM agar jawaban real-time tidak jatuh ke
+        pengetahuan umum tanpa sumber.
+        """
+        current_date = datetime.now().strftime("%A, %d %B %Y")
+        template = get_web_search_context_prompt()
+
+        return template.format(
+            current_date=current_date,
+            results=(
+                "Tidak ada hasil pencarian web yang cukup untuk menjawab "
+                "pertanyaan ini. Jangan menyebut fakta real-time sebagai "
+                "kepastian tanpa sumber web yang tersedia."
+            )
+        )
+
     def rerank_documents(
         self,
         query: str,

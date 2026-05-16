@@ -61,6 +61,10 @@ Tanggal referensi: {current_date}
 
 Gunakan konteks berikut hanya bila relevan dengan pertanyaan user, terutama untuk fakta yang berubah dari waktu ke waktu.
 Jika konteks ini dipakai dalam jawaban, sebutkan tanggal absolut dan sumber secara natural.
+Untuk pertanyaan real-time, hasil pencarian di bawah adalah satu-satunya bahan fakta.
+Jangan menambahkan tanggal, angka, lokasi, kutipan, atau peristiwa yang tidak tertulis pada Judul, Ringkasan, Tanggal publikasi, atau Sumber.
+Jika hasil pencarian tidak cukup relevan, terlalu lama, atau tidak menjawab pertanyaan, katakan bahwa sumber web yang ditemukan belum cukup kuat.
+Jangan membuat daftar rujukan di dalam jawaban; sistem akan menampilkan rujukan secara terpisah bila tersedia.
 
 HASIL PENCARIAN WEB:
 
@@ -72,6 +76,7 @@ HASIL PENCARIAN WEB:
 - Jika ada bagian "FAKTA TERSTRUKTUR", utamakan fakta itu untuk angka atau hasil yang sangat spesifik.
 - Jika beberapa sumber berbeda, nyatakan ada perbedaan, pilih sumber yang paling kuat atau paling mutakhir, dan hindari kepastian palsu.
 - Bedakan fakta yang didukung sumber dari inferensi atau rangkuman Anda sendiri.
+- Jangan mengarang detail real-time di luar hasil web. Jika sumber hanya berupa arsip, hasil umum, atau tidak cukup relevan, jelaskan keterbatasannya.
 - Jawab dengan gaya ringkas, jelas, dan profesional.
 """
     },

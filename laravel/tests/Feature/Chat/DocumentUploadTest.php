@@ -77,7 +77,9 @@ class DocumentUploadTest extends TestCase
         Livewire::actingAs($user)
             ->test(ChatIndex::class)
             ->set('chatAttachment', UploadedFile::fake()->create('invalid.txt', 20, 'text/plain'))
-            ->assertSet('attachmentUploadStatus', 'error');
+            ->assertSet('attachmentUploadStatus', 'error')
+            ->assertSet('attachmentUploadMessage', 'Lampiran chat harus berupa file PDF, DOCX, XLSX, atau CSV.')
+            ->assertSee('Lampiran chat harus berupa file PDF, DOCX, XLSX, atau CSV.');
 
         $this->assertDatabaseCount('documents', 0);
         Queue::assertNothingPushed();

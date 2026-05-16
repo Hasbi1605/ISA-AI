@@ -65,6 +65,12 @@ class TestFreshnessAdaptif:
             f"Freshness oneDay harus dipakai untuk realtime_intent=high, tapi dapat: {captured_freshness['values']}"
         )
 
+    def test_latest_issue_query_is_high_realtime_intent(self):
+        """Query isu terbaru tokoh/instansi harus dianggap butuh sumber segar."""
+        from app.services.rag_policy import detect_realtime_intent_level
+
+        assert detect_realtime_intent_level("Cari issue tentang Prabowo terbaru") == "high"
+
     def test_freshness_one_week_used_for_non_realtime_query(self, monkeypatch):
         """Untuk query non-realtime, freshness harus oneWeek."""
         import app.services.rag_policy as rp
@@ -223,6 +229,66 @@ class TestParalelScoreQuery:
         assert len(seen_queries) == 2, f"Harus ada 2 query unik, tapi hanya: {seen_queries}"
         assert "skor bola malam ini" in seen_queries
         assert "skor bola malam ini final score" in seen_queries
+
+
+# ---------------------------------------------------------------------------
+# Query cleaning + no-result guardrail
+# ---------------------------------------------------------------------------
+
+class TestWebSearchQueryQuality:
+    """Verifikasi query yang dikirim ke provider lebih relevan."""
+
+    def test_build_web_search_query_cleans_command_and_issue_wording(self):
+        from app.services.rag_policy import _build_web_search_query
+
+        assert _build_web_search_query("Cari issue tentang Prabowo terbaru", "high") == "isu Prabowo terbaru"
+
+    def test_get_context_uses_cleaned_query_and_one_day_for_latest_issue(self, monkeypatch):
+        import app.services.rag_policy as rp
+
+        captured = {"calls": []}
+
+        class FakeLangSearch:
+            def search(self, query, freshness="oneWeek", count=5):
+                captured["calls"].append((query, freshness))
+                return [{"title": "Result", "snippet": "Snippet", "url": "https://example.com"}]
+
+            def rerank_documents(self, **kwargs):
+                return None
+
+            def build_search_context(self, results):
+                return "context"
+
+        monkeypatch.setattr(rp, "get_langsearch_service", lambda: FakeLangSearch())
+
+        rp.get_context_for_query(
+            query="Cari issue tentang Prabowo terbaru",
+            force_web_search=True,
+            allow_auto_realtime_web=True,
+        )
+
+        assert captured["calls"] == [("isu Prabowo terbaru", "oneDay")]
+
+    def test_forced_web_search_no_results_returns_guardrail_context(self, monkeypatch):
+        import app.services.rag_policy as rp
+
+        class FakeLangSearch:
+            def search(self, query, freshness="oneWeek", count=5):
+                return []
+
+            def build_no_results_context(self):
+                return "KONTEKS WEB TERBARU\nTidak ada hasil pencarian web yang cukup."
+
+        monkeypatch.setattr(rp, "get_langsearch_service", lambda: FakeLangSearch())
+
+        result = rp.get_context_for_query(
+            query="Cari issue tentang Prabowo terbaru",
+            force_web_search=True,
+            allow_auto_realtime_web=True,
+        )
+
+        assert result["has_search"] is False
+        assert "Tidak ada hasil pencarian web yang cukup" in result["search_context"]
 
 
 # ---------------------------------------------------------------------------

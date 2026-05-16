@@ -104,11 +104,14 @@ def test_web_prompt_is_professional_and_uses_absolute_date_guidance():
     )
     assert "KONTEKS WEB TERBARU" in context
     assert "Tanggal referensi: 21 April 2026" in context
+    assert "satu-satunya bahan fakta" in context
+    assert "Jangan membuat daftar rujukan" in context
     assert "🔴" not in context
 
     instruction = config_loader.get_assertive_instruction()
     assert "Gunakan tanggal absolut" in instruction
     assert "Bedakan fakta yang didukung sumber dari inferensi" in instruction
+    assert "Jangan mengarang detail real-time" in instruction
 
 
 def test_langsearch_service_builds_web_context_without_legacy_current_year_arg():
